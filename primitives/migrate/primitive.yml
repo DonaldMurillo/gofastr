@@ -44,6 +44,12 @@ invariants:
       - test: framework/migrate.TestDetectDialectStrict_TransientFailureErrors
       - test: framework/migrate.TestProbeClassifier_QuotedPhraseIsNotDeterministic
       - test: framework/migrate.TestSweepCoreSeedProbeFailsClosed
+  - id: dialect-probe-honors-context
+    rule: DetectDialectStrictContext and the migration operations that call it stop probing and waiting between retries when the caller's context ends, and return its error rather than guessing a dialect.
+    enforced_by:
+      - test: framework/migrate.TestDialectProbeReturnsCallerDeadline
+      - test: framework/migrate.TestMigrationEntryPointsCancelDialectProbe
+      - test: framework.TestEraseRetentionCancelsDialectProbe
   - id: unreachable-database-error-names-the-connection
     rule: A migration error caused by an unreachable database says to check the database connection / DATABASE_URL; other errors pass through unchanged.
     enforced_by:

@@ -452,7 +452,7 @@
           form.hasAttribute('data-cui-spa') ||
           enctype === 'application/json') return;
       e.preventDefault();
-      showBlockedNavigation('form', form.action || '');
+      showBlockedNavigation('form', form.getAttribute('action') || '');
     }
 
     window.addEventListener('click', blockLinkNavigation, true);

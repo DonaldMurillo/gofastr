@@ -42,6 +42,9 @@ type Button struct {
 }
 
 func (b Button) Render(attrs map[string]string, el func(tag, part string, attrs map[string]string, children ...render.HTML) render.HTML) render.HTML {
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
 	attrs["type"] = "button"
 	attrs["data-state"] = b.State
 	attrs["data-hui-action"] = ""

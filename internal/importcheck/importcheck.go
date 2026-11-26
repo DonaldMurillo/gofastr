@@ -3,6 +3,7 @@
 package importcheck
 
 import (
+	"errors"
 	"os/exec"
 	"strings"
 	"testing"
@@ -23,9 +24,13 @@ type Ban struct {
 // another GOOS or a build tag is not seen.
 func Run(t *testing.T, bans ...Ban) {
 	t.Helper()
-	out, err := exec.Command("go", "list", "-deps", ".").CombinedOutput()
+	out, err := exec.Command("go", "list", "-deps", ".").Output()
 	if err != nil {
-		t.Fatalf("go list -deps: %v\n%s", err, out)
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			t.Fatalf("go list -deps: %v\n%s", err, exit.Stderr)
+		}
+		t.Fatalf("go list -deps: %v", err)
 	}
 	deps := map[string]bool{}
 	for line := range strings.SplitSeq(string(out), "\n") {

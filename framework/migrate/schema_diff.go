@@ -50,7 +50,7 @@ func (e *DestructiveChangeError) Error() string {
 // DiffSchema returns the changes that bring db in line with the registry,
 // a missing table as its CREATE TABLE. The dialect is detected from db.
 func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]SchemaChange, error) {
-	dialect, err := detectDialectFailClosed(db)
+	dialect, err := DetectDialectStrictContext(ctx, db)
 	if err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}

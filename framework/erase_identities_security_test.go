@@ -38,6 +38,67 @@ func TestExpiredKeptIdentityIsSwept(t *testing.T) {
 	}
 }
 
+func TestEraseRetentionCancelsDialectProbe(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		wait bool
+	}{
+		{name: "in flight", wait: true},
+		{name: "between retries"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				attempts := 0
+				db := sql.OpenDB(retentionProbeConnector(func(ctx context.Context) (driver.Conn, error) {
+					attempts++
+					if tc.wait {
+						<-ctx.Done()
+						return nil, ctx.Err()
+					}
+					return nil, errors.New("connection refused")
+				}))
+				defer db.Close()
+				app := &App{DB: db}
+				done := make(chan error, 1)
+				go func() { done <- app.SweepErasureRetention(ctx) }()
+				synctest.Wait()
+				if attempts != 1 {
+					t.Fatalf("dialect attempts before cancellation = %d, want 1", attempts)
+				}
+				start := time.Now()
+				cancel()
+				err := <-done
+				if took := time.Since(start); took != 0 || attempts != 1 || !errors.Is(err, context.Canceled) {
+					t.Fatalf("after cancel: took %v, %d attempts, error %v; want no wait, one attempt, and context.Canceled", took, attempts, err)
+				}
+			})
+		})
+	}
+}
+
+func TestEraseRetentionProbeFailsClosed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		connectionErr := errors.New("connection refused")
+		attempts := 0
+		db := sql.OpenDB(retentionProbeConnector(func(context.Context) (driver.Conn, error) {
+			attempts++
+			return nil, connectionErr
+		}))
+		defer db.Close()
+		app := &App{DB: db}
+		if err := app.SweepErasureRetention(t.Context()); !errors.Is(err, connectionErr) || attempts != 3 {
+			t.Fatalf("sweep made %d connection attempts and returned %v; want only three probe attempts and the connection error", attempts, err)
+		}
+	})
+}
+
+type retentionProbeConnector func(context.Context) (driver.Conn, error)
+
+func (c retentionProbeConnector) Connect(ctx context.Context) (driver.Conn, error) { return c(ctx) }
+func (retentionProbeConnector) Driver() driver.Driver                              { return nil }
+
 // An erasure that fails a store, with nothing of its own to keep, still
 // sweeps other users' expired rows.
 func TestEraseFailureWithNothingToKeepSweeps(t *testing.T) {
@@ -764,14 +825,12 @@ type retentionSweepProbe struct {
 	once    sync.Once
 }
 
-func (p *retentionSweepProbe) Connect(ctx context.Context) (driver.Conn, error) {
+// Connect ignores ctx, like a driver stuck in a dial that cancellation
+// cannot interrupt: the case the shutdown join and its deadline guard.
+func (p *retentionSweepProbe) Connect(context.Context) (driver.Conn, error) {
 	p.once.Do(func() { close(p.entered) })
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-p.release:
-		return nil, errors.New("no such function: version")
-	}
+	<-p.release
+	return nil, errors.New("no such function: version")
 }
 
 func (*retentionSweepProbe) Driver() driver.Driver { return nil }
@@ -826,10 +885,9 @@ func TestShutdownJoinsRetentionSweepDuringBoot(t *testing.T) {
 
 func TestShutdownBoundsRetentionSweepWait(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		probe := retentionSweepProbe{entered: make(chan struct{})}
+		probe := retentionSweepProbe{entered: make(chan struct{}), release: make(chan struct{})}
 		db := sql.OpenDB(&probe)
 		defer db.Close()
-		defer time.Sleep(20 * time.Second)
 		app := NewApp(WithoutAutoMigrate(), WithoutDefaultMiddleware())
 		app.WithSeed(func(context.Context) error {
 			app.DB = db
@@ -859,6 +917,7 @@ func TestShutdownBoundsRetentionSweepWait(t *testing.T) {
 		if !stopped {
 			t.Error("Shutdown skipped OnStop after the retention sweep wait expired")
 		}
+		close(probe.release)
 		if err := <-run; err != nil {
 			t.Fatalf("Run: %v", err)
 		}

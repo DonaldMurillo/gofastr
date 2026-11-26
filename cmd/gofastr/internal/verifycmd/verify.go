@@ -412,6 +412,10 @@ func printVerifyOutcome(report *contracts.Report, fixed bool) {
 // the same marker the contracts use.
 func runGoVet(root string, capture bool) (out, suiteSkipped string, ok bool) {
 	var buf strings.Builder
+	transcript := func() string {
+		//gofastr:allow(combinedparse) the vet transcript is the report shown to the user, and vet prints its diagnostics on stderr
+		return strings.TrimSpace(buf.String())
+	}
 	run := func(args, env []string) bool {
 		cmd := exec.Command("go", append(append([]string{"vet"}, args...), "./...")...)
 		cmd.Dir = root
@@ -426,7 +430,7 @@ func runGoVet(root string, capture bool) (out, suiteSkipped string, ok bool) {
 	// A tree that fails plain vet usually fails to type-check, and the
 	// suite would print the same errors a second time.
 	if !run(nil, nil) {
-		return strings.TrimSpace(buf.String()), "", false
+		return transcript(), "", false
 	}
 	note := func(msg string) {
 		out := io.Writer(os.Stderr)
@@ -446,20 +450,20 @@ func runGoVet(root string, capture bool) (out, suiteSkipped string, ok bool) {
 			if buildErr != nil {
 				note(buildErr.Error())
 			}
-			return strings.TrimSpace(buf.String()), "", false
+			return transcript(), "", false
 		}
 		suiteArgs = []string{"-vettool=" + tool}
 	} else if suiteSkipped = suiteSkipReason(moduleGoVersion(root), cliGoVersion()); suiteSkipped != "" {
 		note(suiteSkipped)
 	} else if suiteArgs, suiteEnv = selfVettool(); suiteArgs == nil {
 		note("gofastr verify: cannot find this binary's own path, so the analyzer pass cannot run")
-		return strings.TrimSpace(buf.String()), "", false
+		return transcript(), "", false
 	}
 	ok = true
 	if suiteArgs != nil {
 		ok = run(append(suiteArgs, "-hostport=false", "-waitgroup=false"), suiteEnv)
 	}
-	return strings.TrimSpace(buf.String()), suiteSkipped, ok
+	return transcript(), suiteSkipped, ok
 }
 
 // cliGoVersion is the toolchain this binary was built with; tests

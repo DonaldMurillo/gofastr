@@ -26,6 +26,7 @@
   const FIELD = '[data-hui-field]';
   const CHOICE = '[data-hui-choice]';
   const ERR = '[data-hui-field-error]';
+  const formControls = Object.getOwnPropertyDescriptor(HTMLFormElement.prototype, 'elements').get;
 
   // say writes text into the one polite region, emptied first and
   // filled a beat later so the same words twice are read twice.
@@ -70,7 +71,7 @@
     // a bare choice.
     const errs = [...form.querySelectorAll(ERR)];
     const ctrls = [...form.querySelectorAll('[aria-describedby]')];
-    for (const e of form.elements) {
+    for (const e of formControls.call(form)) {
       if (form.contains(e)) continue;
       ctrls.push(e);
       const f = e.closest(FIELD);
@@ -91,7 +92,7 @@
         e.setAttribute('data-hui-field-error', '');
       }
     }
-    for (const e of [...form.querySelectorAll('[aria-invalid="true"]'), ...form.elements]) {
+    for (const e of [...form.querySelectorAll('[aria-invalid="true"]'), ...formControls.call(form)]) {
       if (e.getAttribute('aria-invalid') === 'true') e.removeAttribute('aria-invalid');
     }
   }
@@ -137,7 +138,7 @@
     let placed = 0;
     const said = [];
     for (const name of Object.keys(fields)) {
-      let el = form.elements.namedItem(name);
+      let el = formControls.call(form).namedItem(name);
       // A repeated name (the hidden+checkbox pair) answers a list; the
       // last control is the visible one.
       if (el && !el.tagName && el.length) el = el[el.length - 1];
@@ -176,8 +177,8 @@
       // be disabled or sit after another field, so every radio of a
       // marked group counts as refused; the reader lands on the group's
       // checked radio, or its first, among those that can take focus.
-      const groups = new Set([...form.elements].filter((r) => r.type === 'radio' && r.getAttribute('aria-invalid') === 'true').map((r) => r.name));
-      const enabled = [...form.elements].filter((e) => e.type !== 'hidden' && !e.matches(':disabled'));
+      const groups = new Set([...formControls.call(form)].filter((r) => r.type === 'radio' && r.getAttribute('aria-invalid') === 'true').map((r) => r.name));
+      const enabled = [...formControls.call(form)].filter((e) => e.type !== 'hidden' && !e.matches(':disabled'));
       let first = enabled.find((e) => (e.type === 'radio' ? groups.has(e.name) : e.getAttribute('aria-invalid') === 'true'));
       if (first && first.type === 'radio') first = enabled.find((r) => r.type === 'radio' && r.name === first.name && r.checked) || first;
       if (first && (!a || a === document.body || form.contains(a) || a.form === form)) first.focus();

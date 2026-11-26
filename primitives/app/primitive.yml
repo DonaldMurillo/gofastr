@@ -415,13 +415,14 @@ invariants:
       - test: framework.TestServeRole_QueueDoesNotStart
       - test: framework.TestAgentRole_QueueDoesNotStart
   - id: worker-drains-honor-deadline
-    rule: The cron, queue, outbox relay, access store fanout and mounted island fanout drainers stop waiting when the Shutdown drain context ends, even when work ignores its cancelled context. The queue, outbox relay, access store fanout and island fanout stops all go through drainWithDeadline, which starts the stop, returns the abandoned error at once when the drain context has already ended, and turns a panic in the stop into an error instead of crashing the process.
+    rule: The cron, queue, outbox relay, access store fanout, event bridge and mounted island fanout drainers stop waiting when the Shutdown drain context ends, even when work ignores its cancelled context. The queue, outbox relay, access store fanout, event bridge and island fanout stops all go through drainWithDeadline, which starts the stop, returns the abandoned error at once when the drain context has already ended, and turns a panic in the stop into an error instead of crashing the process.
     enforced_by:
       - test: framework.TestSweepApp3CronDrainHonorsShutdownDeadline
       - test: framework.TestAddQueueDrainHonorsShutdownDeadline
       - test: framework.TestShutdownJoinsOutboxRelay
       - test: framework.TestShutdownBoundsAccessFanoutStop
       - test: framework.TestShutdownBoundsIslandFanoutStop
+      - test: framework.TestEventBridgeShutdownDeadline
       - test: framework.TestDrainWithDeadline
   - id: module-workers-gated-by-module
     rule: A scheduler or queue added during a module's Init is gated on that module, so its jobs skip while the module is disabled.
@@ -451,8 +452,9 @@ invariants:
       - test: framework.TestShutdownDuringDeferredStartWaitsForTheHooks
       - test: framework.TestRunShutdownRaceInvariants
   - id: shutdown-stops-in-order
-    rule: "The teardown cancels the lifecycle context, ends A2A runs, stops the host, waits for the retention sweep up to the shutdown deadline, drains process modules, stops batteries in reverse dependency order and then runs OnStop hooks and drainers (including the access store and mounted island fanout stops). The outbox relay's drainer precedes the hooks registered before the relay started, and the mounted island fanout drainer precedes the hooks registered before the mount."
+    rule: "The teardown cancels the lifecycle context, ends A2A runs, stops the host, waits for the retention sweep up to the shutdown deadline, drains process modules, stops batteries in reverse dependency order and then runs OnStop hooks and drainers (including the access store fanout stop and the event bridge stop, which run before every OnStopFirst hook, and the mounted island fanout stop). The outbox relay's drainer precedes the hooks registered before the relay started, and the mounted island fanout drainer precedes the hooks registered before the mount."
     enforced_by:
+      - test: framework.TestEventBridgeShutdownDeadline
       - test: framework.TestSweepApp3A2ARunsEndBeforeStopHooks
       - test: framework.TestShutdownRunsOnce
       - test: framework.TestShutdownReportsHostStopFailure
@@ -787,13 +789,23 @@ decisions:
     status: accepted
     decision: Like queue-close-abandoned-at-deadline, the outbox drainer reports that it stopped waiting; the relay can outlive Shutdown until the stuck call returns, and claims expire at claimed_until so another relay can reclaim them for at-least-once delivery.
     upholds: [worker-drains-honor-deadline]
+  - id: event-bridge-stop-abandoned-at-deadline
+    date: 2026-11-26
+    status: accepted
+    decision: The event bridge drainer stops waiting for a fanout Publish stuck past the drain deadline and reports it; that publish is not cancelled and keeps running on the bridge's publisher goroutine, bounded by its 5-second publish timeout when the backend honors it, so the event may still reach other replicas or be lost at exit, and events queued behind it may be dropped. The bridge is a lossy live lane; WithOutbox is the durable one.
+    rejected:
+      - option: Wait for the publisher with no deadline, as the OnStop hook did.
+        why: A backend that ignores its publish context blocked Shutdown past its deadline and kept every later stop hook, log sinks included, from running.
+      - option: Add a context-taking stop to framework/event (AttachFanoutDrainer).
+        why: It repeated drainWithDeadline's expired-context check and select with its own error text, which bounded-stops-share-one-helper rules out, and grew the event package's exported API for one caller.
+    upholds: [worker-drains-honor-deadline]
   - id: bounded-stops-share-one-helper
     date: 2026-11-26
     status: accepted
-    decision: Every bounded stop (queue Close, outbox relay stop, access store fanout stop, mounted island fanout stop) calls drainWithDeadline with one error shape, "<stop> abandoned after the drain deadline", and the helper owns panic recovery and the already-expired-context check, so no caller repeats them. The bound lives where framework wires the stop into shutdown (Mount for the island fanout); the stop itself only takes the context and runs to completion.
+    decision: Every bounded stop (queue Close, outbox relay stop, access store fanout stop, event bridge stop, mounted island fanout stop) calls drainWithDeadline with one error shape, "<stop> abandoned after the drain deadline", and the helper owns panic recovery and the already-expired-context check, so no caller repeats them. The bound lives where framework wires the stop into shutdown (Mount for the island fanout); the stop itself only takes the context and runs to completion.
     rejected:
       - option: Skip the stop when the drain context has already ended.
-        why: Starting it still detaches the access store's subscription and the island subscriptions and lets the outbox relay begin winding down; the caller only stops waiting.
+        why: Starting it still detaches the access store's subscription, the event bridge's tap and subscription and the island subscriptions, and lets the outbox relay begin winding down; the caller only stops waiting.
       - option: Keep a hand-rolled select with its own recover in each drainer.
         why: The copies drift; the queue and outbox copies had no recover, so a panic in their stop crashed the process.
       - option: Bound the island fanout stop inside core-ui/island, or move drainWithDeadline to a lower package both can import.

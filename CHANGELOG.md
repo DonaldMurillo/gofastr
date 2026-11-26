@@ -24,6 +24,14 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Added
+
+- **`migrate.DetectDialectStrictContext(ctx, db)`** detects the dialect
+  like `DetectDialectStrict` and stops probing, or waiting to retry, when
+  `ctx` ends, returning its error. See
+  [Migrations](framework/docs/content/migrations.md)
+  ([#908](https://github.com/DonaldMurillo/gofastr/pull/908)).
+
 ### Changed
 
 - **BREAKING: `entity.Define` refuses a JSON field as a cursor column**
@@ -87,9 +95,27 @@ few lines, and link the PR or the docs page for the rest.
   full load does, so a panic no longer breaks navigation; recovery pages
   keep `lang` and `dir` on both shapes, and their title hooks and layouts
   get the request.
+- **Article pages** whose `ScreenTitle` panics serve with an empty
+  headline, as the page title already did, instead of failing the request.
+- **`headless.Mark`, `headless.Flag` and `entity.ValidationRegistry.Validate`
+  take a nil map.** Mark and Flag return a new map; Validate hands its
+  validators an empty one, so a validator that writes no longer panics.
+- **`service` on macOS** reads the default browser from `plutil` stdout
+  only, so a warning on stderr no longer breaks the JSON read. A failing
+  tool's error still quotes both streams.
 - **Forms with a control named `requestSubmit`** submit and clear
   through SearchInput, submit-on-enter, the repeater's Enter key, the
-  confirm dialog and passkey step-up.
+  confirm dialog and passkey step-up. A control named `elements`,
+  `enctype` or `reset` no longer breaks form errors, the hidden-checkbox
+  pair, multipart detection, local-entity forms or the validity tracker.
+  A multipart form with no file input and a control named `enctype` was
+  sent as JSON.
+- **MCP list tools:** the equality filter on a column named after a
+  reserved list key (`page`, `limit`, `sort`, `fields`, `where`, `cursor`
+  and the rest, or `q` on a searchable entity) takes the bracket key
+  (`page[eq]`), so the route no longer reads it as the control and the
+  tool's own arguments keep their name and type. `limit: 1` was refused
+  when the entity had a `limit` column, and `fields: "x"` answered 400.
 - **CopyButton** copies a `<pre>`'s text exactly, and copies nothing from a
   PasswordInput, hidden or revealed.
 - **Sortable lists:** a late conflict refresh no longer overwrites a newer
@@ -185,6 +211,12 @@ few lines, and link the PR or the docs page for the rest.
 - **SecurityHeaders preserves multiple `Reporting-Endpoints` lines** and
   honors an existing `csp-endpoint` on any line ([#900](https://github.com/DonaldMurillo/gofastr/pull/900)).
 
+- `App.Shutdown` stops waiting for an event bridge publish that is stuck
+  in the fanout backend when the drain deadline expires, reports the
+  deadline error and runs the remaining stop hooks. The stuck publish keeps
+  running in the background and may still reach other replicas or be lost
+  at exit. ([#912](https://github.com/DonaldMurillo/gofastr/pull/912))
+
 - `App.Shutdown` stops waiting for a stuck outbox relay when the drain
   deadline expires and reports the deadline error. ([#907](https://github.com/DonaldMurillo/gofastr/pull/907))
 
@@ -207,6 +239,12 @@ few lines, and link the PR or the docs page for the rest.
   screens that return `&article` from `ScreenSchema` or `ScreenSEO` no
   longer emit a second synthesized `Article` JSON-LD block
   ([#902](https://github.com/DonaldMurillo/gofastr/pull/902)).
+- `App.SweepErasureRetention`, auto-migration, schema diffing, seeding, and
+  the stale owner foreign key scan now stop probing the database dialect when
+  their caller's context ends. When the probe is cancelled or the database
+  stays unreachable, `SweepErasureRetention` returns the error and deletes
+  nothing, instead of sweeping with a guessed SQLite dialect
+  ([#908](https://github.com/DonaldMurillo/gofastr/pull/908)).
 
 #### Fixes that may need a change in your app
 

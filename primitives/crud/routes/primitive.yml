@@ -108,6 +108,10 @@ invariants:
     rule: RegisterEntityMCPTools marks list and get read-only, non-destructive and idempotent, create non-destructive and not idempotent, update and delete destructive and idempotent, each state move destructive and not idempotent, and every tool openWorldHint false.
     enforced_by:
       - test: framework/crud.TestEntityMCPToolsCarryHints
+  - id: mcp-list-filter-keys-leave-controls
+    rule: The list tool spells a column filter whose key is one filter.ListControlParams reserves (q only with SearchFields) in bracket form, in its schema and handler alike, so the route never reads it as the control and the tool's own control arguments keep their name and type.
+    enforced_by:
+      - test: framework/crud.TestReservedNamesMCPListTool
 decisions:
   - id: mcp-dispatches-through-the-router
     status: accepted

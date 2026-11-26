@@ -227,7 +227,7 @@
     const form = t.form;
     if (!form) return;
     let host = null;
-    for (const el of form.elements) {
+    for (const el of Object.getOwnPropertyDescriptor(HTMLFormElement.prototype, 'elements').get.call(form)) {
       if (el === t || !el.closest || el.closest('[data-hui-repeater]')) continue;
       if ((el.tagName === 'BUTTON' || el.tagName === 'INPUT') &&
         (el.type === 'submit' || el.type === 'image')) { host = el; break; }

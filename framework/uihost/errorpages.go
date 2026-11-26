@@ -56,6 +56,7 @@ func (s *notFoundBodyScreen) ScreenTitle(ctx context.Context) string {
 		}
 	}
 	if titled, ok := s.comp.(app.ScreenTitler); ok {
+		//gofastr:allow(guardbypass) a delegating ScreenTitle: its callers read it through safeNotFoundTitle or app.SafeScreenTitle, which recover
 		return titled.ScreenTitle(ctx)
 	}
 	return ""
