@@ -142,6 +142,11 @@ few lines, and link the PR or the docs page for the rest.
   `framework/entityui` saved-view redirects through it, so query parameters
   are no longer appended inside `#fragment` or dropped
   ([#905](https://github.com/DonaldMurillo/gofastr/pull/905)).
+- **`App.Shutdown` waits for the erasure-retention sweep before stop hooks.**
+  This prevents the sweep from racing SQLite cleanup during graceful shutdown.
+  If the wait reaches the shutdown deadline, teardown proceeds and
+  `Shutdown` reports the deadline error unless an earlier step failed
+  ([#903](https://github.com/DonaldMurillo/gofastr/pull/903)).
 
 - **BREAKING:** `config.Load` now rejects `validate` tags whose highest
   `min` exceeds their lowest `max`, even in unset optional nested structs.
