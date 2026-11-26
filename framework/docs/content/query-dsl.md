@@ -17,6 +17,18 @@ Pass column names directly for equality, or append an operator suffix (`<field>_
 
 Multiple query parameters combine with `AND`. Repeating the same parameter or using `_in` matches any listed value. Unknown fields, `Hidden` fields, and `NoQuery` fields are rejected with `400`.
 
+### Columns named like a list control
+
+The bare keys `page`, `limit`, `per_page`, `offset`, `sort`, `cursor`, `direction`, `where`, `fields`, `include`, `trashed` and `stream` always mean the list control, even when the entity has a column of the same name. `?direction=desc` sets the cursor direction; it does not filter a `direction` column. Filter that column with the bracket key: `?direction[eq]=in`. The other operators keep their suffix keys (`?direction_ne=out`). `q` follows the same rule only when the entity has `SearchFields` (see below); without them, `?q=` filters a column named `q`.
+
+Every surface that names filter keys spells such a column's equality filter in bracket form, so you can see why a bare key did not filter:
+
+- the entity's `llm.md` marks the field "filter with `direction[eq]=`: a bare `direction=` is the list control";
+- the OpenAPI document lists the `direction[eq]` parameter, described as the bracket form;
+- the `<table>_list` MCP tool takes `direction[eq]`, with the same description;
+- the generated SDK readmes list each such field, and the generated CLI sends the bracket key;
+- mounting the entity's CRUD routes logs one line per such field, naming the bracket key.
+
 ### Relation filters
 
 Filter across a declared `belongs_to` relation with `<relation>.<field>` (and any operator suffix):
@@ -84,7 +96,7 @@ before calling `Build`.
 
 ## MCP tool arguments
 
-The generated `<table>_list` MCP tool accepts the same filter keys as typed JSON arguments (`status`, `amount_gte`, `status_in: ["draft", "sent"]`). For `_in`, pass a non-empty JSON array whose elements contain no commas. The equality filter on a column named after a reserved list key (`page`, `limit`, `per_page`, `offset`, `sort`, `cursor`, `direction`, `where`, `fields`, `include`, `trashed`, `stream`, and `q` when the entity has `SearchFields`) takes the bracket key, such as `page[eq]`, so the route does not read it as that control and the tool's own arguments keep their meaning and type. The other operators keep their suffix keys (`sort_like`).
+The generated `<table>_list` MCP tool accepts the same filter keys as typed JSON arguments (`status`, `amount_gte`, `status_in: ["draft", "sent"]`). For `_in`, pass a non-empty JSON array whose elements contain no commas. The equality filter on a column named like a list control takes the bracket key, such as `page[eq]` ([Columns named like a list control](#columns-named-like-a-list-control)), so the tool's own `page`, `sort` and other arguments keep their meaning and type.
 
 ## Common mistakes
 
