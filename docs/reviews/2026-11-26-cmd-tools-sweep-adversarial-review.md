@@ -43,7 +43,6 @@ Minor:
 
 - `cmd/primitives/harness.go:174`: a changed module's failed `go build ./...` not reported (`changed-module-builds-whole`).
 - `cmd/kiln/agent_watcher.go:151`: the journaled turn summary removed (`turn-summary-closes-turn`).
-- `cmd/kiln/agent_watcher.go:213`: five of the nine destructive keywords removed (`destructive-request-needs-plan`).
 - `cmd/affected/main.go:357`: `XTestEmbedPatterns` dropped (`embed-patterns-select-the-embedder`).
 - `cmd/affected/main.go:431`: the selection no longer sorted; nothing states that it is.
 - `cmd/bench-resources/rusage_unix.go:16`: peak RSS returned unnormalised (`rss-in-bytes` tests the helper, not its caller).
@@ -80,3 +79,11 @@ Each was checked against the code; every mutation below was run with
 | `paths-are-relative-by-segment` lacks a `repo-other` case | real | case added (string-prefix `relPath` -> `TestRelPathComparesPathSegments`) |
 | stdin rule names no stop test | real | `TestStopBlocksOnARegistryThatDoesNotParse` and `...CannotBeRead` added (empty reader to stop -> both fail) |
 | nitpick: no positive test that a changed module builds whole | same as the follow-up above | left for the follow-up |
+
+CodeRabbit's replies on the resolved threads asked for four more checks,
+all made: `TestDestructiveIntentForcesPlan` covers all nine keywords and the
+wait-for-confirmation directive (four keywords cut -> fails; directive cut
+-> fails), `TestDashPromptIsNotAFlag` requires pi's and codex's
+`<kiln-system>` prefix (prefix dropped -> fails), the note-order check
+finds the verdict line (notes printed after it -> fails), and the
+analyzer's summary names the depth cutoff.

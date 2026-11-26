@@ -94,8 +94,11 @@ func TestSafeBuildArgsRecoversPanic(t *testing.T) {
 }
 
 func TestDestructiveIntentForcesPlan(t *testing.T) {
-	for _, msg := range []string{"delete the posts entity", "please WIPE everything", "drop users", "tear down the app"} {
-		if got := enrichPrompt(msg); !strings.Contains(got, "propose_plan") || !strings.HasSuffix(got, msg) {
+	for _, msg := range []string{
+		"delete the posts entity", "remove the field", "drop users", "please WIPE everything", "rebuild it",
+		"reset the seeds", "Clear All pages", "scrap that", "tear down the app",
+	} {
+		if got := enrichPrompt(msg); !strings.Contains(got, "propose_plan") || !strings.Contains(got, "Wait for the user's next message confirming") || !strings.HasSuffix(got, msg) {
 			t.Errorf("enrichPrompt(%q) = %q, want a propose_plan directive ahead of the request", msg, got)
 		}
 	}

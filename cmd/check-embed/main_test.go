@@ -78,12 +78,21 @@ func TestCLIPrintsOneLinePerNoteBeforeTheVerdict(t *testing.T) {
 	}
 	output, _ := exec.Command(binary, "./src/giveups").CombinedOutput()
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	verdict := -1
+	for i, line := range lines {
+		if strings.HasPrefix(line, "check-embed:") || strings.Contains(line, "✓") {
+			verdict = i
+		}
+	}
+	if verdict < 0 {
+		t.Fatalf("no verdict line\n%s", output)
+	}
 	printed := 0
 	for i, line := range lines {
 		if strings.Contains(line, "giveups.go:") {
 			printed++
-			if i == len(lines)-1 {
-				t.Errorf("a note was printed after the verdict\n%s", output)
+			if i > verdict {
+				t.Errorf("note on line %d follows the verdict on line %d\n%s", i, verdict, output)
 			}
 		}
 	}

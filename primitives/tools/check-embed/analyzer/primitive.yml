@@ -1,5 +1,5 @@
 primitive: tools.check-embed.analyzer
-summary: The static walk from each embed.Surface to the component tree its screen renders, reporting every reachable G.serverAction as a finding and every place it could not follow as a note.
+summary: The static walk from each embed.Surface to the component tree its screen renders, reporting every reachable G.serverAction as a finding and every place it could not follow as a note, down to maxReachDepth levels of type nesting, where it stops without one.
 code:
   - cmd/check-embed/embedcheck/analyzer.go
 docs:
