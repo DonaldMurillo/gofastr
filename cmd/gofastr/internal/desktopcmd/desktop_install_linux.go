@@ -13,6 +13,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/filelock"
 	"github.com/DonaldMurillo/gofastr/internal/linuxbundle"
 )
 
@@ -144,7 +145,31 @@ func uninstallLinuxBundle(id string) error {
 		return err
 	}
 	defer bin.Close()
+	// An update of the app holds this lock while it swaps the installation;
+	// uninstall holds it until every file is gone, so neither runs while
+	// the other is part way through.
+	lock, err := apps.OpenFile(linuxbundle.LockName(id), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if held, err := filelock.TryLock(lock); err != nil {
+		return err
+	} else if !held {
+		return fmt.Errorf("%s is installing an update; run uninstall again once it has restarted", id)
+	}
+	name := id
 	bundle, receipt, err := linuxbundle.OpenInstalled(filepath.Join(paths.apps, id), id)
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
+		// An update stopped between moving the installation aside and moving
+		// its replacement in leaves only <id>~old: uninstall that, when it is
+		// an unchanged installation the external files below also vouch for.
+		old := id + linuxbundle.SideSep + "old"
+		if b, r, oerr := linuxbundle.OpenInstalled(filepath.Join(paths.apps, old), id); oerr == nil {
+			bundle, receipt, err, name = b, r, nil, old
+			cli.Info("Found %s only as %s, left by an interrupted update; uninstalling that", id, old)
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("refusing uninstall; installation is missing or changed: %w", err)
 	}
@@ -177,10 +202,11 @@ func uninstallLinuxBundle(id string) error {
 	if err = bin.Remove(id); err != nil {
 		return errors.Join(err, linuxbundle.WriteFile(applications, id+".desktop", desktopEntry, 0600))
 	}
-	if err = removeLinuxInstallation(apps, id, bundle); err != nil {
+	if err = removeLinuxInstallation(apps, name, bundle); err != nil {
 		return err
 	}
 	removeLinuxUpdateLeftovers(apps, filepath.Join(paths.apps, id), id)
+	_ = apps.Remove(linuxbundle.LockName(id))
 	cli.Success("Uninstalled %s; application data and default-handler preferences were not changed", id)
 	refreshLinuxDesktopDatabase(paths.applications)
 	return nil

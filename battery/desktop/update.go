@@ -281,7 +281,7 @@ func (u *updater) install(ctx context.Context) error {
 	if !ok {
 		return errUpdateNeedsBundle
 	}
-	lock, locked, err := u.lockInstall()
+	lock, locked, err := u.lockInstall(platform)
 	if err != nil {
 		u.b.logger.Error("desktop: the update lock could not be taken", "error", update.LogDetail(err))
 		return errUpdateApply
@@ -447,17 +447,25 @@ func (u *updater) stageDir() (string, error) {
 }
 
 // updateLockName is the file in the data directory every running
-// instance of the app locks for the length of an install.
+// instance of the app locks for the length of an install, on a platform
+// that names no lock of its own (update.InstallLocker).
 const updateLockName = "update.lock"
 
 // lockInstall takes the cross-process install lock without waiting;
-// false means another instance holds it.
-func (u *updater) lockInstall() (*os.File, bool, error) {
-	dir, err := u.dataDir()
-	if err != nil {
-		return nil, false, err
+// false means another process holds it.
+func (u *updater) lockInstall(platform update.Platform) (*os.File, bool, error) {
+	path := ""
+	if l, ok := platform.(update.InstallLocker); ok {
+		path, _ = l.LockPath()
 	}
-	f, err := os.OpenFile(filepath.Join(dir, updateLockName), os.O_CREATE|os.O_RDWR, 0o600)
+	if path == "" {
+		dir, err := u.dataDir()
+		if err != nil {
+			return nil, false, err
+		}
+		path = filepath.Join(dir, updateLockName)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, false, err
 	}
@@ -494,6 +502,14 @@ func (u *updater) removeStaleOld() {
 	if !ok {
 		return
 	}
+	// Under the install lock: another instance part way through an install
+	// holds the copy it moved aside, which its rollback needs. A busy lock
+	// leaves the leftover for a later launch.
+	lock, locked, err := u.lockInstall(platform)
+	if err != nil || !locked {
+		return
+	}
+	defer lock.Close()
 	units, _ := installLayout(platform, name, dir)
 	removed := false
 	for _, unit := range units {

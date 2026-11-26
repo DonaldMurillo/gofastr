@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/internal/linuxbundle"
 )
@@ -56,6 +57,9 @@ func buildLinuxDesktopArchive(f desktopBuildFlags, name, arch string) error {
 	bundleRoot, err := linuxBundleRoot(f, name, arch)
 	if err != nil {
 		return err
+	}
+	if desktop.ValidateAppVersion(f.version) != nil {
+		cli.Warn("--version %q is not major.minor.patch: the archive installs, but it cannot be published to an update feed, and the app it installs cannot update itself. Use a version such as 1.2.0.", f.version)
 	}
 	icon, err := linuxBundleIcon(f.icon)
 	if err != nil {
@@ -220,8 +224,11 @@ trusted or install it without rendering and validating it first.
 This build writes release artifacts only: no menu installation, default
 protocol association, scheme registration or signing. An app installed
 with 'gofastr desktop install' whose Config.Update names a signed feed
-replaces its own installation when that feed offers this archive's
-successor; 'gofastr desktop feed --platform linux-<arch>' signs it.
+can update itself: the scheduled check sends the page update_available
+when the feed offers a newer archive, and the app installs it by
+calling InstallUpdate (the page's updates.install). 'gofastr desktop
+feed --platform linux-<arch>' signs the feed; its version must be
+major.minor.patch.
 The archive contains no GTK/WebKit/shared-library copies.
 manifest.json inventories the payload files with SHA-256 checksums; these
 checksums detect changes, not publisher authenticity. It does not inventory

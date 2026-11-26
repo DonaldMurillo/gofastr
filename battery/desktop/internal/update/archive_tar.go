@@ -21,7 +21,33 @@ var (
 	maxTarEntries       = maxZipEntries
 	maxTarEntry   int64 = linuxbundle.MaxExecutable
 	maxTarTotal   int64 = 2 << 30
+	// maxTarStream caps every byte the gzip stream expands to, the tar
+	// headers and the PAX records tar.Reader reads inside Next included,
+	// which no per-entry count sees: the entries' total plus room for
+	// their headers.
+	maxTarStream int64 = maxTarTotal + 64<<20
 )
+
+// errTarStream is the read error past maxTarStream.
+var errTarStream = errors.New("tar stream past its cap")
+
+// cappedReader fails a read once more than left bytes have come through.
+type cappedReader struct {
+	r    io.Reader
+	left int64
+}
+
+func (c *cappedReader) Read(p []byte) (int, error) {
+	if c.left <= 0 {
+		return 0, errTarStream
+	}
+	if int64(len(p)) > c.left {
+		p = p[:c.left]
+	}
+	n, err := c.r.Read(p)
+	c.left -= int64(n)
+	return n, err
+}
 
 // walkTarGz reads a .tar.gz whose entries all sit under one top-level
 // directory and calls fn for each regular file or directory, with its
@@ -36,7 +62,7 @@ func walkTarGz(data []byte, fn func(name string, hdr *tar.Header, body io.Reader
 		return "", fmt.Errorf("%w: not a gzip archive", ErrBadArchive)
 	}
 	defer gz.Close()
-	tr := tar.NewReader(gz)
+	tr := tar.NewReader(&cappedReader{r: gz, left: maxTarStream})
 	root := ""
 	seen := map[string]bool{}
 	var total int64
@@ -44,6 +70,9 @@ func walkTarGz(data []byte, fn func(name string, hdr *tar.Header, body io.Reader
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
 			break
+		}
+		if errors.Is(err, errTarStream) {
+			return "", fmt.Errorf("%w: archive expands too large", ErrBadArchive)
 		}
 		if err != nil {
 			return "", fmt.Errorf("%w: not a tar archive", ErrBadArchive)

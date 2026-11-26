@@ -28,6 +28,14 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/desktopcmd.TestLinuxUninstallRefusesAChangedLauncherOrEntryMode
       - test: cmd/gofastr/internal/desktopcmd.TestLinuxUninstallRetainsChanges
+  - id: uninstall-holds-the-update-lock
+    rule: Uninstall takes the <apps>/<id>~lock an update of the app holds, refuses before removing anything while an update holds it, and removes the lock file once the installation is gone.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxUninstallWaitsForAnUpdate
+  - id: uninstall-after-an-interrupted-update
+    rule: When <apps>/<id> is missing, uninstall removes <id>~old instead, only when it opens as an unchanged installation of id whose receipt matches the launcher and desktop entry.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxUninstallAfterAnInterruptedUpdate
   - id: uninstall-clears-update-leftovers
     rule: Uninstall also removes <id>~old and <id>~new when each opens as an installation of the same id, by their fixed inventory, and warns and keeps either otherwise.
     enforced_by:

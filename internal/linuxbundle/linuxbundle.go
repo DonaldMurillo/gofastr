@@ -94,6 +94,12 @@ type Receipt struct {
 	DesktopSHA256  string `json:"desktop_sha256"`
 }
 
+// LockName is the file beside an installation that an update of app id
+// and its uninstall each hold for their whole length, so neither runs
+// while the other is part way through. The "~" keeps it off every app's
+// own name.
+func LockName(id string) string { return id + SideSep + "lock" }
+
 // NewReceipt is the receipt of an installation of manifest with these launcher and desktop entry bytes.
 func NewReceipt(id string, manifest, launcher, desktopEntry []byte) Receipt {
 	return Receipt{receiptVersion, id, Digest(manifest), Digest(launcher), Digest(desktopEntry)}

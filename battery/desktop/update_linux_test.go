@@ -163,7 +163,8 @@ func TestInstallRefusedWhileAnotherProcessInstalls(t *testing.T) {
 		t.Error("relaunched while another process held the install lock")
 		return nil
 	})
-	held, err := os.OpenFile(filepath.Join(b.dataDir, updateLockName), os.O_CREATE|os.O_RDWR, 0o600)
+	lockPath := filepath.Join(filepath.Dir(dir), linuxbundle.LockName(next.ID))
+	held, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +172,7 @@ func TestInstallRefusedWhileAnotherProcessInstalls(t *testing.T) {
 	if ok, err := filelock.TryLock(held); err != nil || !ok {
 		t.Fatalf("TryLock = %v, %v", ok, err)
 	}
-	other, err := os.OpenFile(filepath.Join(b.dataDir, updateLockName), os.O_RDWR, 0)
+	other, err := os.OpenFile(lockPath, os.O_RDWR, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,5 +182,36 @@ func TestInstallRefusedWhileAnotherProcessInstalls(t *testing.T) {
 	}
 	if err := b.InstallUpdate(context.Background()); !errors.Is(err, errUpdateInProgress) {
 		t.Fatalf("InstallUpdate = %v, want %v", err, errUpdateInProgress)
+	}
+}
+
+// Launch cleanup takes the install lock: while another process holds it
+// (part way through an install, its rollback needing the copy it moved
+// aside) the leftover stays, and the next launch with the lock free
+// removes it.
+func TestLinuxStaleCleanupWaitsForTheInstallLock(t *testing.T) {
+	current := linuxbundletest.Default("1.0.0")
+	b, _, _ := installFixture(t, "1.2.0", nil)
+	apps := filepath.Join(t.TempDir(), "apps")
+	dir := linuxbundletest.Install(t, apps, current, []byte("l"), []byte("d"))
+	if err := os.MkdirAll(filepath.Join(dir+update.SideSep+"old", "bin"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	b.updaterFor().platform = update.NewInstalledPlatform(filepath.Join(dir, "bin", current.ID), nil)
+	held, err := os.OpenFile(filepath.Join(apps, linuxbundle.LockName(current.ID)), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := filelock.TryLock(held); err != nil || !ok {
+		t.Fatalf("TryLock = %v, %v", ok, err)
+	}
+	b.updaterFor().removeStaleOld()
+	if _, err := os.Lstat(dir + update.SideSep + "old"); err != nil {
+		t.Fatalf("cleanup removed the moved-aside copy while another process held the install lock: %v", err)
+	}
+	_ = held.Close()
+	b.updaterFor().removeStaleOld()
+	if _, err := os.Lstat(dir + update.SideSep + "old"); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("cleanup with the lock free kept the leftover: %v", err)
 	}
 }

@@ -395,7 +395,7 @@
 - Trigger: expand the OMP GLM review toward twenty distinct findings without relaxing the evidence bar.
 - Approach: keep the numbered findings ledger; require fresh public-boundary reproduction, retained evidence and deduplication before assigning an ID.
 - Evidence: the ledger reached 20 distinct reproduced roots; C20 uses real HTTP and sequential versioned moves, while the delayed-refresh race and ACP parse-error reserve remain uncounted.
-- Next time: resume from the ledger, preserve conditional compatibility caveats, and stop allocating new reviews when the requested target is reached.
+- Next time: keep the numbered findings ledger on the review's PR (review records no longer live in the repo), preserve conditional compatibility caveats, and stop allocating new reviews when the requested target is reached.
 - Status: active
 
 ## 2026-11-07 - Respect component cardinality and registry ownership

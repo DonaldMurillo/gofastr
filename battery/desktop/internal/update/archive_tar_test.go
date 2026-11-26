@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -245,5 +246,25 @@ func TestWriteFeedRefusesABadLinuxArchive(t *testing.T) {
 				t.Fatalf("WriteFeed = %v, want it to name the missing manifest", err)
 			}
 		})
+	}
+}
+
+// The cap on the whole expanded stream sees what no per-entry check
+// does: PAX records tar.Reader reads inside Next.
+func TestExtractTarGzCapsTheExpandedStream(t *testing.T) {
+	lower(t, &maxTarStream, 64<<10)
+	if _, err := ExtractTarGz(tarGz(t, reg("app/a", 0o644, "small")), t.TempDir()); err != nil {
+		t.Fatalf("a small archive under the cap: %v", err)
+	}
+	var entries []tarEntry
+	for i := range 4 {
+		e := reg("app/f"+strconv.Itoa(i), 0o644, "x")
+		e.hdr.PAXRecords = map[string]string{"comment": strings.Repeat("p", 30<<10)}
+		e.hdr.Format = tar.FormatPAX
+		entries = append(entries, e)
+	}
+	_, err := ExtractTarGz(tarGz(t, entries...), t.TempDir())
+	if !errors.Is(err, ErrBadArchive) || !strings.Contains(err.Error(), "expands too large") {
+		t.Fatalf("ExtractTarGz = %v, want expands too large", err)
 	}
 }

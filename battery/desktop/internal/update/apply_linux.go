@@ -107,6 +107,14 @@ func (p *linuxPlatform) Bundle() (string, string, bool) {
 	return p.manifest.ID, p.apps, true
 }
 
+func (p *linuxPlatform) LockPath() (string, bool) {
+	id, apps, ok := p.Bundle()
+	if !ok {
+		return "", false
+	}
+	return filepath.Join(apps, linuxbundle.LockName(id)), true
+}
+
 func (p *linuxPlatform) Units() ([]Unit, bool) {
 	id, apps, ok := p.Bundle()
 	if !ok {

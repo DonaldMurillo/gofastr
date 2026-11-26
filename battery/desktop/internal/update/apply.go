@@ -236,6 +236,15 @@ type FileLayout interface {
 	Inspect(extracted string) (BundleInfo, error)
 }
 
+// InstallLocker is the optional Platform extension for a host whose
+// install lock must be found by a process other than the app (Linux:
+// gofastr desktop uninstall), so it sits beside the installation rather
+// than in the app's data directory.
+type InstallLocker interface {
+	// LockPath is the file every install, launch cleanup and uninstall locks.
+	LockPath() (string, bool)
+}
+
 // Extractor is the optional Platform extension for a host whose release
 // archive is not the zip ExtractZip reads (Linux: a .tar.gz).
 type Extractor interface {
