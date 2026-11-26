@@ -157,10 +157,15 @@ invariants:
       - test: framework/crud.TestUpdateAllKeepsSuppliedUpdatedAt
       - test: framework/crud.TestUpdateAllNamesColumnsLikeUpdateOne
   - id: reserved-name-column-filters-by-bracket
-    rule: A column named after any key filter.ListControlParams reserves is filtered by its bracket key on the list route, and the reserved-names table holds one row per such key.
+    rule: A column named after any key filter.ListControlParams reserves is filtered by its bracket key on the list route while the bare key keeps its control meaning, and the reserved-names table holds one row per such key.
     enforced_by:
       - test: framework/crud.TestReservedNamesKeepBothMeanings
       - test: framework/crud.TestReservedNamesTableCoversTheParser
+  - id: control-named-field-is-explained
+    rule: A field whose bare key the list route reads as a control is named once at CRUD mount in the log and noted in the entity's llm.md with its bracket key; q counts only when the entity has SearchFields.
+    enforced_by:
+      - test: framework/crud.TestMountLogsControlNamedFields
+      - test: framework/crud.TestLLMMDNotesControlNamedField
 decisions:
   - id: sqlite-sorts-nulls-as-postgres
     date: 2026-11-16

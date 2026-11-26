@@ -30,14 +30,6 @@ type reservedNameRow struct {
 	bug     string
 }
 
-// bareControlAlsoFilters is the open finding behind every skipped
-// control half: crud reads a bare list control (?page=2) for its
-// meaning and filter.ParseFiltersValues reads the same key as a filter
-// on the same-named column (filter's field-beats-control-word), so the
-// page is narrowed to rows whose column equals the control's value and
-// lists nothing. Only q is exempt (R12 S2-02, with SearchFields).
-const bareControlAlsoFilters = "#915: a bare list control is also read as a filter on the same-named column (filter field-beats-control-word), so the control lists nothing"
-
 func wantIDs(want ...string) func(*testing.T, []string, string) {
 	return func(t *testing.T, ids []string, body string) {
 		t.Helper()
@@ -51,25 +43,25 @@ func wantIDs(want ...string) func(*testing.T, []string, string) {
 // TestReservedNamesTableCoversTheParser holds it to that list, so a new
 // reserved key joins by adding its row here.
 var reservedNameRows = []reservedNameRow{
-	{key: "cursor", control: "cursor=&limit=2", want: wantIDs("a", "b"), bug: bareControlAlsoFilters},
-	{key: "direction", control: "cursor=&direction=forward&limit=1", want: wantIDs("a"), bug: bareControlAlsoFilters},
+	{key: "cursor", control: "cursor=&limit=2", want: wantIDs("a", "b")},
+	{key: "direction", control: "cursor=&direction=forward&limit=1", want: wantIDs("a")},
 	{key: "fields", control: "fields=title&sort=id", want: func(t *testing.T, ids []string, body string) {
 		t.Helper()
 		wantIDs("a", "b", "c")(t, ids, body)
 		if strings.Contains(body, `"page":"page-`) {
 			t.Errorf("?fields=title projected a column it does not name: %s", body)
 		}
-	}, bug: bareControlAlsoFilters},
-	{key: "include", control: "include=&sort=id", want: wantIDs("a", "b", "c"), bug: bareControlAlsoFilters},
-	{key: "limit", control: "limit=1&sort=id", want: wantIDs("a"), bug: bareControlAlsoFilters},
-	{key: "offset", control: "offset=1&limit=1&sort=id", want: wantIDs("b"), bug: bareControlAlsoFilters},
-	{key: "page", control: "page=2&limit=1&sort=id", want: wantIDs("b"), bug: bareControlAlsoFilters},
-	{key: "per_page", control: "per_page=1&sort=id", want: wantIDs("a"), bug: bareControlAlsoFilters},
+	}},
+	{key: "include", control: "include=&sort=id", want: wantIDs("a", "b", "c")},
+	{key: "limit", control: "limit=1&sort=id", want: wantIDs("a")},
+	{key: "offset", control: "offset=1&limit=1&sort=id", want: wantIDs("b")},
+	{key: "page", control: "page=2&limit=1&sort=id", want: wantIDs("b")},
+	{key: "per_page", control: "per_page=1&sort=id", want: wantIDs("a")},
 	{key: "q", control: "q=orchard", want: wantIDs("b")},
-	{key: "sort", control: "sort=-id", want: wantIDs("c", "b", "a"), bug: bareControlAlsoFilters},
-	{key: "stream", control: "stream=true&sort=id", want: wantIDs("a", "b", "c"), bug: bareControlAlsoFilters},
-	{key: "trashed", control: "trashed=false&sort=id", want: wantIDs("a", "b", "c"), bug: bareControlAlsoFilters},
-	{key: "where", control: `where={"field":"title","op":"eq","value":"meadow"}`, want: wantIDs("c"), bug: bareControlAlsoFilters},
+	{key: "sort", control: "sort=-id", want: wantIDs("c", "b", "a")},
+	{key: "stream", control: "stream=true&sort=id", want: wantIDs("a", "b", "c")},
+	{key: "trashed", control: "trashed=false&sort=id", want: wantIDs("a", "b", "c")},
+	{key: "where", control: `where={"field":"title","op":"eq","value":"meadow"}`, want: wantIDs("c")},
 }
 
 func TestReservedNamesTableCoversTheParser(t *testing.T) {

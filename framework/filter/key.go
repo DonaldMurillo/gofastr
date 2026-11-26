@@ -175,9 +175,23 @@ func (s KeySpeller) AmbiguousKeys() []string {
 	return out
 }
 
-// Key returns SuffixKey, or BracketKey where that is ambiguous.
+// ControlNamedKeys returns, sorted, the names that are also list control
+// keys: a bare one is read as the control, so the field is filtered by
+// its bracket key.
+func (s KeySpeller) ControlNamedKeys() []string {
+	var out []string
+	for _, n := range slices.Sorted(maps.Keys(s.names)) {
+		if reservedListParams[n] {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// Key returns SuffixKey, or BracketKey where that is ambiguous or is a
+// list control key.
 func (s KeySpeller) Key(name string, op FilterOp) string {
-	if s.Ambiguous(name, op) {
+	if s.Ambiguous(name, op) || reservedListParams[SuffixKey(name, op)] {
 		return BracketKey(name, op)
 	}
 	return SuffixKey(name, op)

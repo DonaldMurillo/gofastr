@@ -58,6 +58,10 @@ invariants:
     enforced_by:
       - test: framework.TestBrokerFilterCannotSetControlKeys
       - test: framework.TestSweepPMHostQueryFilterSanitizedOnDispatch
+  - id: query-filter-brackets-control-named-field
+    rule: A bare host.entity.query filter key naming a field that is also a list control (q only with SearchFields) is sent as its bracket key, so it filters the column and never sets the control.
+    enforced_by:
+      - test: framework.TestBrokerFilterBracketsControlNamedField
   - id: caller-refusal-is-capability-denial
     rule: A 401 or 403 from the CRUD re-dispatch reaches the child as CodeCapabilityDenied; any other failure is CodeInternalError.
     enforced_by:

@@ -953,10 +953,28 @@ func sdkBracketKeysNote(spec sdkSpec) string {
 				safe, sdkFenceWord(e.Table), filter.BracketKey(safe, filter.OpEq), safe, bracketSplit(safe)))
 		}
 	}
-	if len(lines) == 0 {
-		return ""
+	var note string
+	if len(lines) > 0 {
+		note = "These filter keys name a field and also another field plus an operator\nsuffix, so the server answers the bare key 400. Send the operator word in\nbrackets after the whole field name (eq, ne, gt, gte, lt, lte, like, in):\n\n" + strings.Join(lines, "\n") + "\n\n"
 	}
-	return "These filter keys name a field and also another field plus an operator\nsuffix, so the server answers the bare key 400. Send the operator word in\nbrackets after the whole field name (eq, ne, gt, gte, lt, lte, like, in):\n\n" + strings.Join(lines, "\n") + "\n\n"
+	var controls []string
+	for _, e := range spec.Entities {
+		noQuery := map[string]bool{}
+		for _, f := range e.Fields {
+			noQuery[f.Snake] = f.NoQuery
+		}
+		for _, key := range e.filterKeys.ControlNamedKeys() {
+			if key == "q" || noQuery[key] {
+				continue
+			}
+			safe := sdkFenceWord(key)
+			controls = append(controls, fmt.Sprintf("- `%s` on `%s`: send `%s`", safe, sdkFenceWord(e.Table), filter.BracketKey(safe, filter.OpEq)))
+		}
+	}
+	if len(controls) > 0 {
+		note += "These fields share their name with a list control, so the bare key sets\nthe control (`?page=2` is the second page). Filter the field by its bracket\nkey:\n\n" + strings.Join(controls, "\n") + "\n\n"
+	}
+	return note
 }
 
 // bracketSplit spells the suffix reading of an ambiguous key in bracket

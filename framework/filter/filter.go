@@ -167,6 +167,14 @@ func ListControlParams() []string {
 	return slices.Sorted(maps.Keys(reservedListParams))
 }
 
+// IsListControl reports whether key is a reserved list control key.
+func IsListControl(key string) bool { return reservedListParams[key] }
+
+// controlWins reports whether a bare key is read as its list control even
+// when a field has the same name. q is the exception: it filters a field
+// named q unless the caller reads it as search and strips it first.
+func controlWins(key string) bool { return key != "q" && reservedListParams[key] }
+
 type fieldIndex struct {
 	allow   map[string]bool
 	noQuery map[string]bool
@@ -314,7 +322,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 		if len(values) == 0 {
 			continue
 		}
-		if strings.Contains(key, ".") {
+		if strings.Contains(key, ".") || controlWins(key) {
 			continue
 		}
 		name, op, ok, keyErr := ReadKey(key, named)
