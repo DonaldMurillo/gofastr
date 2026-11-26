@@ -891,7 +891,11 @@ func (a *App) Mount(m Mountable) *App {
 			if err != nil {
 				panic("framework: WithFanout: wiring mounted host: " + err.Error())
 			}
-			a.lc.PrependDrainer(lifecycle.DrainFunc(stop))
+			a.lc.PrependDrainer(lifecycle.DrainFunc(func(ctx context.Context) error {
+				return a.drainWithDeadline(ctx, "island fanout stop", func() error {
+					return stop(ctx)
+				}, "island fanout stop abandoned after the drain deadline")
+			}))
 		case interface {
 			SetFanout(fanout.Fanout) (func(), error)
 		}:

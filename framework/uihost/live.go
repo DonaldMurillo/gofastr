@@ -52,7 +52,7 @@ func (ds *UIHost) SetFanout(f fanout.Fanout) (stop func(), err error) {
 }
 
 // SetFanoutContext wires the island manager like [UIHost.SetFanout],
-// with a stop function that waits only until its context ends.
+// with the stop of [island.Manager.SetFanoutContext].
 func (ds *UIHost) SetFanoutContext(f fanout.Fanout) (stop func(context.Context) error, err error) {
 	return ds.Islands.SetFanoutContext(f)
 }

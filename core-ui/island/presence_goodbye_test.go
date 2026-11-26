@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -12,19 +13,30 @@ import (
 )
 
 func TestFanoutStopContextAlreadyExpired(t *testing.T) {
+	h := &holdRoster{Fanout: fanout.NewInProcess(), entered: make(chan struct{}), release: make(chan struct{}), landed: make(chan struct{})}
+	close(h.release)
 	m := NewManager()
-	stop, err := m.SetFanoutContext(fanout.NewInProcess())
+	stop, err := m.SetFanoutContext(h)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := stop(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	joined := m.PresenceJoin("session", PresenceIdentity{UserID: "user"}, []string{"doc:1"})
+	defer joined.Leave()
 	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
 	for range 64 {
 		if err := stop(expired); !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("stop with an expired context = %v, want context.DeadlineExceeded", err)
+		}
+	}
+	if err := stop(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a later stop = %v, want the first stop's context.DeadlineExceeded", err)
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, n := range h.order {
+		if n == 0 {
+			t.Fatalf("presence messages by member count = %v, want no goodbye after the context ended", h.order)
 		}
 	}
 }
@@ -60,22 +72,6 @@ func (f *cancelGoodbyeFanout) Publish(ctx context.Context, topic string, payload
 	return f.holdRoster.Publish(ctx, topic, payload)
 }
 
-type firstDoneGate struct {
-	context.Context
-	entered, release chan struct{}
-	once             sync.Once
-}
-
-func (c *firstDoneGate) Done() <-chan struct{} {
-	first := false
-	c.once.Do(func() { first = true })
-	if first {
-		close(c.entered)
-		<-c.release
-	}
-	return c.Context.Done()
-}
-
 func TestFanoutStopReportsInterruptedGoodbye(t *testing.T) {
 	wait, stopWaiting := context.WithTimeout(t.Context(), 2*time.Second)
 	defer stopWaiting()
@@ -104,29 +100,98 @@ func TestFanoutStopReportsInterruptedGoodbye(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(wait)
 	defer cancel()
-	gate := &firstDoneGate{Context: ctx, entered: make(chan struct{}), release: make(chan struct{})}
-	releaseSelect := sync.OnceFunc(func() { close(gate.release) })
-	defer releaseSelect()
 	result := make(chan error, 1)
-	go func() { result <- stop(gate) }()
-	await(gate.entered, "the stop waiter to evaluate ctx.Done")
+	go func() { result <- stop(ctx) }()
 	releaseRoster()
 	await(f.goodbye, "the goodbye Publish")
 	cancel()
-
-	// Let detach finish before the first waiter can select, making both cases ready.
-	detachErr := stop(wait)
-	releaseSelect()
 	select {
 	case err := <-result:
-		if !errors.Is(err, context.Canceled) {
-			t.Errorf("stop = %v, want context.Canceled", err)
+		if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "island fanout stop interrupted") {
+			t.Errorf("stop = %v, want island fanout stop interrupted wrapping context.Canceled", err)
 		}
 	case <-wait.Done():
 		t.Fatal("stop did not return")
 	}
-	if !errors.Is(detachErr, context.Canceled) {
-		t.Errorf("detach result = %v, want context.Canceled", detachErr)
+}
+
+// unsubscribeSignal reports when the island and presence subscriptions
+// are cancelled.
+type unsubscribeSignal struct {
+	fanout.Fanout
+	island, presence chan struct{}
+}
+
+func (f *unsubscribeSignal) Subscribe(topic string, fn func([]byte)) (func(), error) {
+	cancel, err := f.Fanout.Subscribe(topic, fn)
+	if err != nil {
+		return cancel, err
+	}
+	ch := f.island
+	if topic == presenceFanoutTopic {
+		ch = f.presence
+	}
+	return func() {
+		cancel()
+		close(ch)
+	}, nil
+}
+
+// A stop held up by a stuck roster Publish still unsubscribes first, so
+// a peer's island update no longer reaches local sessions while the
+// abandoned stop waits on the transport.
+func TestFanoutStopUnsubscribesBeforeQueuedRosters(t *testing.T) {
+	bus := fanout.NewInProcess()
+	h := &holdRoster{Fanout: bus, entered: make(chan struct{}), release: make(chan struct{}), landed: make(chan struct{})}
+	f := &unsubscribeSignal{Fanout: h, island: make(chan struct{}), presence: make(chan struct{})}
+	m := NewManager()
+	stop, err := m.SetFanoutContext(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, unsubscribe := m.Subscribe("session")
+	defer unsubscribe()
+	joined := m.PresenceJoin("session", PresenceIdentity{UserID: "user"}, []string{"doc:1"})
+	defer joined.Leave()
+	select {
+	case <-h.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the join's roster never reached Publish")
+	}
+	stopped := make(chan error, 1)
+	go func() { stopped <- stop(context.Background()) }()
+	defer func() {
+		close(h.release)
+		select {
+		case err := <-stopped:
+			if err != nil {
+				t.Errorf("stop = %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Error("stop did not return after the roster was released")
+		}
+	}()
+	for _, c := range []struct {
+		name string
+		ch   chan struct{}
+	}{{"island", f.island}, {"presence", f.presence}} {
+		select {
+		case <-c.ch:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("the %s subscription is still attached while a roster Publish is stuck", c.name)
+		}
+	}
+	body, err := json.Marshal(islandFanoutMsg{SessionID: "session", IslandID: "isl", HTML: "<p>late</p>"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bus.Publish(context.Background(), islandFanoutTopic, fanout.Wrap("peer", body)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case upd := <-ch:
+		t.Fatalf("a peer update reached the local session after stop began: %+v", upd)
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 

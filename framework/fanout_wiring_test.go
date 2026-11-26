@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -127,7 +128,7 @@ type blockingPresenceFanout struct {
 	entered      chan context.Context
 	release      chan struct{}
 	detached     chan struct{}
-	goodbyes     int
+	goodbyes     atomic.Int32
 }
 
 func (f *blockingPresenceFanout) Publish(ctx context.Context, topic string, payload []byte) error {
@@ -139,7 +140,7 @@ func (f *blockingPresenceFanout) Publish(ctx context.Context, topic string, payl
 		if err == nil && json.Unmarshal(body, &msg) == nil {
 			goodbye := len(msg.Members) == 0
 			if goodbye {
-				f.goodbyes++
+				f.goodbyes.Add(1)
 			}
 			if goodbye == f.blockGoodbye {
 				f.entered <- ctx
@@ -159,6 +160,25 @@ func (f *blockingPresenceFanout) Subscribe(topic string, fn func([]byte)) (func(
 		cancel()
 		close(f.detached)
 	}, nil
+}
+
+// waitIslandsDetached waits until the manager accepts a new fanout, which
+// it refuses while the previous detach is still running.
+func waitIslandsDetached(t *testing.T, m *island.Manager) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		stop, err := m.SetFanout(fanout.NewInProcess())
+		if err == nil {
+			stop()
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Error("island fanout did not detach after Publish was released")
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 func TestShutdownBoundsIslandFanoutStop(t *testing.T) {
@@ -183,17 +203,13 @@ func TestShutdownBoundsIslandFanoutStop(t *testing.T) {
 			defer joined.Leave()
 			defer func() {
 				close(f.release)
-				select {
-				case <-f.detached:
-					want := 0
-					if tc.blockGoodbye {
-						want = 1
-					}
-					if f.goodbyes != want {
-						t.Errorf("goodbyes = %d, want %d", f.goodbyes, want)
-					}
-				case <-time.After(2 * time.Second):
-					t.Error("island fanout did not detach after Publish was released")
+				waitIslandsDetached(t, host.Islands)
+				want := int32(0)
+				if tc.blockGoodbye {
+					want = 1
+				}
+				if got := f.goodbyes.Load(); got != want {
+					t.Errorf("goodbyes = %d, want %d", got, want)
 				}
 			}()
 			waitForPublish := func() context.Context {
@@ -227,11 +243,17 @@ func TestShutdownBoundsIslandFanoutStop(t *testing.T) {
 			}
 			select {
 			case err := <-done:
-				if !errors.Is(err, context.DeadlineExceeded) {
-					t.Fatalf("Shutdown = %v, want context.DeadlineExceeded", err)
+				const msg = "island fanout stop abandoned after the drain deadline"
+				if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), msg) {
+					t.Fatalf("Shutdown = %v, want %q wrapping context.DeadlineExceeded", err, msg)
 				}
 			case <-time.After(time.Second):
 				t.Fatal("Shutdown waited past its deadline for blocked presence Publish")
+			}
+			select {
+			case <-f.detached:
+			case <-time.After(2 * time.Second):
+				t.Fatal("the presence subscription is still attached after Shutdown abandoned the island fanout stop")
 			}
 		})
 	}
@@ -247,10 +269,10 @@ func TestShutdownDetachesIslandFanoutInOrder(t *testing.T) {
 	a.OnStop(func() error {
 		select {
 		case <-f.detached:
-			if f.goodbyes == 1 {
-				return nil
+			if n := f.goodbyes.Load(); n != 1 {
+				return fmt.Errorf("goodbyes before OnStop = %d, want 1", n)
 			}
-			return fmt.Errorf("goodbyes before OnStop = %d, want 1", f.goodbyes)
+			return nil
 		default:
 			return errors.New("island fanout is still attached during an earlier OnStop hook")
 		}

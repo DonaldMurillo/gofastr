@@ -415,12 +415,13 @@ invariants:
       - test: framework.TestServeRole_QueueDoesNotStart
       - test: framework.TestAgentRole_QueueDoesNotStart
   - id: worker-drains-honor-deadline
-    rule: The cron, queue, outbox relay and access store fanout drainers stop waiting when the Shutdown drain context ends, even when work ignores its cancelled context. The queue, outbox relay and access store fanout stops all go through drainWithDeadline, which starts the stop, returns the abandoned error at once when the drain context has already ended, and turns a panic in the stop into an error instead of crashing the process.
+    rule: The cron, queue, outbox relay, access store fanout and mounted island fanout drainers stop waiting when the Shutdown drain context ends, even when work ignores its cancelled context. The queue, outbox relay, access store fanout and island fanout stops all go through drainWithDeadline, which starts the stop, returns the abandoned error at once when the drain context has already ended, and turns a panic in the stop into an error instead of crashing the process.
     enforced_by:
       - test: framework.TestSweepApp3CronDrainHonorsShutdownDeadline
       - test: framework.TestAddQueueDrainHonorsShutdownDeadline
       - test: framework.TestShutdownJoinsOutboxRelay
       - test: framework.TestShutdownBoundsAccessFanoutStop
+      - test: framework.TestShutdownBoundsIslandFanoutStop
       - test: framework.TestDrainWithDeadline
   - id: module-workers-gated-by-module
     rule: A scheduler or queue added during a module's Init is gated on that module, so its jobs skip while the module is disabled.
@@ -789,12 +790,14 @@ decisions:
   - id: bounded-stops-share-one-helper
     date: 2026-11-26
     status: accepted
-    decision: Every bounded stop (queue Close, outbox relay stop, access store fanout stop) calls drainWithDeadline with one error shape, "<stop> abandoned after the drain deadline", and the helper owns panic recovery and the already-expired-context check, so no caller repeats them.
+    decision: Every bounded stop (queue Close, outbox relay stop, access store fanout stop, mounted island fanout stop) calls drainWithDeadline with one error shape, "<stop> abandoned after the drain deadline", and the helper owns panic recovery and the already-expired-context check, so no caller repeats them. The bound lives where framework wires the stop into shutdown (Mount for the island fanout); the stop itself only takes the context and runs to completion.
     rejected:
       - option: Skip the stop when the drain context has already ended.
-        why: Starting it still detaches the access store's subscription and lets the outbox relay begin winding down; the caller only stops waiting.
+        why: Starting it still detaches the access store's subscription and the island subscriptions and lets the outbox relay begin winding down; the caller only stops waiting.
       - option: Keep a hand-rolled select with its own recover in each drainer.
         why: The copies drift; the queue and outbox copies had no recover, so a panic in their stop crashed the process.
+      - option: Bound the island fanout stop inside core-ui/island, or move drainWithDeadline to a lower package both can import.
+        why: core-ui may not import framework, and the only caller that needs a bound is framework's shutdown; a lower package would add an export for one internal caller, while bounding at the wiring site keeps one implementation.
     upholds: [worker-drains-honor-deadline]
   - id: on-stop-hooks-ignore-context
     date: 2026-11-16

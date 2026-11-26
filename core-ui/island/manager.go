@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/fanout"
-	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
@@ -322,45 +321,26 @@ func (m *Manager) publishFanout(sessionID string, update IslandUpdate) {
 // SetFanout attaches a fanout so PushUpdate updates cross replicas and updates originating on other
 // replicas are re-delivered to the local session stream (topic "gofastr.islands").
 func (m *Manager) SetFanout(f fanout.Fanout) (stop func(), err error) {
-	detach, err := m.attachFanout(f)
+	stopCtx, err := m.SetFanoutContext(f)
 	if err != nil {
 		return nil, err
 	}
-	var once sync.Once
-	return func() { once.Do(func() { _ = detach(context.Background()) }) }, nil
+	return func() { _ = stopCtx(context.Background()) }, nil
 }
 
-// SetFanoutContext is [Manager.SetFanout] with a stop function that waits only
-// until ctx ends. If the caller stops waiting, detachment continues as in-flight work allows.
+// SetFanoutContext is [Manager.SetFanout] with a stop that sends goodbyes only
+// while ctx lasts and returns ctx's error if it ended first. The stop runs
+// once; later calls wait for it and return its result.
 func (m *Manager) SetFanoutContext(f fanout.Fanout) (stop func(context.Context) error, err error) {
 	detach, err := m.attachFanout(f)
 	if err != nil {
 		return nil, err
 	}
 	var once sync.Once
-	done := make(chan struct{})
 	var stopErr error
 	return func(ctx context.Context) error {
-		once.Do(func() {
-			go func() {
-				defer close(done)
-				defer func() {
-					if r := recover(); r != nil {
-						stopErr = fmt.Errorf("island fanout stop panicked: %v", textsafe.Recovered(r))
-					}
-				}()
-				stopErr = detach(ctx)
-			}()
-		})
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		select {
-		case <-done:
-			return stopErr
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+		once.Do(func() { stopErr = detach(ctx) })
+		return stopErr
 	}, nil
 }
 
@@ -445,9 +425,12 @@ func (m *Manager) attachFanout(f fanout.Fanout) (func(context.Context) error, er
 	m.broadcastAllLocalTopics()
 
 	return func(ctx context.Context) error {
+		islandCancel()
+		presenceCancel()
 		m.mu.Lock()
 		done := m.presenceDone
 		m.presenceSend = nil
+		m.fanoutSend = nil
 		m.mu.Unlock()
 		if done != nil {
 			close(done)
@@ -455,8 +438,6 @@ func (m *Manager) attachFanout(f fanout.Fanout) (func(context.Context) error, er
 		m.presenceWG.Wait()
 		presenceStopQueue()
 		m.gracefulLeaveLocalTopics(ctx, f)
-		islandCancel()
-		presenceCancel()
 		islandStopQueue()
 		m.mu.Lock()
 		topics := slices.Sorted(maps.Keys(m.remoteRosters))
@@ -477,7 +458,10 @@ func (m *Manager) attachFanout(f fanout.Fanout) (func(context.Context) error, er
 		cb := m.presenceCallback()
 		m.mu.Unlock()
 		firePresenceChange(cb, changed)
-		return ctx.Err()
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("island fanout stop interrupted: %w", err)
+		}
+		return nil
 	}, nil
 }
 

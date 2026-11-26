@@ -58,7 +58,7 @@ invariants:
       - test: core-ui/island.TestLeaveNotOvertakenByHeartbeat
       - test: core-ui/island.TestStopGoodbyeLandsLast
   - id: fanout-stop-honors-deadline
-    rule: "The contextual island fanout stop follows app/worker-drains-honor-deadline: it reports an already-ended or interrupted drain even when the detach result is ready, and starts no further goodbyes once the context ends."
+    rule: "The island fanout stop SetFanoutContext returns sends goodbyes only while its context lasts and returns \"island fanout stop interrupted\" wrapping the context error when the context ended before it finished, so drainWithDeadline cannot report a cut-short detach as clean (app/worker-drains-honor-deadline). It runs once; later calls return the first result."
     enforced_by:
       - test: core-ui/island.TestFanoutStopContextAlreadyExpired
       - test: core-ui/island.TestFanoutStopReportsInterruptedGoodbye
@@ -76,11 +76,13 @@ decisions:
   - id: fanout-detach-outlives-deadline
     date: 2026-11-25
     status: accepted
-    decision: Run detach once and stop joining it when the context ends, leaving it to finish cleaning up as in-flight work allows; a peer that misses the goodbye expires the roster by TTL.
+    decision: Detach unsubscribes first, then lets the outbound presence queue finish and sends goodbyes while the context lasts. Shutdown stops waiting for it at the deadline (through drainWithDeadline) and leaves it to finish as in-flight Publish calls return; a peer that misses the goodbye expires the roster by TTL.
     rejected:
-      - option: Abandon detach itself or send a goodbye ahead of the stuck roster.
-        why: The former leaves subscriptions attached and the latter lets a late roster restore members who already left.
-    upholds: [fanout-stop-honors-deadline, rosters-queue-in-order]
+      - option: Unsubscribe only after the presence queue and goodbyes.
+        why: A stuck Publish then keeps the subscriptions attached after Shutdown returns, and peers' updates still reach local islands.
+      - option: Send a goodbye ahead of the stuck roster.
+        why: A late roster would restore members who already left.
+    upholds: [fanout-stop-honors-deadline, island/fanout-stop-unsubscribes-first, rosters-queue-in-order]
   - id: full-rosters-not-deltas
     date: 2026-11-20
     status: accepted

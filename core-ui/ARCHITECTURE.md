@@ -2037,16 +2037,17 @@ lossy; presence is lossy *self-healing state*: each replica broadcasts
 its full local roster per topic on join/leave and on a 15 s heartbeat,
 and receivers keep a TTL'd (45 s) remote table, so a dropped message
 heals on the next beat and a crashed replica's members vanish within
-TTL. On shutdown, the island manager sends an empty roster after the
-last in-flight roster. If shutdown runs out of time, it stops waiting
-for the detach and does not start any more goodbyes; peers can fall back
-to TTL expiry.
+TTL. On shutdown, the island manager unsubscribes from both lanes
+first, then sends an empty roster after the last in-flight roster. If
+shutdown runs out of time, it stops waiting for the detach and the detach
+starts no more goodbyes; peers can fall back to TTL expiry.
 
 The contract points that must not drift:
 
 - `Manager.SetFanout` wires both lanes in one call. The framework uses
   `UIHost.SetFanoutContext` to give the island manager's stop function
-  the same shutdown context as the other drainers.
+  the shutdown context, and bounds it with the same helper as the other
+  drainers.
 - `PresenceRoster(topic)` returns the merged local ∪ live-remote roster,
   deduplicated by identity; with no fanout configured it is
   byte-identical to the single-replica result.
