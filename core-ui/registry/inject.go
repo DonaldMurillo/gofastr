@@ -143,7 +143,7 @@ func attrIndex(openTag, name string) int {
 
 func attrAt(openTag string, at int, name string) bool {
 	rest := openTag[at:]
-	if !strings.HasPrefix(rest, name) {
+	if len(rest) < len(name) || !strings.EqualFold(rest[:len(name)], name) {
 		return false
 	}
 	prev := openTag[at-1]
