@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -153,7 +154,7 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 			if field.Hidden || field.NoQuery {
 				continue
 			}
-			eqKey := listToolFilterKey(ch.Entity, spell, field, filter.OpEq)
+			eqKey := spell.Key(mcpFieldKey(field), filter.OpEq)
 			if v, ok := params[eqKey]; ok {
 				if !filter.OpSuitsType(filter.OpEq, field.Type) {
 					return nil, toolArgError("param %q: a json field takes no filter", eqKey)
@@ -168,7 +169,7 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 				if !filter.OpSuitsType(s.Op, field.Type) {
 					continue
 				}
-				key := listToolFilterKey(ch.Entity, spell, field, s.Op)
+				key := spell.Key(mcpFieldKey(field), s.Op)
 				if v, ok := params[key]; ok {
 					vs, err := toolFilterValues(key, s.Op == filter.OpIn, v)
 					if err != nil {
@@ -193,22 +194,6 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 
 // listToolControls are the list tool's control arguments besides q.
 var listToolControls = [...]string{"page", "limit", "per_page", "offset", "sort"}
-
-// listToolFilterKey is the list tool's argument for a filter on field: the
-// route's key, in bracket form where the route reads it as a control.
-func listToolFilterKey(ent *entity.Entity, spell filter.KeySpeller, field schema.Field, op filter.FilterOp) string {
-	key := spell.Key(mcpFieldKey(field), op)
-	if key == "q" {
-		if len(ent.Config.SearchFields) > 0 {
-			return filter.BracketKey(mcpFieldKey(field), op)
-		}
-		return key
-	}
-	if slices.Contains(filter.ListControlParams(), key) {
-		return filter.BracketKey(mcpFieldKey(field), op)
-	}
-	return key
-}
 
 // toolParamValues renders a tool parameter as query values, one per
 // element of a JSON array.
@@ -545,7 +530,12 @@ func listToolSchema(ent *entity.Entity, reg entity.Registry) map[string]any {
 			continue
 		}
 		if filter.OpSuitsType(filter.OpEq, field.Type) {
-			props[listToolFilterKey(ent, spell, field, filter.OpEq)] = tf.schema(field)
+			ps := tf.schema(field)
+			if key, ok := controlNamedKey(ent, field); ok && key == mcpFieldKey(field) {
+				ps = maps.Clone(ps)
+				ps["description"] = "Exact match on " + key + " (bracket form: a bare " + key + " is the list control)"
+			}
+			props[spell.Key(mcpFieldKey(field), filter.OpEq)] = ps
 		}
 		for _, s := range filter.FilterSuffixes {
 			if !filter.OpSuitsType(s.Op, field.Type) {
@@ -559,7 +549,7 @@ func listToolSchema(ent *entity.Entity, reg entity.Registry) map[string]any {
 				ps = map[string]any{"type": "array", "items": tf.schema(field), "minItems": 1}
 			}
 			ps["description"] = fmt.Sprintf("Filter by %s: %s.", field.Name, filterOpLabel(s.Op))
-			props[listToolFilterKey(ent, spell, field, s.Op)] = ps
+			props[spell.Key(mcpFieldKey(field), s.Op)] = ps
 		}
 	}
 	return map[string]any{"type": "object", "properties": props}

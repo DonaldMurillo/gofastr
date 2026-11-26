@@ -128,6 +128,7 @@ func CrudRoutePatterns(path string, opts ...CrudRouteOptions) []string {
 func RegisterCrudRoutes(r *router.Router, handler *CrudHandler, path string, opts ...CrudRouteOptions) {
 	path = NormalizePath(path)
 	r = EntityRouter(r, handler.Entity)
+	logControlNamedFields(handler.Entity)
 
 	var opt CrudRouteOptions
 	if len(opts) > 0 {
