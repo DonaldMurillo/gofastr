@@ -66,7 +66,7 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 		if named := q[exportIDParam]; len(named) > 0 {
 			rows, err = u.namedRows(ctx, m, named, fields)
 		} else {
-			rows, err = u.matchRows(crud.WithReadHooks(ctx), m, key, q, fields)
+			rows, err = u.matchRows(crud.WithReadHooks(ctx), m, key, q, fields, true)
 		}
 		if err != nil {
 			writeBulkRefusal(ctx, w, r, m, "entityui: export read", err)

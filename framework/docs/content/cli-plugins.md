@@ -91,7 +91,8 @@ Repo-declared commands are **fail-closed**:
 - If a `git pull` modifies the binary, changes the command, or adds an
   unapproved capability, execution is refused until you re-run
   `gofastr plugin trust <name>`. Revoke trust anytime with
-  `gofastr plugin untrust <name>`.
+  `gofastr plugin untrust <name>` from the project directory or a subdirectory,
+  even if the `plugins:` section fails to decode.
 - A conflicting or malformed project `gofastr.settings.yml` never disables or
   bypasses your globally registered hooks or overrides.
 

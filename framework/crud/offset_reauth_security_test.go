@@ -39,7 +39,7 @@ func TestWithMaxOffsetBoundsList(t *testing.T) {
 		// streaming entry point serves offset mode whatever the query
 		// holds, so it still refuses.
 		{"/api/reddocs?cursor=&offset=2&limit=1", http.StatusOK, http.StatusBadRequest},
-		{"/api/reddocs?page=3&limit=1", http.StatusBadRequest, http.StatusBadRequest},
+		{"/api/reddocs?page=3&limit=1", http.StatusBadRequest, http.StatusOK},
 	} {
 		rec := httptest.NewRecorder()
 		ch.List()(rec, withTestUser(httptest.NewRequest(http.MethodGet, tc.path, nil), "alice"))
@@ -52,6 +52,36 @@ func TestWithMaxOffsetBoundsList(t *testing.T) {
 		if rec.Code != tc.wantStream {
 			t.Errorf("stream %s = %d, want %d (body=%s)", tc.path, rec.Code, tc.wantStream, rec.Body.String())
 		}
+	}
+}
+
+func TestDirectStreamBoundsActualPage(t *testing.T) {
+	ch := pageOverflowHandler(t).WithMaxOffset(100)
+	for _, tc := range []struct {
+		name, query string
+		page, limit int
+		want        int
+	}{
+		{"deep page", "", 3, 100, http.StatusBadRequest},
+		{"deep limit", "?page=2&limit=1", 2, 101, http.StatusBadRequest},
+		{"invalid offset", "?offset=bad", 3, 100, http.StatusBadRequest},
+		{"overflowing skip", "", int(^uint(0) >> 1), 100, http.StatusBadRequest},
+		{"wire page ignored", "?page=1000", 1, 2, http.StatusOK},
+		{"exact ceiling", "", 2, 100, http.StatusOK},
+		{"wire offset wins", "?offset=0", 3, 100, http.StatusOK},
+		{"huge wire offset", "?offset=99999999999999999999999", 1, 2, http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := withTestUser(httptest.NewRequest(http.MethodGet, "/items"+tc.query, nil), "u1")
+			rec := httptest.NewRecorder()
+			ch.ServeStreamingList(req.Context(), rec, req, ch.visibleFields(), nil, nil, nil, tc.page, tc.limit, nil)
+			if rec.Code != tc.want {
+				t.Fatalf("stream with page %d limit %d = %d %s, want %d", tc.page, tc.limit, rec.Code, rec.Body, tc.want)
+			}
+			if tc.want == http.StatusBadRequest && !strings.Contains(rec.Body.String(), "offset_too_large") {
+				t.Errorf("stream body = %s, want offset_too_large", rec.Body)
+			}
+		})
 	}
 }
 

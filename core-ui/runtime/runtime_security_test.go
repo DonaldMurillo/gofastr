@@ -602,7 +602,8 @@ func TestResponseHTMLMountedOnlyAfterOK(t *testing.T) {
 		from, to string // unique literals bracketing the fetch→mount span
 		where    string
 	}{
-		{"../../framework/headless/sortablelist.js", "fetch(crpc", "dest.innerHTML = NS._html?.(html) ?? html", "conflict-recovery refresh"},
+		// The refresh keeps the rows on dest.__huiRefresh; record() mounts them.
+		{"../../framework/headless/sortablelist.js", "fetch(crpc", "dest.__huiRefresh = { seq: mine[0], html, next, msg }", "conflict-recovery refresh"},
 		{"src/poll.js", "fetch(NS._lp?.(src) ?? src", "el.innerHTML = NS._html?.(html) ?? html", "poll region swap"},
 		{"src/intercept.js", "fetch(path", "mountLayer(res", "intercept overlay mount"},
 		// Both refetches mount through swap, fed only by fetchOverlay,

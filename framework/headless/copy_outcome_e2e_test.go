@@ -9,8 +9,9 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-const copyWrapper = `<pre id="code">npm i gofastr</pre>` +
-	`<span data-hui-copy data-hui-copy-target="code" data-hui-copy-copied="Copied" data-hui-copy-back="Copy" ` +
+const copyWrapper = `<pre id="code">npm i gofastr</pre>` + copyControl
+
+const copyControl = `<span data-hui-copy data-hui-copy-target="code" data-hui-copy-copied="Copied" data-hui-copy-back="Copy" ` +
 	`data-hui-copy-sentence="Copied {{name}}" data-hui-copy-failed="Could not copy {{name}}" data-hui-copy-failed-label="Not copied" data-hui-copy-name="the command">` +
 	`<button id="cp" type="button" data-hui-copy-label>Copy</button><span data-hui-copy-status></span></span>`
 
@@ -130,8 +131,7 @@ func TestE2E_CopyNeverReadsAPasswordField(t *testing.T) {
 	}
 }
 
-// A field's value is copied exactly, leading spaces and a trailing
-// newline included; only other text is trimmed.
+// A field's value is copied exactly, including leading spaces and a trailing newline.
 func TestE2E_CopyKeepsAFieldsWhitespace(t *testing.T) {
 	b := startBehaviorServer(t, `<textarea id="code"></textarea>`+
 		`<span data-hui-copy data-hui-copy-target="code" data-hui-copy-copied="Copied" data-hui-copy-back="Copy">`+
@@ -149,6 +149,33 @@ func TestE2E_CopyKeepsAFieldsWhitespace(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	if got := evalString(t, ctx, `JSON.stringify(window.__copied)`); got != `"  indented\n"` {
 		t.Fatalf("copied %s, want the field's value with its whitespace", got)
+	}
+}
+
+func TestCopyPreservesPreformattedText(t *testing.T) {
+	const source = "  line 1\n  line 2\n"
+	for _, tc := range []struct{ name, target, want string }{
+		{"pre", `<pre id="code">` + source + `</pre>`, source},
+		{"ordinary text", `<div id="code">` + source + `</div>`, "line 1 line 2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := behaviorPage(t, startBehaviorServer(t, tc.target+copyControl))
+			if !pollTrue(ctx, controlsLoadedExpr(CopyBehaviorName)) {
+				t.Fatal("module never loaded")
+			}
+			var got string
+			if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+				let copied = '';
+				Object.defineProperty(navigator, 'clipboard', {value: {writeText: text => { copied = text; return Promise.resolve(); }}});
+				document.getElementById('cp').click();
+				return copied;
+			})()`, &got)); err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				t.Fatalf("clipboard got %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

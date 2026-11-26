@@ -56,7 +56,10 @@
       if (form.hasAttribute('data-cui-rpc') || form.hasAttribute('data-kiln-tool')) return;
       let shown = '';
       try { shown = new URLSearchParams(window.location.search).get(input.name) || ''; } catch (_) { /* no address to ask */ }
-      if (shown) { if (form.requestSubmit) form.requestSubmit(); else form.submit(); }
+      if (shown) {
+        const proto = HTMLFormElement.prototype;
+        (proto.requestSubmit || proto.submit).call(form);
+      }
     };
 
     input.addEventListener('input', updateClearVisibility);

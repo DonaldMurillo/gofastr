@@ -116,6 +116,43 @@ func TestRecordFormShowWhen(t *testing.T) {
 	}
 }
 
+func TestCreateShowWhenUsesStateDefault(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		defaultValue any
+		showsMemo    bool
+	}{
+		{"first initial state", nil, true},
+		{"explicit default", "open", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ents := invoiceEntities()
+			inv := ents["invoices"]
+			inv.States.Initial = []string{"draft", "open"}
+			for i, f := range inv.Fields {
+				if f.Name == "status" {
+					inv.Fields[i].Default = tc.defaultValue
+				}
+			}
+			inv.Display.Fields["memo"] = entity.FieldDisplay{ShowWhen: `status = "draft"`}
+			inv.Display.Fields["token"] = entity.FieldDisplay{ShowWhen: `status = "open"`}
+			ents["invoices"] = inv
+			x := newTestUI(t, ents, invoiceRows(), withAPI(map[string]string{"invoices": "/api/invoices"}))
+			create := string(x.ui.Create("invoices").Base("/invoices").RenderCtx(x.userCtx("/invoices/create", "?prefill_status=paid", "u1")))
+			if memo, token := strings.Contains(create, `name="memo"`), strings.Contains(create, `name="token"`); memo != tc.showsMemo || token == tc.showsMemo {
+				t.Errorf("create memo=%t token=%t, want memo=%t token=%t", memo, token, tc.showsMemo, !tc.showsMemo)
+			}
+			if strings.Contains(create, `name="status"`) {
+				t.Error("create renders an editable state control")
+			}
+			edit := renderRecord(t, x, "inv-1", nil)
+			if !strings.Contains(edit, `name="memo"`) || strings.Contains(edit, `name="token"`) {
+				t.Error("edit did not use the stored draft state")
+			}
+		})
+	}
+}
+
 // A builder-supplied form that names an unknown field, repeats one, or
 // overfills a row fails the slot with the generic message.
 func TestRecordFormBadBuilderFormFailsSlot(t *testing.T) {
@@ -135,5 +172,26 @@ func TestRecordFormBadBuilderFormFailsSlot(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("%s: the slot fails generically:\n%s", c.name, body)
 		}
+	}
+}
+
+// A builder Omit keeps the field out of the form whether the layout
+// places it or the unplaced-field fallback would append it.
+func TestRecordOmitKeepsFieldOutOfForm(t *testing.T) {
+	for _, layout := range []string{"fallback", "placed"} {
+		t.Run(layout, func(t *testing.T) {
+			entities := invoiceEntities()
+			if layout == "placed" {
+				inv := entities["invoices"]
+				inv.Display.Form = &entity.EntityForm{Main: []entity.FormItem{{Field: "memo"}}}
+				entities["invoices"] = inv
+			}
+			x := newTestUI(t, entities, invoiceRows(), withAPI(map[string]string{"invoices": "/api/invoices"}))
+			body := string(x.ui.Record("invoices", "inv-1").Base("/rec/invoices").Omit("memo").
+				RenderCtx(x.userCtx("/rec/invoices/inv-1", "", "u1")))
+			if strings.Contains(body, `name="memo"`) {
+				t.Fatal("Omit(memo) left a memo control in the form")
+			}
+		})
 	}
 }

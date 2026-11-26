@@ -423,6 +423,32 @@ func TestSaveViewStoresAndRedirects(t *testing.T) {
 	}
 }
 
+func TestSavedViewLongRedirectFallsBack(t *testing.T) {
+	x, store := savedUI(t)
+	ctx := asUser(context.Background(), "u1")
+	back := "/orders?q=" + strings.Repeat("x", 2048-len("/orders?q="))
+	w := postSavedViews(t, x, "u1", "/api/orders/_views", url.Values{
+		"name": {"Long return"}, "back": {back},
+	})
+	views, err := store.List(ctx, "orders")
+	if err != nil || len(views) != 1 {
+		t.Fatalf("saved views = %+v (%v), want one stored view", views, err)
+	}
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != back {
+		t.Errorf("save stored the view but answered %d, want 303 to the original path", w.Code)
+	}
+
+	back = "/orders?q=" + strings.Repeat(":", 800)
+	id := views[0].ID
+	w = postSavedViews(t, x, "u1", "/api/orders/_views/_delete?id="+id, url.Values{"back": {back}})
+	if _, err := store.Get(ctx, "orders", id); !errors.Is(err, ErrSavedViewNotFound) {
+		t.Fatalf("deleted view lookup = %v, want not found", err)
+	}
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != back {
+		t.Errorf("delete removed the view but answered %d, want 303 to the original path", w.Code)
+	}
+}
+
 // assertSaveViewRefused posts form to the saved-views API and proves the
 // save was refused (400) and nothing was stored.
 func assertSaveViewRefused(t *testing.T, x *testUI, store *memSavedViews, form url.Values, desc string) {
@@ -526,4 +552,86 @@ func TestSaveViewBodyCapped(t *testing.T) {
 	if views, _ := store.List(asUser(context.Background(), "u1"), "orders"); len(views) != 0 {
 		t.Errorf("an oversized body still saved a view: %+v", views)
 	}
+}
+
+func TestSavedViewRedirectKeepsQueryBeforeFragment(t *testing.T) {
+	t.Run("create", func(t *testing.T) {
+		cases := []struct {
+			name string
+			back string
+			want func(id string) string
+		}{
+			{
+				name: "fragment only",
+				back: "/orders#list",
+				want: func(id string) string { return "/orders?saved=" + id + "#list" },
+			},
+			{
+				name: "query and fragment",
+				back: "/orders?sort=name#list",
+				want: func(id string) string { return "/orders?saved=" + id + "&sort=name#list" },
+			},
+			{
+				name: "question mark inside fragment",
+				back: "/orders#list?sort=name",
+				want: func(id string) string { return "/orders?saved=" + id + "#list?sort=name" },
+			},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				x, store := savedUI(t)
+				w := postSavedViews(t, x, "u1", "/api/orders/_views", url.Values{
+					"name": {"Open only"}, "filter": {`status = "open"`}, "back": {tc.back},
+				})
+				if w.Code != http.StatusSeeOther {
+					t.Fatalf("save answered %d (%s), want 303", w.Code, w.Body.String())
+				}
+				views, err := store.List(asUser(context.Background(), "u1"), "orders")
+				if err != nil || len(views) != 1 {
+					t.Fatalf("views = %+v (%v)", views, err)
+				}
+				want := tc.want(views[0].ID)
+				if got := w.Header().Get("Location"); got != want {
+					t.Errorf("save Location = %q, want %q", got, want)
+				}
+			})
+		}
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		cases := []struct {
+			name string
+			back func(id string) string
+			want string
+		}{
+			{
+				name: "saved param and fragment",
+				back: func(id string) string { return "/orders?saved=" + id + "#list" },
+				want: "/orders#list",
+			},
+			{
+				name: "saved param, sort and fragment",
+				back: func(id string) string { return "/orders?saved=" + id + "&sort=name#list" },
+				want: "/orders?sort=name#list",
+			},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				x, store := savedUI(t)
+				saved, err := store.Create(asUser(x.ctx("/orders", ""), "u1"), SavedView{Entity: "orders", Name: "Mine", Filter: `status = "open"`})
+				if err != nil {
+					t.Fatal(err)
+				}
+				w := postSavedViews(t, x, "u1", "/api/orders/_views/_delete?id="+saved.ID, url.Values{
+					"back": {tc.back(saved.ID)},
+				})
+				if w.Code != http.StatusSeeOther {
+					t.Fatalf("delete answered %d (%s), want 303", w.Code, w.Body.String())
+				}
+				if got := w.Header().Get("Location"); got != tc.want {
+					t.Errorf("delete Location = %q, want %q", got, tc.want)
+				}
+			})
+		}
+	})
 }

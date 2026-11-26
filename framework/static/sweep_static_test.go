@@ -14,6 +14,7 @@ import (
 	"time"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -179,12 +180,6 @@ func TestSweepStaticUnresolvedDocIsWithheld(t *testing.T) {
 	}
 }
 
-func TestSweepStaticDocStatus(t *testing.T) {
-	if docStatus(nil, http.StatusOK) != 0 || docStatus(nil, 0) != 0 || docStatus(nil, http.StatusNotFound) != http.StatusNotFound {
-		t.Error("docStatus does not map 200 and unset to zero and keep other statuses")
-	}
-}
-
 type sweepBrokenFill struct{}
 
 func (sweepBrokenFill) Load(context.Context) error {
@@ -205,6 +200,22 @@ func TestSweepStaticFillFailureIsScrubbed(t *testing.T) {
 	}
 	if strings.ContainsAny(err.Error(), "\u202e\x1b") {
 		t.Errorf("the refusal carries unscrubbed error text: %q", err)
+	}
+}
+
+func TestExportRejectsBlockedDefaultError(t *testing.T) {
+	a := coreapp.NewApp("Fill")
+	aside := coreapp.NewOutlet("aside", coreapp.OutletOptions{
+		Default: sweepBrokenFill{},
+		Policy:  coreapp.PolicyFunc(func(context.Context) coreapp.Decision { return decide.Block(403) }),
+	})
+	a.SetDefaultLayout(coreapp.NewLayout("shell", coreapp.LayoutSpec{Outlets: []*coreapp.Outlet{aside}}, func(_ context.Context, l *coreapp.LayoutTree) render.HTML {
+		return render.Join(l.Primary(), l.Place(aside))
+	}))
+	a.Register("/broken", &homeScreen{}, nil)
+	_, err := (&Builder{Host: uihost.New(a), OutDir: t.TempDir()}).Build(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "l:shell#aside") {
+		t.Fatalf("Build error = %v, want the blocked outlet's default failure", err)
 	}
 }
 
@@ -546,5 +557,24 @@ func TestExportFollowsTrustedTypesSettings(t *testing.T) {
 	}
 	if got := (&Builder{ContentSecurityPolicy: "default-src 'self'", NoTrustedTypes: true}).policy(); got != "default-src 'self'" {
 		t.Errorf("a configured policy was rewritten: %q", got)
+	}
+}
+
+func TestStaticSource404ReplacesBuiltPage(t *testing.T) {
+	a := coreapp.NewApp("Own404")
+	a.SetDefaultLayout(coreapp.NewLayout("shell", coreapp.LayoutSpec{}, func(ctx context.Context, l *coreapp.LayoutTree) render.HTML {
+		return l.Primary()
+	}))
+	a.Register("/", &homeScreen{}, nil)
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "404.html"), []byte("OWN-404"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := t.TempDir()
+	if _, err := (&Builder{Host: uihost.New(a, uihost.WithStaticDir(src)), OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if got := readOut(t, out, "404.html"); got != "OWN-404" {
+		t.Errorf("404.html is the generated page (%d bytes), want the static source copy", len(got))
 	}
 }

@@ -119,3 +119,91 @@ func TestExportIndexLinksWrittenDocs(t *testing.T) {
 		}
 	}
 }
+
+func TestExportIndexLinksUseBasePath(t *testing.T) {
+	const base = "/repo"
+	a := coreapp.NewApp("t")
+	a.Register("/", &homeScreen{}, nil)
+	a.Register("/about", &homeScreen{}, nil)
+	a.Register("/products/:slug", &productScreen{}, nil)
+	overlay := coreapp.NewScreen("/details", &homeScreen{})
+	overlay.Type = coreapp.ScreenDrawer
+	a.RegisterScreen(overlay, nil)
+	host := uihost.New(a)
+	host.SetPathLocales(i18n.PathLocales{Default: "en", Prefixed: []string{"es"}})
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out, BasePath: base}).Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, locale := range []string{"", "/es"} {
+		index := strings.TrimPrefix(locale+"/llm-pages.md", "/")
+		md := readOut(t, out, index)
+		for _, path := range []string{"/llm.md", "/about/llm.md", "/products/alpha/llm.md", "/details/llm.md"} {
+			rel := locale + path
+			readOut(t, out, strings.TrimPrefix(rel, "/"))
+			link := base + rel
+			if !strings.Contains(md, "]("+link+")") {
+				t.Errorf("%s does not link %s", index, link)
+			}
+		}
+	}
+}
+
+type invalidDocStatus struct{ code int }
+
+func (s invalidDocStatus) ScreenStatusCode() int { return s.code }
+func (invalidDocStatus) Render() render.HTML     { return "<p>Exported page</p>" }
+
+func TestExportIgnoresInvalidDocStatus(t *testing.T) {
+	a := coreapp.NewApp("status")
+	a.Register("/below", invalidDocStatus{code: 99}, nil)
+	a.Register("/above", invalidDocStatus{code: 1000}, nil)
+	out := t.TempDir()
+	if _, err := (&Builder{Host: uihost.New(a), OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	index := readOut(t, out, "llm-pages.md")
+	for _, route := range []string{"below", "above"} {
+		t.Run(route, func(t *testing.T) {
+			readOut(t, out, route+"/index.html")
+			doc := route + "/llm.md"
+			if _, err := os.Stat(filepath.Join(out, filepath.FromSlash(doc))); err != nil {
+				t.Errorf("exported HTML lacks its Markdown document %s: %v", doc, err)
+			}
+			if !strings.Contains(index, "](/"+doc+")") {
+				t.Errorf("exported index does not link /%s", doc)
+			}
+		})
+	}
+}
+
+type linkingScreen struct{}
+
+func (linkingScreen) Render() render.HTML {
+	return `<p><a href="/about">About</a> <a href="/repo/intro">Intro</a> <img src="/__gofastr/icons/icon.png" alt="logo"> <a href="//cdn.example/x">CDN</a></p>`
+}
+
+func TestExportDocBodyLinksUseBasePath(t *testing.T) {
+	const base = "/repo"
+	a := coreapp.NewApp("t")
+	a.Register("/", linkingScreen{}, nil)
+	a.Register("/about", &homeScreen{}, nil)
+	a.Register("/repo/intro", &homeScreen{}, nil)
+	host := uihost.New(a)
+	host.SetPathLocales(i18n.PathLocales{Default: "en", Prefixed: []string{"es"}})
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out, BasePath: base}).Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for doc, wants := range map[string][]string{
+		"llm.md":    {base + "/about", base + "/repo/intro", base + "/__gofastr/icons/icon.png", "//cdn.example/x"},
+		"es/llm.md": {base + "/es/about", base + "/es/repo/intro", base + "/__gofastr/icons/icon.png", "//cdn.example/x"},
+	} {
+		md := readOut(t, out, doc)
+		for _, want := range wants {
+			if !strings.Contains(md, "]("+want+")") {
+				t.Errorf("%s does not link %s:\n%s", doc, want, md)
+			}
+		}
+	}
+}

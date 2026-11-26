@@ -139,9 +139,9 @@ func (o *options) validate() error {
 // recording one in its place.
 type runner interface {
 	// ssh runs command on the target with stdin, and returns what it
-	// printed and its exit code. A non-nil error is ssh itself failing
+	// printed on each stream and its exit code. A non-nil error is ssh itself failing
 	// (no route, refused, no such key), not the command.
-	ssh(ctx context.Context, o *options, command string, stdin io.Reader) (out string, code int, err error)
+	ssh(ctx context.Context, o *options, command string, stdin io.Reader) (stdout, stderr string, code int, err error)
 	// build compiles pkg for linux/arch into out.
 	build(ctx context.Context, pkg, arch, out string) error
 	// root is where the server's files start: empty on a server, a
@@ -200,21 +200,21 @@ func Run(w io.Writer, args []string, now time.Time, r runner) error {
 	p := plan{root: r.root(), name: o.name, port: o.port, health: o.health, wait: o.wait, keep: o.keep}
 	switch sub {
 	case "status":
-		out, code, err := r.ssh(ctx, &o, asRoot, strings.NewReader(p.status()))
+		out, stderr, code, err := r.ssh(ctx, &o, asRoot, strings.NewReader(p.status()))
 		if err != nil {
 			return err
 		}
-		fmt.Fprint(w, textsafe.ScrubTerminal(out))
+		fmt.Fprint(w, textsafe.ScrubTerminal(out), textsafe.ScrubTerminal(stderr))
 		if code != 0 {
 			return fmt.Errorf("the server could not be asked (exit %d)", code)
 		}
 		return nil
 	case "rollback":
-		out, code, err := r.ssh(ctx, &o, asRoot, strings.NewReader(p.rollback()))
+		out, stderr, code, err := r.ssh(ctx, &o, asRoot, strings.NewReader(p.rollback()))
 		if err != nil {
 			return err
 		}
-		return report(w, &o, out, code)
+		return report(w, &o, out, stderr, code)
 	}
 	return deploy(ctx, w, &o, p, now, r)
 }
@@ -225,23 +225,47 @@ func Run(w io.Writer, args []string, now time.Time, r runner) error {
 const asRoot = `if [ "$(id -u)" = 0 ]; then bash -s; else sudo -n bash -s; fi`
 
 func deploy(ctx context.Context, w io.Writer, o *options, p plan, now time.Time, r runner) error {
+	var env *os.File
+	if o.envFile != "" {
+		f, err := os.Open(o.envFile)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		info, err := f.Stat()
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return fmt.Errorf("open %s: is a directory", o.envFile)
+		}
+		env = f
+	}
 	// One round trip says what to build for and where to put it. The
 	// directory is the server's own choice of a fresh, private one.
-	out, code, err := r.ssh(ctx, o, `uname -m && umask 077 && mktemp -d`, nil)
+	out, stderr, code, err := r.ssh(ctx, o, `uname -m && umask 077 && mktemp -d`, nil)
 	if err != nil {
 		return err
 	}
 	lines := strings.Fields(out)
 	if code != 0 || len(lines) != 2 {
-		return fmt.Errorf("the server did not answer as a Linux machine would (exit %d): %s", code, strings.TrimSpace(out))
-	}
-	arch, ok := map[string]string{"x86_64": "amd64", "aarch64": "arm64", "arm64": "arm64"}[lines[0]]
-	if !ok {
-		return fmt.Errorf("the server is a %s machine; this builds for x86_64 and aarch64", lines[0])
+		return fmt.Errorf("the server did not answer as a Linux machine would (exit %d): %s", code, strings.TrimSpace(out+"\n"+stderr))
 	}
 	p.upload = lines[1]
 	if !uploadRe.MatchString(p.upload) {
 		return fmt.Errorf("the server named an upload directory this will not use: %q", p.upload)
+	}
+	removeUpload := true
+	defer func() {
+		if removeUpload {
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+			defer cancel()
+			_, _, _, _ = r.ssh(ctx, o, "rm -rf -- "+shellQuote(p.upload), nil)
+		}
+	}()
+	arch, ok := map[string]string{"x86_64": "amd64", "aarch64": "arm64", "arm64": "arm64"}[lines[0]]
+	if !ok {
+		return fmt.Errorf("the server is a %s machine; this builds for x86_64 and aarch64", lines[0])
 	}
 	p.release = fmt.Sprintf("%s-%09d-%s", now.UTC().Format("20060102T150405Z"), now.Nanosecond(), rand.Text())
 
@@ -266,21 +290,28 @@ func deploy(ctx context.Context, w io.Writer, o *options, p plan, now time.Time,
 	if p.socket {
 		fmt.Fprintf(w, "  systemd holds port %d: restarts do not close it\n", o.port)
 	}
-	if err := send(ctx, o, r, bin, p.upload+"/bin"); err != nil {
+	f, err := os.Open(bin)
+	if err != nil {
 		return err
 	}
-	if o.envFile != "" {
-		if err := send(ctx, o, r, o.envFile, p.upload+"/env"); err != nil {
+	defer f.Close()
+	if err := send(ctx, o, r, f, p.upload+"/bin"); err != nil {
+		return err
+	}
+	if env != nil {
+		if err := send(ctx, o, r, env, p.upload+"/env"); err != nil {
 			return err
 		}
 		p.hasEnv = true
 	}
 	fmt.Fprintf(w, "  starting release %s on %s\n", p.release, o.target)
-	out, code, err = r.ssh(ctx, o, asRoot, strings.NewReader(p.install()))
+	out, stderr, code, err = r.ssh(ctx, o, asRoot, strings.NewReader(p.install()))
 	if err != nil {
 		return err
 	}
-	return report(w, o, out, code)
+	// The install script removes the upload before checking the service.
+	removeUpload = code != 0 && code != exitRolledBack && code != exitDown
+	return report(w, o, out, stderr, code)
 }
 
 // takesSocket reports whether the binary at path links the framework's
@@ -313,24 +344,22 @@ func takesSocket(path string) (bool, error) {
 
 // send copies a local file to path on the server through ssh's stdin:
 // one program to depend on, and the file is created private.
-func send(ctx context.Context, o *options, r runner, local, path string) error {
-	f, err := os.Open(local)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	out, code, err := r.ssh(ctx, o, "umask 077 && cat > "+shellQuote(path), f)
+func send(ctx context.Context, o *options, r runner, f *os.File, path string) error {
+	out, stderr, code, err := r.ssh(ctx, o, "umask 077 && cat > "+shellQuote(path), f)
 	if err != nil {
 		return err
 	}
 	if code != 0 {
-		return fmt.Errorf("copying %s to the server failed (exit %d): %s", filepath.Base(local), code, strings.TrimSpace(out))
+		return fmt.Errorf("copying %s to the server failed (exit %d): %s", filepath.Base(f.Name()), code, strings.TrimSpace(out+"\n"+stderr))
 	}
 	return nil
 }
 
-// report turns a script's last line and exit code into what happened.
-func report(w io.Writer, o *options, out string, code int) error {
+// report turns the last line of stdout and the exit code into what happened.
+func report(w io.Writer, o *options, out, stderr string, code int) error {
+	if stderr != "" {
+		fmt.Fprint(w, textsafe.ScrubTerminal(stderr))
+	}
 	out = strings.TrimRight(out, "\n")
 	body, last := out, ""
 	if i := strings.LastIndexByte(out, '\n'); i >= 0 {
@@ -366,7 +395,7 @@ func report(w io.Writer, o *options, out string, code int) error {
 // execRunner is the real runner.
 type execRunner struct{}
 
-func (execRunner) ssh(ctx context.Context, o *options, command string, stdin io.Reader) (string, int, error) {
+func (execRunner) ssh(ctx context.Context, o *options, command string, stdin io.Reader) (string, string, int, error) {
 	args := []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=15"}
 	if o.sshPort != 0 {
 		args = append(args, "-p", strconv.Itoa(o.sshPort))
@@ -379,22 +408,22 @@ func (execRunner) ssh(ctx context.Context, o *options, command string, stdin io.
 	args = append(args, "--", o.target, command)
 	cmd := exec.CommandContext(ctx, "ssh", args...)
 	cmd.Stdin = stdin
-	var out bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &out
+	var out, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &stderr
 	// A child that keeps the pipe open must not hold Wait for ever.
 	cmd.WaitDelay = 10 * time.Second
 	err := cmd.Run()
 	var exit *exec.ExitError
 	switch {
 	case err == nil:
-		return out.String(), 0, nil
+		return out.String(), stderr.String(), 0, nil
 	case errors.As(err, &exit) && exit.ExitCode() == 255:
 		// 255 is ssh's own failure, not the remote command's.
-		return "", 255, fmt.Errorf("ssh could not reach %s: %s", o.target, strings.TrimSpace(out.String()))
+		return "", "", 255, fmt.Errorf("ssh could not reach %s: %s", o.target, strings.TrimSpace(out.String()+"\n"+stderr.String()))
 	case errors.As(err, &exit):
-		return out.String(), exit.ExitCode(), nil
+		return out.String(), stderr.String(), exit.ExitCode(), nil
 	}
-	return "", 0, fmt.Errorf("ssh could not be run: %w", err)
+	return "", "", 0, fmt.Errorf("ssh could not be run: %w", err)
 }
 
 func (execRunner) root() string { return "" }

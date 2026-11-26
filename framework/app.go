@@ -185,6 +185,7 @@ type App struct {
 	pendingEndpoints map[string][]entity.Endpoint
 	claimedEndpoints map[string]bool
 	crudMounts       map[*entity.Entity]crudMount
+	grouped          map[*entity.Entity]bool
 	trustedProxies   clientip.Proxies
 
 	migrationRoutines []migrate.Routine
@@ -253,6 +254,8 @@ type App struct {
 	startHooks []func(ctx context.Context) error
 	appCtx     context.Context
 	appCancel  context.CancelFunc
+
+	retentionSweepDone <-chan struct{}
 
 	readyHooks []func(addr string)
 
@@ -423,11 +426,27 @@ func (a *App) OpenAPISpec(title string) *coreoa.Spec {
 		CRUDMounted: a.entityCRUDEnabled, BulkMounted: a.entityUIMounted,
 		ReadOnlyMounted: func(e *entity.Entity) bool { return a.entityCrudMount(e).ReadOnly },
 		BasePath:        a.apiPrefix(), JSONCase: a.JSONCasing(),
+		Grouped: a.entityGrouped,
 	})
 }
 
 func (a *App) entityMountPath(table string) string {
 	return a.apiPrefix() + "/" + table
+}
+
+// entityGrouped reports an entity registered through GroupEntity, whose
+// routes mount at its group's prefix (its Version, "" for the root
+// group) and never under the API prefix.
+func (a *App) entityGrouped(e *entity.Entity) bool {
+	return e.Version != "" || a.grouped[e]
+}
+
+// entityBase is the prefix e's routes mount under.
+func (a *App) entityBase(e *entity.Entity) string {
+	if a.entityGrouped(e) {
+		return e.Version
+	}
+	return a.apiPrefix()
 }
 
 type crudMount struct {
@@ -460,7 +479,7 @@ func (a *App) EntityReadOnlyMounted(e *entity.Entity) bool {
 
 func (a *App) entityCrudMount(e *entity.Entity) crud.MountInfo {
 	if !a.entityCRUDEnabled(e) {
-		if a.apiPrefix() != "" && e.Version == "" {
+		if a.apiPrefix() != "" && !a.entityGrouped(e) {
 			return crud.MountInfo{Path: a.entityMountPath(e.GetTable())}
 		}
 		return crud.MountInfo{}
@@ -974,6 +993,10 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 	e := entity.Define(name, config)
 	e.Version = g.Prefix()
 	e.OpenAPITag = g.OpenAPITag()
+	if a.grouped == nil {
+		a.grouped = map[*entity.Entity]bool{}
+	}
+	a.grouped[e] = true
 
 	crudEnabled := a.entityCRUDEnabled(e)
 	if a.DB != nil {
@@ -1192,11 +1215,16 @@ func NewApp(opts ...AppOption) *App {
 	}
 
 	if a.fanout != nil {
-		drainBridge, err := event.AttachFanoutDrainer(a.events, a.fanout)
+		stopBridge, err := event.AttachFanout(a.events, a.fanout)
 		if err != nil {
 			panic("framework: WithFanout: " + err.Error())
 		}
-		a.lc.PrependDrainer(lifecycle.DrainFunc(drainBridge))
+		a.lc.PrependDrainer(lifecycle.DrainFunc(func(ctx context.Context) error {
+			return a.drainWithDeadline(ctx, "event bridge stop", func() error {
+				stopBridge()
+				return nil
+			}, "event bridge stop abandoned after the drain deadline")
+		}))
 	}
 
 	a.modules = NewModuleManager(a.DB, a.fanout)
@@ -1223,10 +1251,12 @@ func NewApp(opts ...AppOption) *App {
 		if err != nil {
 			panic("framework: access fanout subscribe: " + err.Error())
 		}
-		a.OnStop(func() error {
-			stop()
-			return nil
-		})
+		a.lc.PrependDrainer(lifecycle.DrainFunc(func(ctx context.Context) error {
+			return a.drainWithDeadline(ctx, "access store fanout stop", func() error {
+				stop()
+				return nil
+			}, "access store fanout stop abandoned after the drain deadline")
+		}))
 	}
 
 	if a.idempotency != nil && a.idempotency.Store == nil && a.fanout != nil {
@@ -1491,11 +1521,7 @@ func (a *App) CrudHandlerForEntity(ent *entity.Entity) (*crud.CrudHandler, error
 		return nil, fmt.Errorf("app.CrudHandlerForEntity: entity %q at version %q is not the registered instance", ent.Config.Name, ent.Version)
 	}
 	ch := a.wireCrudHandler(ent)
-	if ent.Version != "" {
-		ch.BasePath = ent.Version
-	} else {
-		ch.BasePath = a.apiPrefix()
-	}
+	ch.BasePath = a.entityBase(ent)
 	return ch, nil
 }
 
@@ -2100,19 +2126,30 @@ func (a *App) AddQueue(q schedulerStartStop) *App {
 		return nil
 	})
 	a.lc.PrependDrainer(lifecycle.DrainFunc(func(ctx context.Context) error {
-		return drainQueueClose(ctx, q)
+		return a.drainWithDeadline(ctx, "queue Close", q.Close, "queue Close abandoned after the drain deadline (a job handler ignored its cancelled context)")
 	}))
 	return a
 }
 
-func drainQueueClose(ctx context.Context, q schedulerStartStop) error {
+// drainWithDeadline starts drain and waits for it until ctx ends.
+func (a *App) drainWithDeadline(ctx context.Context, what string, drain func() error, deadlineMessage string) error {
 	done := make(chan error, 1)
-	go func() { done <- q.Close() }()
+	go func() {
+		defer func() {
+			if v := recover(); v != nil {
+				done <- recoveredPanic(a.Logger(), what, fmt.Sprintf("%T", v))
+			}
+		}()
+		done <- drain()
+	}()
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%s: %w", deadlineMessage, err)
+	}
 	select {
 	case err := <-done:
 		return err
 	case <-ctx.Done():
-		return fmt.Errorf("queue Close abandoned after the drain deadline (a job handler ignored its cancelled context): %w", ctx.Err())
+		return fmt.Errorf("%s: %w", deadlineMessage, ctx.Err())
 	}
 }
 
@@ -2202,6 +2239,7 @@ func (a *App) shutdown(ctx context.Context) error {
 	a.server = nil
 	host := a.runHost
 	a2aSrv := a.a2a
+	swept := a.retentionSweepDone
 	a.serverMu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -2214,6 +2252,19 @@ func (a *App) shutdown(ctx context.Context) error {
 	if host != nil {
 		if err := a.stopHost(ctx, host); err != nil {
 			firstErr = err
+		}
+	}
+	if swept != nil {
+		select {
+		case <-swept:
+		case <-ctx.Done():
+			select {
+			case <-swept:
+			default:
+				if firstErr == nil {
+					firstErr = fmt.Errorf("retention sweep join abandoned after the shutdown deadline: %w", ctx.Err())
+				}
+			}
 		}
 	}
 	if a.processModules != nil {
@@ -2629,12 +2680,7 @@ func (a *App) printStartupBanner(boundAddr, network, name string, hasAPI, hasLLM
 			skipped++
 			continue
 		}
-		mountPath := "/" + e.GetTable()
-		if e.Version != "" {
-			mountPath = e.Version + mountPath
-		} else {
-			mountPath = a.entityMountPath(e.GetTable())
-		}
+		mountPath := a.entityBase(e) + "/" + e.GetTable()
 		label := e.GetName()
 		if e.Version != "" {
 			label = e.GetName() + " (" + e.Version + ")"

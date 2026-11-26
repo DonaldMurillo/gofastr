@@ -123,15 +123,15 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered *fileSet) error {
 	return nil
 }
 
-func keepRendered(rel string, rendered *fileSet, log func(string, ...any)) bool {
-	own, ok := rendered.spelling(rel)
+func keepBuilt(rel string, built *fileSet, log func(string, ...any)) bool {
+	own, ok := built.spelling(rel)
 	if !ok {
 		return false
 	}
 	if own == rel {
-		log("kept the rendered page /%s (static source copy refused)", rel)
+		log("kept /%s (static source copy refused)", rel)
 	} else {
-		log("kept the rendered page /%s (static source copy /%s refused)", own, rel)
+		log("kept /%s (static source copy /%s refused)", own, rel)
 	}
 	return true
 }
@@ -163,7 +163,7 @@ func appendHostRules(root *os.Root, rel string, data []byte, log func(string, ..
 	return nil
 }
 
-func copyDir(src, dst string, rendered *fileSet, res *Result, log func(string, ...any)) error {
+func copyDir(src, dst string, built *fileSet, res *Result, log func(string, ...any)) error {
 	root, err := os.OpenRoot(dst)
 	if err != nil {
 		return err
@@ -192,14 +192,14 @@ func copyDir(src, dst string, rendered *fileSet, res *Result, log func(string, .
 			return nil
 		}
 		defer in.Close()
-		if generatedHostRules(filepath.ToSlash(rel), rendered) {
+		if generatedHostRules(filepath.ToSlash(rel), built) {
 			data, err := io.ReadAll(in)
 			if err != nil {
 				return err
 			}
 			return appendHostRules(root, rel, data, log)
 		}
-		if keepRendered(filepath.ToSlash(rel), rendered, log) {
+		if keepBuilt(filepath.ToSlash(rel), built, log) {
 			return nil
 		}
 		out := filepath.Join(dst, rel)
@@ -305,7 +305,7 @@ func skipIrregular(fsys fs.FS, rel string, d fs.DirEntry, log func(string, ...an
 	return false
 }
 
-func copyFS(fsys fs.FS, dst string, rendered *fileSet, res *Result, log func(string, ...any)) error {
+func copyFS(fsys fs.FS, dst string, built *fileSet, res *Result, log func(string, ...any)) error {
 	root, err := os.OpenRoot(dst)
 	if err != nil {
 		return err
@@ -322,14 +322,14 @@ func copyFS(fsys fs.FS, dst string, rendered *fileSet, res *Result, log func(str
 		if skipIrregular(fsys, path, d, log) {
 			return nil
 		}
-		if generatedHostRules(path, rendered) {
+		if generatedHostRules(path, built) {
 			data, err := fs.ReadFile(fsys, path)
 			if err != nil {
 				return err
 			}
 			return appendHostRules(root, filepath.FromSlash(path), data, log)
 		}
-		if keepRendered(path, rendered, log) {
+		if keepBuilt(path, built, log) {
 			return nil
 		}
 		data, err := fs.ReadFile(fsys, path)

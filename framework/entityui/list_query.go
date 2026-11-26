@@ -346,6 +346,10 @@ func (s *listState) activeFacets() []string {
 	return out
 }
 
+func (s *listState) hasURLFilter() bool {
+	return s.q.Has(s.p.filter) || s.q.Has(s.p.rowF)
+}
+
 func (s *listState) carry(exclude ...string) url.Values {
 	drop := map[string]bool{}
 	for _, name := range exclude {
@@ -363,7 +367,7 @@ func (s *listState) carry(exclude ...string) url.Values {
 	if v := strings.TrimSpace(s.search); v != "" && !drop[s.p.q] {
 		out.Set(s.p.q, v)
 	}
-	if v := s.filterText; v != "" && !drop[s.p.filter] {
+	if v := s.filterText; v != "" && !drop[s.p.filter] && (!drop[s.p.saved] || s.hasURLFilter()) {
 		out.Set(s.p.filter, v)
 	} else if v == "" && !drop[s.p.filter] && !drop[s.p.saved] && s.savedID != "" && s.q.Has(s.p.filter) {
 		out.Set(s.p.filter, "")

@@ -163,6 +163,10 @@ func TestEventBridgeShutdownDeadline(t *testing.T) {
 				finalHookRan := make(chan struct{})
 				app.OnStopFirst(func() error {
 					close(finalHookRan)
+					if tc.timeout <= 0 {
+						// An expired drain starts the stop without waiting for it.
+						return nil
+					}
 					select {
 					case <-f.detached:
 					default:
@@ -192,13 +196,18 @@ func TestEventBridgeShutdownDeadline(t *testing.T) {
 				synctest.Wait()
 				select {
 				case err := <-done:
-					if !errors.Is(err, context.DeadlineExceeded) {
-						t.Errorf("Shutdown = %v, want context.DeadlineExceeded", err)
+					if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "event bridge stop abandoned after the drain deadline") {
+						t.Errorf("Shutdown = %v, want context.DeadlineExceeded from the event bridge stop", err)
 					}
 					select {
 					case <-finalHookRan:
 					default:
 						t.Error("Shutdown skipped the final stop hook")
+					}
+					select {
+					case <-f.detached:
+					default:
+						t.Error("Shutdown did not start the event bridge stop")
 					}
 				default:
 					t.Error("Shutdown still waiting for fanout Publish after its deadline")

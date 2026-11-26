@@ -63,6 +63,7 @@ appUI = appUI.WithCreatePath(createPath)
 Returning `false` hides create links for that entity. Use `WithRecordPath` to customize record URLs and `WithAPIPath` to customize write endpoints.
 - **Missing route detection:** the first time a list renders record links pointing at an unregistered route, entityui logs a warning (`entityui: list rows link to a path no screen serves`). Pass `.NoLinks()` to disable row links.
 - **Form wire names:** form inputs submit using the CRUD handler's JSON wire key (`WireName` or default camelCase, e.g., `addressLine1` for `address_line_1`), so validation errors bind directly back to each field.
+- **JSON defaults:** create forms render JSON defaults as JSON text. They preserve pre-encoded JSON and serialize typed Go maps and slices.
 - **Server-owned columns:** `Scope.OwnerField`, `MultiTenant` tenant columns, auto-generated primary keys, and state/stamp fields never render as editable inputs. Caller-assigned primary keys (composite keys or required non-auto keys) render on Create, become read-only on Record, and clear on Duplicate.
 
 ## List screens
@@ -77,11 +78,13 @@ Optional power-user controls (off by default on app screens, on in `battery/admi
 - `.QueryBox()` — structured query expression bar
 - `.ColumnsMenu()` — toggle visible columns
 - `.Deleted()` — trash view + restore for `Scope.SoftDelete` entities
-- `.SavedViews()` — save and recall named filter combinations
-- `.TabCounts()` — row badges on view tabs
+- `.SavedViews()` — save and recall named filter combinations. A successful native save or delete returns to the original list URL if adding or removing the selected view would produce a redirect longer than 2,048 bytes.
+- `.TabCounts()` — row badges that count the same result as each tab's link, including filters submitted through the query box. Switching from a saved view to a built-in tab carries explicitly submitted filters.
 - `.Undo()` — 10-second Undo toast after soft-deleting (posts `<write base>/<id>/_restore`)
 
 ## Record and create screens
+
+When a field's `ShowWhen` condition refers to the entity's state, the create screen uses the state field's default. The record screen uses the stored state.
 
 `appUI.Record(name, id)` renders:
 - **Header:** title, current state badge, timestamps, non-danger state transition buttons, primary Save button (`Mod+S`, idle until dirty), and an overflow menu (Copy link, Copy API URL, danger transitions with confirm dialog, Duplicate, Create another, Delete). Copy links trust `X-Forwarded-Proto` only from `AppConfig.TrustedProxies`.
@@ -94,6 +97,8 @@ Optional power-user controls (off by default on app screens, on in `battery/admi
 - **Drawer mode:** when opened via `app.InterceptFrom`, the record renders inside `ui.DrawerBar`. Pass `.Steps(list)` with the same `ListBuilder` to enable previous/next stepping through the active filtered order, and `.Panel()` on the full record page to offer an "Open in panel" link.
 
 Relation fields render as `ui.Picker`: focusing lists the first 20 related records, typing searches through `POST <api>/_pick?field=<field>` (POST-only, JSON-only, 4 KB cap, same-origin, gated by both host and target read permissions and per-row `Decider`), and `WithRecordPath` adds Open and New shortcuts.
+
+Picker options and `UI.SearchRecords` results honor the target record's read hooks. Records hidden by `BeforeGet` are excluded, and titles reflect `AfterGet`.
 
 ## Bulk actions and CSV export
 

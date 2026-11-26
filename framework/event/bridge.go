@@ -24,17 +24,6 @@ const bridgePublishTimeout = 5 * time.Second
 // on bus, lossy and never blocking an emitter. It errors on a nil fanout or a
 // second attach; stop detaches it and is idempotent.
 func AttachFanout(bus *EventBus, f fanout.Fanout) (stop func(), err error) {
-	drain, err := AttachFanoutDrainer(bus, f)
-	if err != nil {
-		return nil, err
-	}
-	return func() { _ = drain(context.Background()) }, nil
-}
-
-// AttachFanoutDrainer attaches a fanout like AttachFanout. The returned drainer
-// detaches it and waits for the publisher, returning a wrapped context error
-// if ctx has already ended or ends before the publisher exits.
-func AttachFanoutDrainer(bus *EventBus, f fanout.Fanout) (drain func(context.Context) error, err error) {
 	if f == nil {
 		return nil, fmt.Errorf("event: AttachFanout: nil fanout")
 	}
@@ -76,11 +65,6 @@ func AttachFanoutDrainer(bus *EventBus, f fanout.Fanout) (drain func(context.Con
 	}
 	go func() {
 		defer close(publisherDone)
-		defer func() {
-			bus.mu.Lock()
-			bus.fanoutAttached = false
-			bus.mu.Unlock()
-		}()
 		for {
 			select {
 			case <-stopped:
@@ -134,26 +118,23 @@ func AttachFanoutDrainer(bus *EventBus, f fanout.Fanout) (drain func(context.Con
 		clearTap()
 		close(stopped)
 		<-publisherDone
+		bus.mu.Lock()
+		bus.fanoutAttached = false
+		bus.mu.Unlock()
 		return nil, fmt.Errorf("event: AttachFanout: subscribe %q: %w", fanoutTopic, subErr)
 	}
 
-	stop := sync.OnceFunc(func() {
-		cancel()
-		clearTap()
-		close(stopped)
-	})
-	return func(ctx context.Context) error {
-		stop()
-		const deadlineMessage = "event: fanout bridge publisher wait abandoned"
-		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("%s: %w", deadlineMessage, err)
-		}
-		select {
-		case <-publisherDone:
-			return nil
-		case <-ctx.Done():
-			return fmt.Errorf("%s: %w", deadlineMessage, ctx.Err())
-		}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			cancel()
+			clearTap()
+			close(stopped)
+			<-publisherDone
+			bus.mu.Lock()
+			bus.fanoutAttached = false
+			bus.mu.Unlock()
+		})
 	}, nil
 }
 

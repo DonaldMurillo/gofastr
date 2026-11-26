@@ -49,6 +49,20 @@ func TestAttentionCountsFilterFuncView(t *testing.T) {
 	}
 }
 
+func TestAttentionReportsFailedViewCount(t *testing.T) {
+	x := funcViewEnv(t, `ref = "b"`, true)
+	if _, err := x.db.Exec("DROP TABLE orders"); err != nil {
+		t.Fatal(err)
+	}
+	dash := get(x.as(theAdmin), "/admin").Body.String()
+	if strings.Contains(dash, "Nothing needs attention.") {
+		t.Error("dashboard said nothing needs attention after a watched count failed")
+	}
+	if !strings.Contains(dash, "Could not check every watched view.") {
+		t.Error("dashboard did not warn that the attention check was incomplete")
+	}
+}
+
 // SECURITY: a watched view whose Show hides it from the caller draws
 // nothing. The list falls back to All for a hidden view, so the panel
 // listed every row under the hidden view's heading.

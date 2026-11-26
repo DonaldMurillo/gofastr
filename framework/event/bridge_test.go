@@ -3,7 +3,6 @@ package event_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -294,23 +293,6 @@ func TestAttachFanoutDetachReattach(t *testing.T) {
 		t.Fatalf("reattach after detach failed: %v", err)
 	}
 	stop2()
-}
-
-func TestBridgeDrainerExpiredAfterStop(t *testing.T) {
-	drain, err := event.AttachFanoutDrainer(event.NewEventBus(), fanout.NewInProcess())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := drain(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	expired, cancel := context.WithDeadline(context.Background(), time.Time{})
-	defer cancel()
-	for range 32 {
-		if err := drain(expired); !errors.Is(err, context.DeadlineExceeded) {
-			t.Fatalf("drain(expired) = %v, want context.DeadlineExceeded", err)
-		}
-	}
 }
 
 // TestIsRemoteReflectsOrigin: IsRemote is true inside a handler that received

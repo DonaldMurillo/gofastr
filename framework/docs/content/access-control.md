@@ -158,6 +158,8 @@ store.Revoke(ctx, "editor", "posts:write") // DB delete + tombstone + live polic
 
 Wire the store with `framework.WithGrantStore(store)` alongside `framework.WithFanout(pg)` so `Grant`/`Revoke` publishes refresh signals on the `gofastr.access` lane. Peers re-read that role from the DB and swap it atomically via `RolePolicy.ReplaceRole`. A background reconciliation timer reloads every role every 5 minutes (`access.DefaultReconcileInterval`, tunable via `access.WithReconcileInterval`) in case a fanout frame is dropped.
 
+`App.Shutdown` waits for the grant store's fanout to stop only until the shutdown deadline. If the deadline expires first, the store finishes stopping in the background once its in-flight work returns. Shutdown reports `access store fanout stop abandoned after the drain deadline`, wrapping the context error, unless an earlier teardown error takes precedence. A refresh frame still being published when the process exits can be lost; peers pick up the change on their next reconcile.
+
 `Revoke` writes a tombstone in `access_grants_revoked` so revoking a code-seeded grant survives restarts and propagates across replicas. Effective grants are always `(code baseline ∪ DB grants) − tombstones`:
 - Calling `Grant` is the only way to lift a tombstone.
 - After `Revoke("teams:*")`, granting a single child like `Grant("teams:read")` returns `access.ErrRevokedByWildcard` (re-grant `"teams:*"`, then revoke individual permissions). Use `store.CheckGrant(ctx, role, perms...)` to preflight a batch without writing.

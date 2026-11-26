@@ -359,11 +359,12 @@ invariants:
     enforced_by:
       - test: framework/headless.TestSweepContentStepWizardHeadingTakesScriptFocus
   - id: card-title-link-is-the-one-link
-    rule: A Card with TitleHref wraps the title's words in one PartCardTitleLink anchor, its Action outside it, and panics with Href, without a title, with a TitleContent holding interactive content (an <a>, a control, embedded media, a tabindex or contenteditable, and not <abbr>, <aside> and the like), or on a URL the anchor policy refuses; Article renders the root as an <article> and panics with Href.
+    rule: A Card with TitleHref wraps the title's words in one PartCardTitleLink anchor, its Action outside it, and panics with Href, without a title, with a TitleContent holding an anchor, control, interactive embedded media, tabindex or contenteditable, or on a URL the anchor policy refuses. Audio and video count as interactive with controls. Article renders the root as an <article> and panics with Href.
     enforced_by:
       - test: framework/headless.TestCardArticleWithTitleLink
       - test: framework/headless.TestCardTitleLinkRefusals
       - test: framework/headless.TestCardTitleLinkAllowsTagsThatStartWithA
+      - test: framework/headless.TestCardTitleLinkAllowsPassiveMedia
 decisions:
   - id: layout-sizes-are-named-steps
     date: 2026-11-16
