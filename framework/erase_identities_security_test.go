@@ -825,14 +825,12 @@ type retentionSweepProbe struct {
 	once    sync.Once
 }
 
-func (p *retentionSweepProbe) Connect(ctx context.Context) (driver.Conn, error) {
+// Connect ignores ctx, like a driver stuck in a dial that cancellation
+// cannot interrupt: the case the shutdown join and its deadline guard.
+func (p *retentionSweepProbe) Connect(context.Context) (driver.Conn, error) {
 	p.once.Do(func() { close(p.entered) })
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-p.release:
-		return nil, errors.New("no such function: version")
-	}
+	<-p.release
+	return nil, errors.New("no such function: version")
 }
 
 func (*retentionSweepProbe) Driver() driver.Driver { return nil }
@@ -887,10 +885,9 @@ func TestShutdownJoinsRetentionSweepDuringBoot(t *testing.T) {
 
 func TestShutdownBoundsRetentionSweepWait(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		probe := retentionSweepProbe{entered: make(chan struct{})}
+		probe := retentionSweepProbe{entered: make(chan struct{}), release: make(chan struct{})}
 		db := sql.OpenDB(&probe)
 		defer db.Close()
-		defer time.Sleep(20 * time.Second)
 		app := NewApp(WithoutAutoMigrate(), WithoutDefaultMiddleware())
 		app.WithSeed(func(context.Context) error {
 			app.DB = db
@@ -920,6 +917,7 @@ func TestShutdownBoundsRetentionSweepWait(t *testing.T) {
 		if !stopped {
 			t.Error("Shutdown skipped OnStop after the retention sweep wait expired")
 		}
+		close(probe.release)
 		if err := <-run; err != nil {
 			t.Fatalf("Run: %v", err)
 		}

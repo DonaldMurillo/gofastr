@@ -277,7 +277,7 @@ invariants:
       - test: framework.TestExpiredRowDoesNotBlockANewFailure
       - test: framework.TestAppStartSweepsExpiredRetention
   - id: erase-retention-probe-honors-context
-    rule: App.SweepErasureRetention uses its caller's context for the dialect probe and returns a probe error without trying to sweep using a guessed dialect.
+    rule: App.SweepErasureRetention uses its caller's context for the dialect probe and fails closed. When the probe is cancelled, hits the caller's deadline or keeps failing, the sweep returns that error and deletes nothing, rather than sweeping with a guessed dialect.
     enforced_by:
       - test: framework.TestEraseRetentionCancelsDialectProbe
       - test: framework.TestEraseRetentionProbeFailsClosed

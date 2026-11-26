@@ -24,6 +24,14 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Added
+
+- **`migrate.DetectDialectStrictContext(ctx, db)`** detects the dialect
+  like `DetectDialectStrict` and stops probing, or waiting to retry, when
+  `ctx` ends, returning its error. See
+  [Migrations](framework/docs/content/migrations.md)
+  ([#908](https://github.com/DonaldMurillo/gofastr/pull/908)).
+
 ### Changed
 
 - **BREAKING: `entity.Define` refuses a JSON field as a cursor column**
@@ -192,7 +200,10 @@ few lines, and link the PR or the docs page for the rest.
   ([#902](https://github.com/DonaldMurillo/gofastr/pull/902)).
 - `App.SweepErasureRetention`, auto-migration, schema diffing, seeding, and
   the stale owner foreign key scan now stop probing the database dialect when
-  their caller's context ends ([#908](https://github.com/DonaldMurillo/gofastr/pull/908)).
+  their caller's context ends. When the probe is cancelled or the database
+  stays unreachable, `SweepErasureRetention` returns the error and deletes
+  nothing, instead of sweeping with a guessed SQLite dialect
+  ([#908](https://github.com/DonaldMurillo/gofastr/pull/908)).
 
 #### Fixes that may need a change in your app
 

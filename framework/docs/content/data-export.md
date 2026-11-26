@@ -25,7 +25,7 @@ These tools complement — and do **not** replace — native database backups (`
 - Invokes every registered battery and store eraser: auth sessions/tokens/2FA/passkeys, audit log actor references, `featureflag` SQL allowlists, `idempotency` cached responses, `search` documents tagged with `Owner`, and uploaded files.
 - **Tenant caveat (`WithEraseTenant`):** `WithEraseTenant(tenantID)` scopes `MemberSeparator` erasers (such as allowlists), **not** entity rows — entity rows are matched by owner ID alone. Use globally unique user IDs (such as UUIDs) across tenants; if two tenants reuse the same local owner ID, erasing that ID matches rows in both.
 
-The app deletes expired erasure retry records at startup and once an hour. If you run `App.SweepErasureRetention(ctx)` from your own scheduler, cancelling `ctx` also stops the database dialect probe and its retry waits.
+The app deletes expired erasure retry records at startup and once an hour. If you run `App.SweepErasureRetention(ctx)` from your own scheduler, cancelling `ctx` also stops the database dialect probe and its retry waits. The sweep fails closed: if the probe is cancelled or the database stays unreachable, it returns that error and deletes nothing, rather than guessing a dialect. Expired records stay until the next sweep that can reach the database.
 
 ## Stores outside the database
 

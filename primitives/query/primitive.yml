@@ -13,7 +13,7 @@ twins:
       - path: core/query/dialect.go
         note: IsPostgres, one shot, any error reads as not Postgres.
       - path: framework/migrate/migrate.go
-        note: detectDialectFailClosed, retried and failing closed.
+        note: DetectDialectStrictContext, retried, bounded by the caller's context and failing closed.
       - path: framework/crud/key.go
         note: probeDialect and isPostgres, with a certainty flag and a cache.
 invariants:
