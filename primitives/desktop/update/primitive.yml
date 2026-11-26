@@ -8,7 +8,7 @@ docs:
   - framework/docs/content/desktop.md
 on_change:
   - No error, log line or bridge message from the updater carries a path or a URL; the bridge errors are fixed words and paths go through LogDetail.
-  - The tests behind darwin-signature-pin run only on a Mac and those behind windows-layout-is-closed only on Windows; CI runs neither, so run them on that machine before merging a change to the signature check or the Windows layout.
+  - The tests behind darwin-signature-pin run only on a Mac, and CI has no Mac step for them, so run them on a Mac before merging a change to the signature check. Those behind windows-layout-is-closed run in the Windows workflow's Desktop updater step.
 invariants:
   - id: update-config-validated
     rule: New panics on an Update config whose FeedURL is not https or http to 127.0.0.1, whose PublicKey is not 64 hex characters, whose Channel is over 64 bytes or holds a control character, whose MacOSTeamID is not ten uppercase letters and digits, or that sets both MacOSTeamID and MacOSAllowAdHoc.
@@ -23,6 +23,11 @@ invariants:
     rule: install is single-flight through TryLock, so a concurrent call is refused at once, and every call after a completed swap is refused.
     enforced_by:
       - test: battery/desktop.TestInstallRefusesConcurrentInstall
+  - id: one-install-across-processes
+    rule: install and launch cleanup take a non-blocking lock for their whole length, on the platform's update.InstallLocker path (Linux, <apps>/<id>~lock, which uninstall takes too) or else update.lock in the data directory; install refuses with in progress and cleanup leaves the leftover when another process holds it.
+    enforced_by:
+      - test: battery/desktop.TestInstallRefusedWhileAnotherProcessInstalls
+      - test: battery/desktop.TestLinuxStaleCleanupWaitsForTheInstallLock
   - id: only-a-strictly-newer-release
     rule: Check and install treat the feed release as an update only when it is strictly newer than the running version by semver precedence, so an equal or older feed is never offered or installed.
     enforced_by:
@@ -144,12 +149,57 @@ invariants:
       - test: battery/desktop/internal/update.TestDarwinVerifyPinsTeamID
       - test: battery/desktop/internal/update.TestDarwinVerifyRefusesNoIdentity
       - test: battery/desktop/internal/update.TestDarwinUnreadableIdentityRefuses
+  - id: linux-needs-an-installation
+    rule: The Linux platform reports a bundle only when the running executable resolves to <apps>/<id>/bin/<id>, <apps> passes linuxbundle.OpenDirectory, and linuxbundle.ReadInstalled reads a manifest and receipt for that id, without hashing the payload; when the path has that shape and either check fails it warns once with no path in the message.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestLinuxPlatformReadsTheInstallation
+      - test: battery/desktop/internal/update.TestLinuxPlatformNeedsAnIntactInstallation
+      - test: battery/desktop/internal/update.TestLinuxPlatformReadsAChangedInstallation
+  - id: linux-swaps-the-installation
+    rule: A Linux install swaps the whole <apps>/<id> directory for one staged from the verified archive in the installed form, with a receipt reissued for the new manifest that keeps the running installation's launcher and desktop entry digests, keeps the previous directory as <id>~old until the next launch with updates configured, and relaunches bin/<id> in its own session with PredecessorEnv naming the quitting process.
+    enforced_by:
+      - test: battery/desktop.TestLinuxInstallSwapsTheInstallation
+      - test: battery/desktop/internal/update.TestLinuxExtractStagesAnInstallationUninstallAccepts
+      - test: battery/desktop/internal/update.TestLinuxRelaunchNamesThePredecessor
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxDesktopUpdateEndToEnd
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxDesktopUpdateNative
+  - id: linux-side-paths-name-no-app
+    rule: The copies a Linux install keeps beside an installation are <id>~old and <id>~new, which the app id grammar cannot name, so an update or a launch cleanup never removes another installed app.
+    enforced_by:
+      - test: battery/desktop.TestLinuxUpdateLeavesOtherAppsAlone
+  - id: linux-stale-instance-refuses
+    rule: A Linux install refuses with ErrInstallationChanged, and the bridge with restart, when the installation on disk no longer carries the receipt this process read at start, so a second running instance does not install the release again or start another copy.
+    enforced_by:
+      - test: battery/desktop.TestLinuxSecondInstanceDoesNotReinstall
+  - id: linux-keeps-name-and-scheme
+    rule: The Linux signature check refuses a staged update whose display name or embedded URL scheme differs from the running installation's, and the install then refuses with the archive error before anything is swapped.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestLinuxVerifyRefusesANameOrSchemeChange
+      - test: battery/desktop.TestLinuxInstallRefusesARenamedApp
+  - id: linux-archive-is-the-running-app
+    rule: A Linux install refuses an archive for another architecture, one whose payload is off its manifest, and one whose manifest names another app id.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestLinuxExtractRefusesABadBundle
+      - test: battery/desktop/internal/update.TestLinuxInspectRefusesAnotherApp
+  - id: extract-tar-one-root
+    rule: ExtractTarGz refuses a stream that expands past maxTarStream, PAX records included, an entry that escapes the root, a second top-level name, a link, device, FIFO or other non-regular, non-directory entry, a repeated name, a regular file as the root, more than maxTarEntries entries, an entry past maxTarEntry and a total past maxTarTotal, the caps from each header before its body, and drops group and other write, setuid, setgid and sticky.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestExtractTarGzRefusesUnsafeArchives
+      - test: battery/desktop/internal/update.TestExtractTarGzWritesOneRoot
+      - test: battery/desktop/internal/update.TestExtractTarGzHoldsItsCaps
+      - test: battery/desktop/internal/update.TestExtractTarGzCapsTheExpandedStream
+  - id: feed-writer-checks-linux-archives
+    rule: WriteFeed refuses a linux- platform archive that is not a tar.gz ExtractTarGz would accept, that holds no manifest.json or one past MaxManifest, whose root is not the one gofastr desktop build writes for its manifest, or whose manifest names another platform or version.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestWriteFeedChecksALinuxArchive
+      - test: battery/desktop/internal/update.TestWriteFeedRefusesABadLinuxArchive
   - id: windows-layout-is-closed
     rule: A Windows install swaps exactly the executable and WebView2Loader.dll, refuses a running layout where the loader is missing or not a regular file, and relaunches the new executable with PredecessorEnv naming the quitting process.
     enforced_by:
       - test: battery/desktop/internal/update.TestReadRunningBuildRefusesABrokenLayout
       - test: battery/desktop/internal/update.TestWindowsPlatformInspect
       - test: battery/desktop/internal/update.TestWindowsRelaunchNamesThePredecessor
+      - test: battery/desktop/internal/update.TestRelaunchEnvReplacesEveryPredecessorEntry
 decisions:
   - id: build-metadata-refused
     date: 2026-11-20
@@ -183,3 +233,23 @@ decisions:
       - option: Queue it behind the first.
         why: Two runs share <Name>.app.new and .old, and the second's RemoveAll of .old could delete the first's only copy of the running bundle between its renames.
     upholds: [one-install-at-a-time]
+  - id: linux-trusts-the-feed-signature
+    date: 2026-11-25
+    status: accepted
+    decision: A Linux update rests on the ed25519 feed signature, which pins the archive's sha256 and size, and on the archive's manifest, which pins every payload file; the executable carries no signature of its own.
+    rejected:
+      - option: A detached ed25519 signature over the ELF, with its own key.
+        why: It names the same publisher the feed key already pins, over bytes the feed already pins, and gives every publisher a second key to keep and rotate.
+      - option: GPG or distribution package signing.
+        why: Linux has no standard signature for a per-user ELF app, and either would add a runtime dependency and a keyring the app does not control.
+    revisit_if: Linux gains a standard per-app code signature the shell can check without a new dependency, or the feed and the archives come to be published by parties that do not share one key.
+    upholds: [linux-archive-is-the-running-app]
+  - id: linux-refuses-a-rename
+    date: 2026-11-25
+    status: accepted
+    decision: An update that changes the app's display name or URL scheme is refused, not applied by rewriting the desktop entry.
+    rejected:
+      - option: Rewrite the desktop entry during the update.
+        why: The entry lives outside the swapped directory, so the rewrite and the swap are two steps; a crash between them leaves a receipt that no longer matches the entry, and uninstall then refuses to remove the app.
+    revisit_if: A release needs to rename an installed app in place.
+    upholds: [linux-keeps-name-and-scheme]

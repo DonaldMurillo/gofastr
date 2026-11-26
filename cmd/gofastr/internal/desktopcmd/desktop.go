@@ -24,6 +24,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/devcmd"
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
+	"github.com/DonaldMurillo/gofastr/internal/appid"
+	"github.com/DonaldMurillo/gofastr/internal/linuxbundle"
 )
 
 func RunDesktop(args []string) {
@@ -321,49 +323,20 @@ func parseDesktopBuildFlags(args []string) (desktopBuildFlags, error) {
 	return f, err
 }
 
-var desktopIDRe = regexp.MustCompile(`^[A-Za-z0-9.-]+$`)
+var desktopVersionRe = regexp.MustCompile(linuxbundle.VersionGrammar)
 
-var desktopVersionRe = regexp.MustCompile(`^[0-9]+(\.[0-9A-Za-z]+)*$`)
+var desktopSchemeRe = regexp.MustCompile(linuxbundle.SchemeGrammar)
 
-var desktopSchemeRe = regexp.MustCompile(`^[a-z][a-z0-9+.-]{0,31}$`)
-
-// validateDesktopID enforces the reverse-DNS grammar (same as
-// battery/desktop's Config.ID validation).
 func validateDesktopID(id string) error {
-	if !desktopIDRe.MatchString(id) || !strings.Contains(id, ".") {
-		return fmt.Errorf("--id %q must be reverse-DNS: [A-Za-z0-9.-]+ with at least one dot", id)
-	}
-	// Mirrors battery/desktop's validateAppID: the id becomes both the
-	// bundle's CFBundleIdentifier and a path segment under the OS user
-	// config dir, and ".", "..", "..." all satisfy the grammar AND the
-	// "contains a dot" rule. A bundle built with --id .. would write
-	// app.db, the session secret and the local owner id one level ABOVE
-	// its data dir on every launch.
-	if strings.Trim(id, ".-") == "" {
-		return fmt.Errorf("--id %q must not be a bare dot/dash sequence: "+
-			"it names the bundle identifier and a directory under the OS user config dir", id)
-	}
-	if len(id) > 253 {
-		return fmt.Errorf("--id is longer than 253 characters")
+	if err := appid.Check(id); err != nil {
+		return fmt.Errorf("--id %w", err)
 	}
 	return nil
 }
 
-// validateDesktopName: printable, no path separator, bounded.
 func validateDesktopName(name string) error {
-	if name == "" {
-		return fmt.Errorf("--name must not be empty")
-	}
-	if len(name) > 64 {
-		return fmt.Errorf("--name is longer than 64 characters")
-	}
-	if strings.ContainsRune(name, '/') || strings.ContainsRune(name, '\\') {
-		return fmt.Errorf("--name must not contain a path separator")
-	}
-	for _, r := range name {
-		if r < 0x20 || r == 0x7f {
-			return fmt.Errorf("--name must be printable (control character at %q)", r)
-		}
+	if err := appid.CheckName(name); err != nil {
+		return fmt.Errorf("--name %w", err)
 	}
 	return nil
 }

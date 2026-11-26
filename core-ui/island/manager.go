@@ -321,6 +321,30 @@ func (m *Manager) publishFanout(sessionID string, update IslandUpdate) {
 // SetFanout attaches a fanout so PushUpdate updates cross replicas and updates originating on other
 // replicas are re-delivered to the local session stream (topic "gofastr.islands").
 func (m *Manager) SetFanout(f fanout.Fanout) (stop func(), err error) {
+	stopCtx, err := m.SetFanoutContext(f)
+	if err != nil {
+		return nil, err
+	}
+	return func() { _ = stopCtx(context.Background()) }, nil
+}
+
+// SetFanoutContext is [Manager.SetFanout] with a stop that sends goodbyes only
+// while ctx lasts and returns ctx's error if it ended first. The stop runs
+// once; later calls wait for it and return its result.
+func (m *Manager) SetFanoutContext(f fanout.Fanout) (stop func(context.Context) error, err error) {
+	detach, err := m.attachFanout(f)
+	if err != nil {
+		return nil, err
+	}
+	var once sync.Once
+	var stopErr error
+	return func(ctx context.Context) error {
+		once.Do(func() { stopErr = detach(ctx) })
+		return stopErr
+	}, nil
+}
+
+func (m *Manager) attachFanout(f fanout.Fanout) (func(context.Context) error, error) {
 	if f == nil {
 		return nil, errors.New("island: SetFanout: nil fanout")
 	}
@@ -400,42 +424,44 @@ func (m *Manager) SetFanout(f fanout.Fanout) (stop func(), err error) {
 	go m.presenceHeartbeatLoop(presenceDone)
 	m.broadcastAllLocalTopics()
 
-	var once sync.Once
-	return func() {
-		once.Do(func() {
-			m.mu.Lock()
-			done := m.presenceDone
-			m.presenceSend = nil
-			m.mu.Unlock()
-			if done != nil {
-				close(done)
+	return func(ctx context.Context) error {
+		islandCancel()
+		presenceCancel()
+		m.mu.Lock()
+		done := m.presenceDone
+		m.presenceSend = nil
+		m.fanoutSend = nil
+		m.mu.Unlock()
+		if done != nil {
+			close(done)
+		}
+		m.presenceWG.Wait()
+		presenceStopQueue()
+		m.gracefulLeaveLocalTopics(ctx, f)
+		islandStopQueue()
+		m.mu.Lock()
+		topics := slices.Sorted(maps.Keys(m.remoteRosters))
+		before := make([][]PresenceMember, len(topics))
+		for i, topic := range topics {
+			before[i] = shownRosterLocked(m, topic)
+		}
+		m.fanout = nil
+		m.nodeID = ""
+		m.fanoutSend = nil
+		m.clearPresenceFanoutLocked()
+		var changed []string
+		for i, topic := range topics {
+			if !membersEqual(before[i], shownRosterLocked(m, topic)) {
+				changed = append(changed, topic)
 			}
-			m.presenceWG.Wait()
-			presenceStopQueue()
-			m.gracefulLeaveLocalTopics(f)
-			islandCancel()
-			presenceCancel()
-			islandStopQueue()
-			m.mu.Lock()
-			topics := slices.Sorted(maps.Keys(m.remoteRosters))
-			before := make([][]PresenceMember, len(topics))
-			for i, topic := range topics {
-				before[i] = shownRosterLocked(m, topic)
-			}
-			m.fanout = nil
-			m.nodeID = ""
-			m.fanoutSend = nil
-			m.clearPresenceFanoutLocked()
-			var changed []string
-			for i, topic := range topics {
-				if !membersEqual(before[i], shownRosterLocked(m, topic)) {
-					changed = append(changed, topic)
-				}
-			}
-			cb := m.presenceCallback()
-			m.mu.Unlock()
-			firePresenceChange(cb, changed)
-		})
+		}
+		cb := m.presenceCallback()
+		m.mu.Unlock()
+		firePresenceChange(cb, changed)
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("island fanout stop interrupted: %w", err)
+		}
+		return nil
 	}, nil
 }
 

@@ -48,3 +48,10 @@ jobs:
       # test puts the old value back), and a tampered archive refused.
       - name: Release install script
         run: go test ./cmd/gofastr/internal/releasecmd -run '^TestInstallPs1InstallsVerifiedBuild$' -count=1 -v
+      # The desktop updater on Windows: the executable-and-loader layout,
+      # the Authenticode policy, the relaunch environment and the
+      # cross-process install lock, which no Linux runner can exercise.
+      - name: Desktop updater
+        run: >-
+          go test ./battery/desktop/internal/update ./internal/filelock -count=1 &&
+          go test ./battery/desktop -run '^(TestInstall|TestFileLayout|TestUpdate|TestCheck|TestScheduled)' -count=1

@@ -34,6 +34,11 @@ invariants:
       - test: core-ui/island.TestIslandFanoutCrossDelivery
       - test: core-ui/island.TestIslandFanoutOwnNodeNoDup
       - test: core-ui/island.TestIslandFanoutStopDetaches
+  - id: fanout-stop-unsubscribes-first
+    rule: The island fanout stop cancels the island and presence subscriptions and clears the island send before it waits on the presence queue or sends goodbyes, so a stop that a stuck Publish holds up, or that Shutdown abandons, no longer delivers peer updates to local sessions.
+    enforced_by:
+      - test: core-ui/island.TestFanoutStopUnsubscribesBeforeQueuedRosters
+      - test: framework.TestShutdownBoundsIslandFanoutStop
   - id: push-never-waits-on-the-backend
     rule: PushUpdate enqueues its fanout publish without blocking, so a stalled backend never stalls a request goroutine.
     enforced_by:

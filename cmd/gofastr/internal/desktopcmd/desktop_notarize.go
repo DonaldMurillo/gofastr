@@ -34,6 +34,7 @@ func validateNotarizeFlags(f desktopBuildFlags) error {
 // through this seam; tests swap it for a fake that records argv.
 var runTool = func(name string, args ...string) (string, error) {
 	out, err := exec.Command(name, args...).CombinedOutput()
+	//gofastr:allow(combinedparse) callers only quote the output in an error (toolDetail); none parses it
 	return string(out), err
 }
 

@@ -3,6 +3,7 @@ package update
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -26,4 +27,18 @@ func AwaitPredecessor() bool {
 	}
 	waitExit(pid, predecessorWait)
 	return true
+}
+
+// relaunchEnv is env for the process an update relaunches: every
+// PredecessorEnv entry, by the OS's key comparison same, replaced with
+// one naming this process.
+func relaunchEnv(env []string, same func(a, b string) bool) []string {
+	out := env[:0:0]
+	for _, kv := range env {
+		k, _, _ := strings.Cut(kv, "=")
+		if !same(k, PredecessorEnv) {
+			out = append(out, kv)
+		}
+	}
+	return append(out, PredecessorEnv+"="+strconv.Itoa(os.Getpid()))
 }

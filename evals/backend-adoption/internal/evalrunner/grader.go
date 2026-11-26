@@ -402,6 +402,7 @@ func commandOutput(ctx context.Context, dir, program string, args ...string) (st
 	var output bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &output, &output
 	err := proctree.Run(ctx, cmd)
+	//gofastr:allow(combinedparse) callers quote this transcript in a grade or an error; none parses it
 	return output.String(), err
 }
 

@@ -113,6 +113,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/textbind"
 	// 2026-11 bug-bash rules (read hooks)
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/hookedread"
+	// 2026-11-25 round-12 rules
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/combinedparse"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/guardbypass"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/nilmapwrite"
 )
 
 // repoAnalyzers are the repo invariants, each born from a bug that
@@ -230,6 +234,13 @@ var repoAnalyzers = []*analysis.Analyzer{
 	// 2026-11 bug-bash rules (request-data): one per repeated bug shape.
 	allow.Guard(textbind.Analyzer),
 	allow.Guard(sanitizefix.Analyzer),
+
+	// 2026-11-25 round-12 rules: merged tool output that is parsed, a
+	// map parameter written while a caller may pass nil, and a hook
+	// called bare where its recover guard exists.
+	allow.Guard(combinedparse.Analyzer),
+	allow.Guard(guardbypass.Analyzer),
+	allow.Guard(nilmapwrite.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means

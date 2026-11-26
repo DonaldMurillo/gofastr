@@ -97,7 +97,10 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 		// reader types into is read and filled the local way; a range,
 		// select, radio or hidden input stays dot-decimal) added 28,
 		// paid back by trims inside the module and a shorter scan.
-		"framework/localentity/localform.js": 3319,
+		// Reading the form's controls and reset through the prototype,
+		// so a field named elements or reset cannot shadow them, added
+		// 44 (2026-11-26, the formclobber lint in core-ui/check).
+		"framework/localentity/localform.js": 3363,
 	}
 	sources, err := check.RegisteredBehaviorSources(repoRoot)
 	if err != nil {

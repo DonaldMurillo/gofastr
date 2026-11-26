@@ -1,6 +1,7 @@
 package update
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bytes"
 	"crypto/ed25519"
@@ -9,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -20,6 +22,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 	"github.com/DonaldMurillo/gofastr/internal/filelock"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
+	"github.com/DonaldMurillo/gofastr/internal/linuxbundle"
 )
 
 // ErrBadKey is the sentinel for a key file that is not the keygen format (hex seed, or hex seed followed by hex public key).
@@ -116,11 +119,13 @@ func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveUR
 		return fmt.Errorf("archive exceeds the %d byte cap", int64(MaxArchiveSize))
 	}
 	windows := strings.HasPrefix(platform, "windows-")
-	root, err := zipRootName(data, !windows)
-	if err != nil {
+	if strings.HasPrefix(platform, "linux-") {
+		if err := checkLinuxArchive(data, platform, version); err != nil {
+			return err
+		}
+	} else if root, err := zipRootName(data, !windows); err != nil {
 		return err
-	}
-	if windows {
+	} else if windows {
 		info, err := windowsArchiveInfo(data, root)
 		if err != nil {
 			return err
@@ -229,6 +234,46 @@ func makeFeedDir(outDir string) error {
 
 func writePublic(path string, data []byte) error {
 	return atomicfile.WriteFile(path, data, atomicfile.Mode(0o644))
+}
+
+// checkLinuxArchive refuses a Linux release archive that walkTarGz
+// refuses, whose root directory is not <id>-<version>-linux-<arch>, or
+// whose manifest is not one ParseManifest accepts for this platform and
+// version. The payload's checksums are the installer's to check.
+func checkLinuxArchive(data []byte, platform, version string) error {
+	var raw []byte
+	root, err := walkTarGz(data, func(name string, hdr *tar.Header, body io.Reader) error {
+		top, rest, _ := strings.Cut(name, "/")
+		if rest != linuxbundle.ManifestName || hdr.Typeflag != tar.TypeReg {
+			return nil
+		}
+		if hdr.Size > linuxbundle.MaxManifest {
+			return fmt.Errorf("%w: %s/%s is larger than %d bytes", ErrBadArchive, top, rest, linuxbundle.MaxManifest)
+		}
+		var err error
+		raw, err = io.ReadAll(body)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("%w: the archive has no %s/%s", ErrBadArchive, root, linuxbundle.ManifestName)
+	}
+	manifest, err := linuxbundle.ParseManifest(raw)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrBadArchive, err)
+	}
+	if manifest.Platform != platform {
+		return fmt.Errorf("--platform %q does not match the archive: its manifest says %q", platform, manifest.Platform)
+	}
+	if manifest.Version != version {
+		return fmt.Errorf("--version %q does not match the archive: %s/%s says version %q; rebuild with gofastr desktop build --version %s", version, root, linuxbundle.ManifestName, manifest.Version, version)
+	}
+	if want, err := linuxbundle.RootName(manifest.ID, manifest.Version, strings.TrimPrefix(platform, "linux-")); err != nil || want != root {
+		return fmt.Errorf("%w: the archive root %q is not the one gofastr desktop build writes for this manifest", ErrBadArchive, root)
+	}
+	return nil
 }
 
 func zipRootName(data []byte, requireApp bool) (string, error) {

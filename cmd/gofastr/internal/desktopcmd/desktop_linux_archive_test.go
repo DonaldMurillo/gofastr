@@ -169,7 +169,7 @@ func TestLinuxArchiveRejectsPaths(t *testing.T) {
 	for _, name := range []string{"../escape", "/absolute", "a/../../escape", "a\\b", "a//b", ".", "a/./b"} {
 		t.Run(name, func(t *testing.T) {
 			var b bytes.Buffer
-			if err := writeLinuxArchive(&b, "bundle", []linuxArchiveEntry{{name: name, mode: 0644, data: []byte("x")}}); err == nil {
+			if err := writeLinuxArchive(&b, "bundle", []linuxArchiveEntry{{Name: name, Mode: 0644, Data: []byte("x")}}); err == nil {
 				t.Fatal("unsafe entry accepted")
 			}
 			if b.Len() != 0 {
@@ -183,7 +183,7 @@ func TestLinuxArchiveRejectsPaths(t *testing.T) {
 			t.Errorf("unsafe root %q accepted", root)
 		}
 	}
-	for _, entries := range [][]linuxArchiveEntry{{{name: "file", mode: 0777}}, {{name: "same", mode: 0644}, {name: "same", mode: 0644}}} {
+	for _, entries := range [][]linuxArchiveEntry{{{Name: "file", Mode: 0777}}, {{Name: "same", Mode: 0644}, {Name: "same", Mode: 0644}}} {
 		var b bytes.Buffer
 		if err := writeLinuxArchive(&b, "bundle", entries); err == nil {
 			t.Fatal("duplicate/mode accepted")
@@ -197,8 +197,8 @@ func TestLinuxArchiveRejectsSymlinkSource(t *testing.T) {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 	for i := range entries {
-		if entries[i].source != "" {
-			entries[i].source = link
+		if entries[i].Source != "" {
+			entries[i].Source = link
 		}
 	}
 	var b bytes.Buffer
@@ -240,7 +240,7 @@ func TestLinuxArchiveLauncherQuotes(t *testing.T) {
 	// extraction directory cannot become shell syntax or corrupt the path.
 	root := filepath.Join(t.TempDir(), "space % '$HOME' `false` \\\n")
 	for _, entry := range entries {
-		name := filepath.Join(root, filepath.FromSlash(entry.name))
+		name := filepath.Join(root, filepath.FromSlash(entry.Name))
 		if err := os.MkdirAll(filepath.Dir(name), 0700); err != nil {
 			t.Fatal(err)
 		}
@@ -248,7 +248,7 @@ func TestLinuxArchiveLauncherQuotes(t *testing.T) {
 		if _, err := copyLinuxArchiveEntry(&b, entry); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(name, b.Bytes(), os.FileMode(entry.mode)); err != nil {
+		if err := os.WriteFile(name, b.Bytes(), os.FileMode(entry.Mode)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -440,4 +440,62 @@ func TestLinuxArchiveBuildFailurePreservesRelease(t *testing.T) {
 	if err != nil || len(files) != 1 {
 		t.Fatalf("staging files remain: %v %v", files, err)
 	}
+}
+
+// A Linux archive whose version installs but cannot ride an update feed
+// is built with a warning; a feed-ready version earns none.
+func TestLinuxUpdateVersionWarning(t *testing.T) {
+	for _, version := range []string{"1.2", "1", "2026.11", "1.2.0.4"} {
+		if w := linuxUpdateVersionWarning(version); !strings.Contains(w, "cannot be published to an update feed") {
+			t.Errorf("version %q: warning %q, want the update-feed warning", version, w)
+		}
+	}
+	for _, version := range []string{"1.2.0", "0.1.0", "10.20.30"} {
+		if w := linuxUpdateVersionWarning(version); w != "" {
+			t.Errorf("version %q: warning %q, want none", version, w)
+		}
+	}
+}
+
+// The archive build prints the update-version warning before it
+// compiles: with 1.2 it says so, with 1.2.0 it does not. The package to
+// build does not exist, so the build stops right after the warning.
+func TestLinuxArchiveBuildWarnsOfAnUpdateVersion(t *testing.T) {
+	for _, c := range []struct {
+		version string
+		warns   bool
+	}{{"1.2", true}, {"1.2.0", false}} {
+		t.Run(c.version, func(t *testing.T) {
+			f := desktopBuildFlags{id: "dev.example.warn", version: c.version, pkg: "./testdata/no-such-package", out: t.TempDir(), format: "tar.gz"}
+			out := captureStdout(t, func() {
+				if err := buildLinuxDesktopArchive(f, "Warn", runtime.GOARCH); err == nil {
+					t.Fatal("the build of a missing package succeeded")
+				}
+			})
+			if got := strings.Contains(out, "cannot be published to an update feed"); got != c.warns {
+				t.Fatalf("warned %v, want %v; output:\n%s", got, c.warns, out)
+			}
+		})
+	}
+}
+
+// captureStdout runs fn with os.Stdout sent to a pipe and returns what it wrote.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stdout
+	os.Stdout = w
+	done := make(chan string)
+	go func() {
+		b, _ := io.ReadAll(r)
+		done <- string(b)
+	}()
+	defer func() { os.Stdout = saved }()
+	fn()
+	os.Stdout = saved
+	_ = w.Close()
+	return <-done
 }

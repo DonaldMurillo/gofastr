@@ -37,7 +37,7 @@ const (
 // reach the database it logs and returns SQLite; a caller that decides
 // anything beyond DDL types uses DetectDialectStrict.
 func DetectDialect(db *sql.DB) Dialect {
-	d, err := detectDialectFailClosed(db)
+	d, err := DetectDialectStrict(db)
 	if err != nil {
 		slog.Default().Warn("migrate: dialect probe failed; assuming SQLite for best-effort caller",
 			"err", err)
@@ -49,17 +49,22 @@ func DetectDialect(db *sql.DB) Dialect {
 // DetectDialectStrict is DetectDialect that returns an error, never a
 // guess, when the probe keeps failing for a transient reason.
 func DetectDialectStrict(db *sql.DB) (Dialect, error) {
-	return detectDialectFailClosed(db)
+	return DetectDialectStrictContext(context.Background(), db)
 }
 
-func detectDialectFailClosed(db *sql.DB) (Dialect, error) {
+// DetectDialectStrictContext is DetectDialectStrict with the caller's
+// context bounding both the query attempts and the waits between them.
+func DetectDialectStrictContext(ctx context.Context, db *sql.DB) (Dialect, error) {
 	const attempts = 3
 	var lastErr error
 	for i := range attempts {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		var v string
-		err := db.QueryRowContext(ctx, "SELECT version()").Scan(&v)
+		err := db.QueryRowContext(probeCtx, "SELECT version()").Scan(&v)
 		cancel()
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		if err == nil {
 			if strings.Contains(strings.ToLower(v), "postgresql") {
 				return DialectPostgres, nil
@@ -71,7 +76,13 @@ func detectDialectFailClosed(db *sql.DB) (Dialect, error) {
 			return DialectSQLite, nil
 		}
 		if i < attempts-1 {
-			time.Sleep(time.Duration(i+1) * 100 * time.Millisecond)
+			timer := time.NewTimer(time.Duration(i+1) * 100 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return "", ctx.Err()
+			case <-timer.C:
+			}
 		}
 	}
 	return "", fmt.Errorf("dialect probe failed after %d attempts: %w "+
@@ -174,7 +185,7 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 			return err
 		}
 	}
-	dialect, err := detectDialectFailClosed(db)
+	dialect, err := DetectDialectStrictContext(ctx, db)
 	if err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
@@ -353,7 +364,7 @@ func partitionRoutinesByDialect(routines []Routine, running Dialect) (applies, s
 // not exist, with no foreign keys and no column convergence (AutoMigrate
 // does both). The dialect is detected from db.
 func MigrateEntity(db *sql.DB, ent *entity.Entity) error {
-	dialect, err := detectDialectFailClosed(db)
+	dialect, err := DetectDialectStrict(db)
 	if err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}

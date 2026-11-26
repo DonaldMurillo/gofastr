@@ -691,7 +691,9 @@ func gradeTests(ctx context.Context, cfg config, c *cell, dir string) {
 	}
 	args := append([]string{"test", "-count=1", "-v", "-run", c.task.Tests}, c.task.Packages...)
 	out, err := command(ctx, dir, "go", args...).CombinedOutput()
+	//gofastr:allow(combinedparse) go test -v prints its PASS and FAIL lines on stdout; stderr adds no line either pattern matches
 	c.TestsPassed = len(testPass.FindAll(out, -1))
+	//gofastr:allow(combinedparse) the --- FAIL: lines come from go test on stdout; a stderr warning cannot match the pattern
 	c.TestsFailed = len(testFail.FindAll(out, -1))
 	switch {
 	case err == nil && c.TestsPassed > 0 && c.TestsFailed == 0:

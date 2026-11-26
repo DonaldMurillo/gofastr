@@ -325,7 +325,7 @@
         fd.forEach((v, k) => { if (v != null) params.append(k, String(v)); });
         const qs = params.toString();
         if (qs) resolvedPath = path + (path.includes('?') ? '&' : '?') + qs;
-      } else if (formSource && (formSource.enctype === 'multipart/form-data' || formSource.querySelector('input[type="file"]'))) {
+      } else if (formSource && ((formSource.getAttribute('enctype') || '').toLowerCase() === 'multipart/form-data' || formSource.querySelector('input[type="file"]'))) {
         body = fd;
       } else {
         body = _formJSON(fd, formSource);
@@ -564,7 +564,7 @@
   // exactly one hidden input followed by one checkbox: the pair a bool
   // field renders so an unchecked box still submits its value.
   function _hiddenCheckboxPair(form, name) {
-    const els = form && form.elements ? form.elements.namedItem(name) : null;
+    const els = form ? Object.getOwnPropertyDescriptor(HTMLFormElement.prototype, 'elements').get.call(form).namedItem(name) : null;
     if (!els || els.length !== 2) return false;
     return els[0].type === 'hidden' && els[1].type === 'checkbox';
   }

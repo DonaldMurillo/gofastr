@@ -190,6 +190,7 @@ func pluginsSectionMenuConfig() interactive.SectionMenuConfig {
 func groupScreen(path string, comp component.Component, opts ...app.ScreenOption) *app.Screen {
 	s := app.NewScreen(path, comp)
 	if t, ok := comp.(app.ScreenTitler); ok {
+		//gofastr:allow(guardbypass) the App.Register boot-time read: a panicking title stops the site before it serves
 		s.Title = t.ScreenTitle(context.Background())
 	}
 	if d, ok := comp.(app.ScreenDescriber); ok {

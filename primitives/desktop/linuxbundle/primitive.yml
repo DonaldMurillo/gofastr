@@ -1,0 +1,61 @@
+primitive: desktop.linuxbundle
+summary: The Linux desktop bundle, the fixed five-file payload and manifest the tar.gz release carries, and its installed form with an install receipt, read and written the same way by desktop install, desktop uninstall and the Linux updater.
+code:
+  - internal/linuxbundle/
+  - cmd/gofastr/internal/desktopcmd/desktop_install_linux.go
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - A change to what Open accepts or Populate writes changes both what desktop install installs and what the Linux updater swaps in; run TestLinuxDesktopUpdateEndToEnd, which proves desktop uninstall still accepts an updated installation.
+invariants:
+  - id: open-verifies-the-fixed-payload
+    rule: Open refuses a bundle whose manifest is not strict JSON of this format, whose payload is not exactly the five expected files at their modes, sizes and sha256, that holds an unlisted file, link or directory, whose executable is not an ELF for the manifest's architecture with its entry in an executable segment, or whose icon is not a PNG of 1 to 4096 pixels a side.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxInstallManifestRefusals
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxInstallPayloadRefusals
+      - test: internal/linuxbundle.TestOpenRefusesABadPayload
+      - test: battery/desktop/internal/update.TestLinuxExtractRefusesABadBundle
+  - id: installed-form-is-what-uninstall-accepts
+    rule: OpenInstalled accepts a directory only when Open does with installed set, the directory, bin, manifest and receipt are owned by this user at 0700, 0700, 0600 and 0600, and the receipt names the id and the manifest's sha256; Populate and WriteReceipt write exactly that form.
+    enforced_by:
+      - test: internal/linuxbundle.TestOpenInstalledRefusesAChangedInstallation
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxInstallRoundTrip
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxUninstallRetainsChanges
+      - test: battery/desktop/internal/update.TestLinuxExtractStagesAnInstallationUninstallAccepts
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxDesktopUpdateEndToEnd
+  - id: uninstall-checks-what-it-wrote-outside
+    rule: Uninstall refuses, keeping every file, when the launcher or desktop entry is not this user's at 0700 and 0600 or its bytes differ from the receipt's digests.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxUninstallRefusesAChangedLauncherOrEntryMode
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxUninstallRetainsChanges
+  - id: uninstall-holds-the-update-lock
+    rule: Uninstall takes the <apps>/<id>~lock an update of the app holds, refuses before removing anything while an update holds it, and removes the lock file once the installation is gone.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxUninstallWaitsForAnUpdate
+  - id: uninstall-after-an-interrupted-update
+    rule: When the <apps>/<id> directory itself is missing, uninstall removes <id>~old instead, only when it opens as an unchanged installation of id whose receipt matches the launcher and desktop entry; a present but changed <apps>/<id> is refused with every file kept, whatever <id>~old holds.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxUninstallAfterAnInterruptedUpdate
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxUninstallRefusesADamagedInstallationBesideAnOldCopy
+  - id: uninstall-clears-update-leftovers
+    rule: Uninstall also removes <id>~old and <id>~new when each opens as an installation of the same id, by their fixed inventory, and warns and keeps either otherwise.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxUninstallClearsUpdateLeftovers
+  - id: fixture-writes-through-the-build
+    rule: linuxbundletest writes bundles through WithManifest and WriteArchive, the manifest builder and archive writer gofastr desktop build uses, and differs from a release only in its payload's bytes.
+    judge: Does this change make linuxbundletest build a manifest or write an archive by any path but linuxbundle.WithManifest and linuxbundle.WriteArchive?
+  - id: build-identity-is-the-bundle-check
+    rule: gofastr desktop build checks a Linux bundle's id, name, version and scheme through CheckIdentity, the check Open applies to a manifest, and DesktopEntry refuses a scheme off SchemeGrammar.
+    judge: Does this change let gofastr desktop build or DesktopEntry accept an id, name, version or scheme that CheckIdentity refuses?
+decisions:
+  - id: one-package-for-the-format
+    date: 2026-11-25
+    status: accepted
+    decision: The bundle format, its verification and its installed form live in internal/linuxbundle, which the CLI and the desktop battery both import.
+    rejected:
+      - option: Keep verification in cmd/gofastr and give the updater its own copy.
+        why: The updater must write an installation uninstall accepts, and two copies of the receipt and mode rules would drift until an update leaves an app uninstall refuses to remove.
+      - option: Export the format from battery/desktop.
+        why: It is not an app-facing API, and an exported package would have to be documented and kept stable for callers that do not exist.
+    revisit_if: A third tool, such as a system-wide installer, needs a different installed form.
+    upholds: [installed-form-is-what-uninstall-accepts]

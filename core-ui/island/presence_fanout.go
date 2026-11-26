@@ -67,7 +67,7 @@ func (m *Manager) broadcastAllLocalTopics() {
 	}
 }
 
-func (m *Manager) gracefulLeaveLocalTopics(f fanout.Fanout) {
+func (m *Manager) gracefulLeaveLocalTopics(ctx context.Context, f fanout.Fanout) {
 	m.mu.RLock()
 	nodeID, done := m.nodeID, m.presenceDone
 	if done == nil {
@@ -77,13 +77,16 @@ func (m *Manager) gracefulLeaveLocalTopics(f fanout.Fanout) {
 	topics := localTopicsLocked(m)
 	m.mu.RUnlock()
 	for _, t := range topics {
+		if ctx.Err() != nil {
+			return
+		}
 		msg := presenceFanoutMsg{ReplicaID: nodeID, Topic: t, Members: nil, SentAt: time.Now().UnixMilli()}
 		body, err := json.Marshal(msg)
 		if err != nil {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), presenceGraceTimeout)
-		_ = f.Publish(ctx, presenceFanoutTopic, fanout.Wrap(nodeID, body))
+		publishCtx, cancel := context.WithTimeout(ctx, presenceGraceTimeout)
+		_ = f.Publish(publishCtx, presenceFanoutTopic, fanout.Wrap(nodeID, body))
 		cancel()
 	}
 }
