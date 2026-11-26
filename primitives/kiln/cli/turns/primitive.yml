@@ -1,0 +1,107 @@
+primitive: kiln.cli.turns
+summary: The agent watcher - it runs the active adapter once per panel chat message in an owner-only per-turn directory, bounds and cancels the child's process group, and journals the reply or why the turn ended.
+code:
+  - cmd/kiln/agent_watcher.go
+  - cmd/kiln/sysproc_unix.go
+  - cmd/kiln/sysproc_other.go
+docs:
+  - framework/docs/content/kiln.md
+twins:
+  - job: Capture a child's stdout up to a byte limit, discarding the rest without a write error.
+    why: codegen's cappedBuffer is unexported in its own package, and no shared internal package holds one yet.
+    sites:
+      - path: cmd/kiln/agent_watcher.go
+        note: cappedBuffer, limit maxAgentStdout.
+      - path: codegen/extension_command.go
+        note: cappedBuffer, limit maxExtensionStdout.
+invariants:
+  - id: acp-messages-are-not-turns
+    rule: The watcher runs no turn for a chat message an ACP session wrote, since kiln acp answers that message itself.
+    enforced_by:
+      - test: cmd/kiln.TestWatcherSkipsACPMessages
+  - id: watcher-waits-for-turns
+    rule: runAgentWatcher, once its context ends, cancels the in-flight turn and waits up to agentShutdownWait for its turns to finish before returning.
+    enforced_by:
+      - test: cmd/kiln.TestWatcherWaitsForTurnOnShutdown
+  - id: shutdown-wait-outlasts-wait-delay
+    rule: agentShutdownWait is longer than agentTurnWaitDelay, so a turn whose pipe a descendant holds still drains before the watcher gives up.
+    enforced_by:
+      - test: cmd/kiln.TestShutdownWaitOutlastsTurnWaitDelay
+  - id: adapter-read-per-turn
+    rule: The watcher reads the store's adapter when each chat message arrives, so a switch through /kiln/agent applies to the next turn.
+    judge: Does this change make the watcher use an adapter captured before the chat message arrived instead of reading the store per message?
+  - id: turn-wait-is-bounded
+    rule: A turn's cmd.Wait is bounded by WaitDelay, so a descendant holding the stdout pipe cannot wedge the turn after its context ends.
+    enforced_by:
+      - test: cmd/kiln.TestKilnAgentTurnPipeWedge
+  - id: turn-kills-its-group
+    rule: The adapter child leads its own process group on Unix, and that group is SIGKILLed on cancel and again when the turn ends.
+    enforced_by:
+      - test: cmd/kiln.TestAgentTurnCancelIsPrompt
+      - test: cmd/kiln.TestAgentTurnEndKillsGroup
+      - test: cmd/kiln.TestAgentTurnCancelKillsGroup
+  - id: stdout-capture-is-capped
+    rule: The turn's stdout capture keeps at most maxAgentStdout (4 MiB) and reports every write as complete, so a flood neither grows kiln nor kills the child with a write error.
+    enforced_by:
+      - test: cmd/kiln.TestCappedBufferTruncatesSilently
+  - id: work-dir-is-claimed-not-followed
+    rule: claimAdapterDir opens the adapter's fixed Dir without following a symlink, chmods the open handle to 0700, and refuses the dir if it cannot or if the name no longer points at the same directory afterwards.
+    enforced_by:
+      - test: cmd/kiln.TestAgentWorkDirRefusesSymlink
+      - test: cmd/kiln.TestAgentWorkDirSwapRefused
+  - id: turn-dir-is-unique-and-removed
+    rule: A turn runs in a fresh MkdirTemp child of the claimed 0700 Dir, removed when the turn ends.
+    enforced_by:
+      - test: cmd/kiln.TestTurnRunsInAFreshChildDir
+      - test: cmd/kiln.TestAgentWorkDirOwnerOnlyUnique
+  - id: argv-panic-skips-turn
+    rule: A panicking adapter BuildArgs costs one skipped turn, logged through textsafe.Recovered, not the process.
+    enforced_by:
+      - test: cmd/kiln.TestSafeBuildArgsRecoversPanic
+  - id: destructive-request-needs-plan
+    rule: A message naming a destructive action (delete, remove, drop, wipe, rebuild, reset, clear all, scrap, tear down) reaches the adapter behind a directive to call propose_plan and wait for confirmation first.
+    enforced_by:
+      - test: cmd/kiln.TestDestructiveIntentForcesPlan
+  - id: cancelled-turn-journals-its-cause
+    rule: A cancelled turn journals one note naming its cause - an agent switch, a newer message, the stop button, or a plain cancel - and that partial work is preserved.
+    enforced_by:
+      - test: cmd/kiln.TestCancelledTurnJournalsItsCause
+  - id: turn-summary-closes-turn
+    rule: Every turn ends with a journaled summary line giving its tool count, error count and duration, marked with a warning when a tool failed.
+    enforced_by:
+      - test: cmd/kiln.TestTurnSummary
+decisions:
+  - id: cancel-and-replace
+    date: 2026-11-26
+    status: accepted
+    decision: A chat message that arrives during a turn cancels that turn and starts its own; the cancelled turn's journaled work stays.
+    rejected:
+      - option: Queue the new message behind the running turn.
+        why: The user's newer message usually corrects the running one, and the world is append-only, so partial work is not lost.
+    upholds: [cancelled-turn-journals-its-cause]
+  - id: claim-the-handle
+    date: 2026-11-26
+    status: accepted
+    decision: The fixed work dir is opened without following links and chmodded through the handle, then compared with the name.
+    rejected:
+      - option: chmod by path.
+        why: chmod follows a symlink, so a co-user's link to a directory this user owns got that directory tightened and the turn ran inside it.
+      - option: Lstat, then chmod by path.
+        why: A co-user can swap the name for a link between the two calls.
+    upholds: [work-dir-is-claimed-not-followed]
+  - id: truncate-not-error
+    date: 2026-11-26
+    status: accepted
+    decision: The stdout capture discards past its limit and reports the write as complete.
+    rejected:
+      - option: Return an error from Write past the limit.
+        why: exec would kill the child mid-stream and report the write error instead of the turn's reply.
+    upholds: [stdout-capture-is-capped]
+  - id: keyword-preflight
+    date: 2026-11-26
+    status: accepted
+    decision: Destructive intent is found by a keyword scan of the message before the adapter sees it.
+    rejected:
+      - option: Ask a model to classify the message.
+        why: It adds a call per turn; the scan is cheap and deterministic, and a false positive only costs a plan.
+    upholds: [destructive-request-needs-plan]

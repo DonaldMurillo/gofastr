@@ -12,17 +12,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 )
 
-// runFreeze: kiln freeze --journal .kiln.session.jsonl --dir build/
-//
-// Reads the on-disk journal, replays it into a session, and either:
-//   - --dir <path>   (default): writes gofastr.yml + world.json to disk
-//   - --diff         : prints a human-readable summary of what the
-//     agent built (entities, pages, hooks, routes,
-//     seeds). No files written. Use this to review
-//     agent-driven changes before graduating to source.
-//
-// This is the "graduate from build mode" step. Once frozen, the
-// app spec can be reviewed, validated, and generated into owned Go.
 func runFreeze(args []string) int {
 	fs := flag.NewFlagSet("kiln freeze", flag.ExitOnError)
 	journalPath := fs.String("journal", ".kiln.session.jsonl", "JSONL journal to read")
@@ -34,9 +23,6 @@ func runFreeze(args []string) int {
 		fmt.Fprintf(os.Stderr, "[kiln freeze] journal %s not found: %v\n", *journalPath, err)
 		return 1
 	}
-	// Read-only, no torn-tail heal: kiln serve may be appending to this
-	// journal right now, and a heal could truncate an entry it just
-	// committed.
 	entries, err := journal.ReadFile(*journalPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[kiln freeze] read: %v\n", err)
@@ -73,16 +59,12 @@ func runFreeze(args []string) int {
 	return 0
 }
 
-// printFreezeDiff renders a review-friendly summary of what the journal
-// has cumulatively built. Output is stable (alphabetical) so two diffs
-// can be compared with diff(1).
 func printFreezeDiff(w io.Writer, sess *journal.Session) {
 	world := sess.World
 
 	fmt.Fprintf(w, "kiln freeze --diff\n")
 	fmt.Fprintf(w, "  app: %q (json: %s)\n", world.App.Name, defaultStr(world.App.JSONCase, "lower_snake"))
 
-	// Entities (sorted by name).
 	if len(world.Entities) > 0 {
 		fmt.Fprintf(w, "\nentities (%d):\n", len(world.Entities))
 		names := make([]string, 0, len(world.Entities))
@@ -123,7 +105,6 @@ func printFreezeDiff(w io.Writer, sess *journal.Session) {
 		}
 	}
 
-	// Pages.
 	if len(world.Pages) > 0 {
 		fmt.Fprintf(w, "\npages (%d):\n", len(world.Pages))
 		paths := make([]string, 0, len(world.Pages))
@@ -141,7 +122,6 @@ func printFreezeDiff(w io.Writer, sess *journal.Session) {
 		}
 	}
 
-	// Hooks.
 	if len(world.Hooks) > 0 {
 		fmt.Fprintf(w, "\nhooks (%d):\n", len(world.Hooks))
 		for _, h := range world.Hooks {
@@ -149,7 +129,6 @@ func printFreezeDiff(w io.Writer, sess *journal.Session) {
 		}
 	}
 
-	// Routes.
 	if len(world.Routes) > 0 {
 		fmt.Fprintf(w, "\nroutes (%d):\n", len(world.Routes))
 		for _, r := range world.Routes {
@@ -157,7 +136,6 @@ func printFreezeDiff(w io.Writer, sess *journal.Session) {
 		}
 	}
 
-	// Seeds.
 	if len(world.Seeds) > 0 {
 		fmt.Fprintf(w, "\nseeds (%d):\n", len(world.Seeds))
 		for _, s := range world.Seeds {
@@ -165,9 +143,6 @@ func printFreezeDiff(w io.Writer, sess *journal.Session) {
 		}
 	}
 
-	// Plans (informational; not part of the produced source, but
-	// useful for "did the user actually approve all the destructive
-	// ops?" review).
 	if len(sess.Plans) > 0 {
 		fmt.Fprintf(w, "\nplans (%d):\n", len(sess.Plans))
 		ids := make([]string, 0, len(sess.Plans))

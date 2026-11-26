@@ -1,14 +1,5 @@
-// kiln is the Kiln runtime CLI.
-//
-// Subcommands:
-//
-//	kiln serve         HTTP only: panel + SSE + REST tool dispatch + MCP at /mcp
-//	kiln mcp           HTTP + MCP server on stdio (for subprocess harnesses)
-//	kiln acp           HTTP + ACP server on stdio (for ACP-attached harnesses)
-//
-// In stdio modes (mcp, acp) the HTTP panel still runs in the background so
-// the user can watch the world build live in their browser. Logging goes
-// to stderr in stdio modes so stdout stays clean for the JSON-RPC framing.
+// Command kiln runs the Kiln runtime (serve, mcp, acp), the turnkey agent
+// launcher and freeze. See framework/docs/content/kiln.md.
 package main
 
 import (
@@ -116,11 +107,6 @@ type runOptions struct {
 
 func parseFlags(args []string) runOptions {
 	fs := flag.NewFlagSet("kiln", flag.ExitOnError)
-	// Default to loopback: the /kiln/tool/{name} mutation surface is
-	// unauthenticated, so binding to all interfaces would let any
-	// co-located host on a shared LAN rewrite the in-memory app. An
-	// operator who wants to expose the runtime must opt in explicitly,
-	// e.g. --addr 0.0.0.0:8765.
 	addr := fs.String("addr", "127.0.0.1:8765", "HTTP listen address (loopback by default; the tool API is unauthenticated: pass 0.0.0.0:8765 to expose it deliberately)")
 	journalPath := fs.String("journal", ".kiln.session.jsonl", "JSONL journal path (use :memory: to disable persistence)")
 	noHTTP := fs.Bool("no-http", false, "Skip the HTTP server in stdio modes")
@@ -136,24 +122,15 @@ KILN_URL is injected into the env so the agent can drive the runtime.`)
 	return runOptions{addr: *addr, journal: *journalPath, noHTTP: *noHTTP, keepDB: *keepDB, agentCmd: *agentCmd, allowCustom: *allowCustom}
 }
 
-// run boots the runtime once (Live + Tools + Chat) and then drives a
-// transport. mcpStdio and acpStdio are mutually exclusive. When both
-// are false, the HTTP server is the only transport.
 func run(args []string, mcpStdio, acpStdio bool) int {
 	opts := parseFlags(args)
 	stdioMode := mcpStdio || acpStdio
 
-	// Record the security posture the flags selected before anything
-	// serves: originGuard Host-pins only a loopback bind, and the
-	// request-borne custom-adapter form stays off unless opted in.
 	kilnLoopbackBound = isLoopbackBindAddr(opts.addr)
 	allowCustomAgent = opts.allowCustom
 
-	// Logging goes to stderr in stdio modes so stdout stays clean for
-	// JSON-RPC framing.
 	logger := log.New(os.Stderr, "[kiln] ", log.LstdFlags)
 
-	// Ephemeral SQLite scoped to the session.
 	d, dbCleanup, err := db.EphemeralSQLite("kiln")
 	if err != nil {
 		logger.Printf("ephemeral db: %v", err)
@@ -163,8 +140,6 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 		defer dbCleanup()
 	}
 
-	// Journal: defaults to .kiln.session.jsonl in cwd so the world
-	// survives restart. `--journal :memory:` opts out for ephemeral runs.
 	var j journal.Journal
 	if opts.journal == ":memory:" || opts.journal == "" {
 		j = journal.NewMemory()
@@ -190,18 +165,6 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 	}
 	tools := protocol.New(l)
 
-	// Mount chat panel + SSE on the auxiliary router so they survive
-	// world rebuilds. The host fallback HTML (the floating widget shell)
-	// is installed on Live so any unmatched URL serves it.
-	//
-	// Two registrations work together:
-	//   - chat.New + Mount: tool-dispatch + widget asset routes
-	//     (/kiln/tool/{name}, /kiln/chat/widget.css, etc.)
-	//   - chat.MountPanel:  the core-ui/widget-driven panel that the
-	//     host fallback page boots into.
-	// AdapterStore is created up-front so the panel modal's
-	// agent_list_html signal can read live adapter state at hydration
-	// time. mountAgentRoutes still owns the /kiln/agent HTTP surface.
 	adapter, adapterOK := resolveAdapter(opts.agentCmd)
 	store := NewAdapterStore(adapter)
 	mountAgentRoutes(l.Aux(), store, l.Notify)
@@ -211,9 +174,6 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 	chat.MountPanel(l.Aux(), l, tools, func() any { return agentState(store) })
 	l.SetFallbackFunc(chat.HostHTMLForLive(l))
 
-	// MCP over HTTP: Kiln's tool surface (add_entity, undo, etc.) at
-	// /mcp; framework per-entity tools (auto-registered when an entity
-	// has mcp:true) at /mcp/app, served from the current rebuilt app.
 	mcpSrv, err := kilnmcp.NewServer(tools)
 	if err != nil {
 		logger.Printf("mcp.NewServer: %v", err)
@@ -232,12 +192,6 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 	l.Aux().Handle("POST", "/mcp/app", appMCP)
 	l.Aux().Handle("GET", "/mcp/app", appMCP)
 
-	// The agent watcher's turns must end before run returns: main calls
-	// os.Exit, and the adapter runs in its own process group, so a turn
-	// still running at exit would outlive kiln. This defer runs after
-	// cancel below (defers unwind last-in first-out), and the watcher
-	// bounds its own wait (agentShutdownWait). It also runs before the
-	// journal and database close, so a turn's closing note still lands.
 	var watcherDone chan struct{}
 	defer func() {
 		if watcherDone != nil {
@@ -254,20 +208,12 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 		}()
 	}
 
-	// Start HTTP server unless --no-http was explicitly requested.
 	if !(stdioMode && opts.noHTTP) {
 		go runHTTP(ctx, logger, opts.addr, l)
-		// Don't print startup banner on stdout in stdio modes.
 		printBanner(logger, opts.addr, stdioMode)
 	}
 
-	// Optional in-process agent watcher: spawn the resolved adapter
-	// once per chat_user event with KILN_URL injected. The store/routes
-	// were registered earlier (above) so the panel modal can read state.
 	if adapterOK {
-		// Sync the skill so adapters that read it (claude-code, pi via
-		// ~/.claude/skills/kiln/) get the current version of the
-		// framework knowledge.
 		if path, err := installSkill(); err == nil {
 			logger.Printf("skill:     %s (synced)", path)
 		} else {
@@ -276,8 +222,6 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 		startWatcher()
 		logger.Printf("agent:     %s", adapter.Display)
 	} else if !stdioMode {
-		// Even without a startup adapter, run the watcher so a runtime
-		// switch via /kiln/agent immediately starts dispatching turns.
 		startWatcher()
 		switch opts.agentCmd {
 		case "":
@@ -296,15 +240,11 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 
 	switch {
 	case mcpStdio:
-		// MCP over stdio. core/mcp.Server already implements this.
-		// A signal ends the session with ctx's error: a clean stop.
 		if err := mcpSrv.ServeStdio(ctx, os.Stdin, os.Stdout); err != nil && ctx.Err() == nil {
 			logger.Printf("mcp stdio: %v", err)
 			return 1
 		}
 	case acpStdio:
-		// ACP v1 over stdio: initialize/session negotiation with
-		// streamed session updates; see framework/docs/content/acp.md.
 		acpSrv := kilnacp.NewServer(tools)
 		if err := acpSrv.Serve(ctx, os.Stdin, os.Stdout); err != nil && ctx.Err() == nil {
 			logger.Printf("acp stdio: %v", err)
@@ -316,30 +256,8 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 	return 0
 }
 
-// originGuard refuses cross-origin browser-driven state changes. Kiln's tool
-// API (POST /kiln/tool/{name}, /kiln/agent, /mcp) mutates the in-memory world
-// with no auth; loopback bind is the primary control, but that alone does not
-// stop a malicious web page (or DNS-rebinding) in the user's browser from
-// POSTing to localhost. We allow requests with NO Origin (curl, MCP/ACP
-// clients, the agent; non-browsers) and same-origin browser requests; a
-// cross-origin Origin on an unsafe method is refused with 403.
 func originGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Host pinning comes first and applies to EVERY method,
-		// including GET.
-		//
-		// sameOrigin below compares Origin to r.Host, but under DNS
-		// rebinding the attacker controls both sides, so they match and
-		// the check passes. A page on evil.test whose DNS flips to
-		// 127.0.0.1 reaches this listener with Host: evil.test:8765;
-		// only comparing Host against a literal loopback name refuses
-		// it. GET is included because /kiln/world and /kiln/status
-		// disclose the whole in-memory app.
-		//
-		// When the operator deliberately exposed kiln with a non-
-		// loopback -addr, we cannot know the intended public name, so
-		// the pin is skipped and the banner's "unauthenticated" warning
-		// is the contract.
 		if kilnLoopbackBound && !netguard.IsLoopbackAuthority(r.Host) {
 			http.Error(w, "forbidden: unexpected Host (DNS-rebinding guard)", http.StatusForbidden)
 			return
@@ -357,32 +275,21 @@ func originGuard(next http.Handler) http.Handler {
 	})
 }
 
-// isLoopbackBindAddr reports whether a -addr flag value binds only the
-// loopback interface. A bare ":8765" or "0.0.0.0:8765" binds every
-// interface and is therefore NOT loopback-only.
 func isLoopbackBindAddr(addr string) bool {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		host = addr
 	}
 	if host == "" {
-		return false // ":8765": all interfaces
+		return false
 	}
 	return netguard.IsLoopbackAuthority(host)
 }
 
-// kilnLoopbackBound records whether the listener bound a loopback
-// address, so originGuard knows whether Host-pinning is meaningful.
 var kilnLoopbackBound bool
 
-// allowCustomAgent gates the request-borne custom-adapter form. A POST
-// to /kiln/agent with name="custom" supplies the ENTIRE argv of a
-// spawned process, so leaving it on by default turns any request that
-// reaches the tool API into arbitrary command execution. Operators who
-// want it opt in with --allow-custom-agent.
 var allowCustomAgent bool
 
-// sameOrigin reports whether an Origin header's host matches the request Host.
 func sameOrigin(origin, host string) bool {
 	u, err := url.Parse(origin)
 	if err != nil || u.Host == "" {
@@ -421,7 +328,6 @@ func printBanner(logger *log.Logger, addr string, stdioMode bool) {
 	}
 }
 
-// signalContext returns a context cancelled on SIGINT/SIGTERM.
 func signalContext() (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan os.Signal, 1)
