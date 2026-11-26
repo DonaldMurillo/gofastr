@@ -148,7 +148,9 @@ few lines, and link the PR or the docs page for the rest.
   `Shutdown` reports the deadline error unless an earlier step failed
   ([#903](https://github.com/DonaldMurillo/gofastr/pull/903)).
 - `App.Shutdown` no longer waits past its deadline for the access grant-store
-  fanout to stop ([#913](https://github.com/DonaldMurillo/gofastr/pull/913)).
+  fanout to stop. A panic in a queue `Close`, the outbox relay stop or the
+  access store fanout stop is returned as a shutdown error instead of
+  crashing the process ([#913](https://github.com/DonaldMurillo/gofastr/pull/913)).
 
 - **BREAKING:** `config.Load` now rejects `validate` tags whose highest
   `min` exceeds their lowest `max`, even in unset optional nested structs.

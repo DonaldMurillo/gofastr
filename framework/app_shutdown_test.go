@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -66,8 +67,8 @@ func TestShutdownBoundsAccessFanoutStop(t *testing.T) {
 				go func() { done <- app.Shutdown(ctx) }()
 				select {
 				case err := <-done:
-					if !errors.Is(err, tc.want) || (tc.want != nil && !strings.Contains(err.Error(), "access fanout stop")) {
-						t.Fatalf("Shutdown error = %v, want %v from the access fanout stop", err, tc.want)
+					if !errors.Is(err, tc.want) || (tc.want != nil && !strings.Contains(err.Error(), "access store fanout stop abandoned after the drain deadline")) {
+						t.Fatalf("Shutdown error = %v, want %v from the access store fanout stop", err, tc.want)
 					}
 				case <-time.After(tc.timeout + time.Millisecond):
 					t.Fatal("Shutdown waited past its deadline for the access fanout stop")
@@ -76,6 +77,47 @@ func TestShutdownBoundsAccessFanoutStop(t *testing.T) {
 		})
 	}
 }
+
+func TestDrainWithDeadline(t *testing.T) {
+	const msg = "test stop abandoned after the drain deadline"
+	app := NewApp(WithLogger(slog.New(slog.DiscardHandler)))
+	t.Run("returns the stop's error", func(t *testing.T) {
+		want := errors.New("stop failed")
+		if err := app.drainWithDeadline(t.Context(), "test stop", func() error { return want }, msg); err != want {
+			t.Fatalf("drainWithDeadline = %v, want %v", err, want)
+		}
+	})
+	t.Run("panic becomes an error", func(t *testing.T) {
+		err := app.drainWithDeadline(t.Context(), "test stop", func() error { panic("boom") }, msg)
+		if err == nil || !strings.Contains(err.Error(), "test stop panicked") {
+			t.Fatalf("drainWithDeadline = %v, want the recovered panic", err)
+		}
+	})
+	t.Run("already-expired ctx", func(t *testing.T) {
+		started := make(chan struct{})
+		ctx := errSetContext{Context: t.Context(), done: make(chan struct{})}
+		defer close(ctx.done)
+		err := app.drainWithDeadline(ctx, "test stop", func() error { close(started); return nil }, msg)
+		if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), msg) {
+			t.Fatalf("drainWithDeadline = %v, want %q wrapping context.Canceled", err, msg)
+		}
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("the stop never started under an already-expired ctx")
+		}
+	})
+}
+
+// errSetContext reports Err before its Done channel closes, so a helper
+// that waits on Done without checking Err first sees the stop return.
+type errSetContext struct {
+	context.Context
+	done chan struct{}
+}
+
+func (c errSetContext) Done() <-chan struct{} { return c.done }
+func (errSetContext) Err() error              { return context.Canceled }
 
 type accessReloadConnector struct {
 	entered chan<- string

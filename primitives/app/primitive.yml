@@ -415,12 +415,13 @@ invariants:
       - test: framework.TestServeRole_QueueDoesNotStart
       - test: framework.TestAgentRole_QueueDoesNotStart
   - id: worker-drains-honor-deadline
-    rule: The cron, queue, outbox relay and access fanout drainers stop waiting when the Shutdown drain context ends, even when work ignores its cancelled context. The access fanout drainer skips the join when the deadline has already expired.
+    rule: The cron, queue, outbox relay and access store fanout drainers stop waiting when the Shutdown drain context ends, even when work ignores its cancelled context. The queue, outbox relay and access store fanout stops all go through drainWithDeadline, which starts the stop, returns the abandoned error at once when the drain context has already ended, and turns a panic in the stop into an error instead of crashing the process.
     enforced_by:
       - test: framework.TestSweepApp3CronDrainHonorsShutdownDeadline
       - test: framework.TestAddQueueDrainHonorsShutdownDeadline
       - test: framework.TestShutdownJoinsOutboxRelay
       - test: framework.TestShutdownBoundsAccessFanoutStop
+      - test: framework.TestDrainWithDeadline
   - id: module-workers-gated-by-module
     rule: A scheduler or queue added during a module's Init is gated on that module, so its jobs skip while the module is disabled.
     enforced_by:
@@ -449,7 +450,7 @@ invariants:
       - test: framework.TestShutdownDuringDeferredStartWaitsForTheHooks
       - test: framework.TestRunShutdownRaceInvariants
   - id: shutdown-stops-in-order
-    rule: "The teardown cancels the lifecycle context, ends A2A runs, stops the host, waits for the retention sweep up to the shutdown deadline, drains process modules, stops batteries in reverse dependency order and then runs OnStop hooks and drainers (including the access fanout stop). The outbox relay's drainer precedes the hooks registered before the relay started."
+    rule: "The teardown cancels the lifecycle context, ends A2A runs, stops the host, waits for the retention sweep up to the shutdown deadline, drains process modules, stops batteries in reverse dependency order and then runs OnStop hooks and drainers (including the access store fanout stop). The outbox relay's drainer precedes the hooks registered before the relay started."
     enforced_by:
       - test: framework.TestSweepApp3A2ARunsEndBeforeStopHooks
       - test: framework.TestShutdownRunsOnce
@@ -783,6 +784,16 @@ decisions:
     date: 2026-11-25
     status: accepted
     decision: Like queue-close-abandoned-at-deadline, the outbox drainer reports that it stopped waiting; the relay can outlive Shutdown until the stuck call returns, and claims expire at claimed_until so another relay can reclaim them for at-least-once delivery.
+    upholds: [worker-drains-honor-deadline]
+  - id: bounded-stops-share-one-helper
+    date: 2026-11-26
+    status: accepted
+    decision: Every bounded stop (queue Close, outbox relay stop, access store fanout stop) calls drainWithDeadline with one error shape, "<stop> abandoned after the drain deadline", and the helper owns panic recovery and the already-expired-context check, so no caller repeats them.
+    rejected:
+      - option: Skip the stop when the drain context has already ended.
+        why: Starting it still detaches the access store's subscription and lets the outbox relay begin winding down; the caller only stops waiting.
+      - option: Keep a hand-rolled select with its own recover in each drainer.
+        why: The copies drift; the queue and outbox copies had no recover, so a panic in their stop crashed the process.
     upholds: [worker-drains-honor-deadline]
   - id: on-stop-hooks-ignore-context
     date: 2026-11-16
