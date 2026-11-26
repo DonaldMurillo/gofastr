@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -72,6 +73,11 @@ func TestExtractTarGzWritesOneRoot(t *testing.T) {
 		st, err := os.Lstat(filepath.Join(root, name))
 		if err != nil {
 			t.Fatal(err)
+		}
+		// Windows keeps no permission bits: the files and the directory
+		// are written, and the modes are checked where they exist.
+		if runtime.GOOS == "windows" {
+			continue
 		}
 		if got := st.Mode() & (os.ModePerm | os.ModeDir | os.ModeSetuid | os.ModeSetgid | os.ModeSticky); got != want {
 			t.Errorf("%s mode = %v, want %v", name, got, want)

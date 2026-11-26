@@ -72,6 +72,19 @@ func fakeBuild(t *testing.T, dir, name, id, version string) string {
 
 // bundledPlatform is a windowsPlatform pinned to exe instead of the
 // test binary, loaded through the same readRunningBuild check.
+// resolvedTempDir is a temp directory under the name the platform reads
+// its running executable by: readRunningBuild resolves symlinks, which on
+// a Windows runner turns the 8.3 short temp path (RUNNER~1) into the long
+// one, so a test that compares paths or keys a table by them uses this.
+func resolvedTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func bundledPlatform(t *testing.T, exe string) *windowsPlatform {
 	t.Helper()
 	p := &windowsPlatform{}
@@ -165,7 +178,7 @@ func TestWindowsPlatformUnbundledTestBinary(t *testing.T) {
 }
 
 func TestWindowsPlatformReadsTheBuild(t *testing.T) {
-	dir := t.TempDir()
+	dir := resolvedTempDir(t)
 	exe := fakeBuild(t, dir, "Notes", "dev.gofastr.notes", "1.2.0")
 	p := bundledPlatform(t, exe)
 	if p.Version() != "1.2.0" || p.Identifier() != "dev.gofastr.notes" {
@@ -232,7 +245,7 @@ func TestWindowsPlatformInspect(t *testing.T) {
 }
 
 func TestWindowsPlatformVerifySignatureAppliesThePolicy(t *testing.T) {
-	dir := t.TempDir()
+	dir := resolvedTempDir(t)
 	exe := fakeBuild(t, dir, "Notes", "dev.gofastr.notes", "1.2.0")
 	extracted := t.TempDir()
 	fakeBuild(t, extracted, "Notes", "dev.gofastr.notes", "1.3.0")
