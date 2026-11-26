@@ -959,8 +959,12 @@ func sdkBracketKeysNote(spec sdkSpec) string {
 	}
 	var controls []string
 	for _, e := range spec.Entities {
+		noQuery := map[string]bool{}
+		for _, f := range e.Fields {
+			noQuery[f.Snake] = f.NoQuery
+		}
 		for _, key := range e.filterKeys.ControlNamedKeys() {
-			if key == "q" {
+			if key == "q" || noQuery[key] {
 				continue
 			}
 			safe := sdkFenceWord(key)

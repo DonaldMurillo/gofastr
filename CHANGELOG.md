@@ -42,6 +42,8 @@ few lines, and link the PR or the docs page for the rest.
   entity's `llm.md`, the OpenAPI parameter, the MCP list tool and the SDK
   readmes now name the bracket key, mounting the routes logs one line per
   such field, and the OpenAPI document no longer lists the bare key twice.
+  A process module's `host.entity.query` filter may still name the column
+  bare: the broker sends the bracket key.
   Regenerate SDKs, CLIs and OpenAPI clients. See
   [Query DSL](framework/docs/content/query-dsl.md#columns-named-like-a-list-control)
   ([#915](https://github.com/DonaldMurillo/gofastr/issues/915)).

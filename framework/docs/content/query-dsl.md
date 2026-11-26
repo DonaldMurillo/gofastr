@@ -27,6 +27,7 @@ Every surface that names filter keys spells such a column's equality filter in b
 - the OpenAPI document lists the `direction[eq]` parameter, described as the bracket form;
 - the `<table>_list` MCP tool takes `direction[eq]`, with the same description;
 - the generated SDK readmes list each such field, and the generated CLI sends the bracket key;
+- a process module's `host.entity.query` filter may name the column bare: the broker sends its bracket key;
 - mounting the entity's CRUD routes logs one line per such field, naming the bracket key.
 
 ### Relation filters

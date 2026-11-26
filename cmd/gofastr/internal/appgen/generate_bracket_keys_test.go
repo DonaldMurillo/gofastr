@@ -95,3 +95,16 @@ func TestSDKReadmesNameControlNamedFields(t *testing.T) {
 		t.Errorf("js example sends a bare stream:\n%s", js)
 	}
 }
+
+func TestSDKReadmesSkipNoQueryControlField(t *testing.T) {
+	spec, err := buildSDKSpec([]framework.EntityDeclaration{{
+		Name: "transfers", Table: "transfers",
+		Fields: []framework.FieldDeclaration{{Name: "direction", Type: "string", NoQuery: true}},
+	}}, &SdkOptions{name: "app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if md := renderSDKGoReadme(spec); strings.Contains(md, "direction[eq]") {
+		t.Errorf("readme offers a filter on a NoQuery field:\n%s", md)
+	}
+}

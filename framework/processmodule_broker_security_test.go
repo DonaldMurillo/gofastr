@@ -105,6 +105,38 @@ func TestBrokerFilterCannotSetControlKeys(t *testing.T) {
 	}
 }
 
+// TestBrokerFilterBracketsControlNamedField: a bare key naming a field
+// that is also a list control reaches the route as its bracket key, which
+// filters the column; the bare key would set the control instead.
+func TestBrokerFilterBracketsControlNamedField(t *testing.T) {
+	ent := brokerEntity("transfers", "transfers", func(c *entity.EntityConfig) {
+		c.Fields = []schema.Field{
+			{Name: "id", Type: schema.String},
+			{Name: "direction", Type: schema.String},
+			{Name: "q", Type: schema.String},
+		}
+	})
+	got, err := sanitizeFilter(ent, json.RawMessage(`{"direction":"in","q":"x"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(got, &m); err != nil {
+		t.Fatal(err)
+	}
+	if len(m) != 2 || m["direction[eq]"] != "in" || m["q"] != "x" {
+		t.Errorf("sanitizeFilter = %v, want direction[eq] and a bare q (no SearchFields)", m)
+	}
+	ent.Config.SearchFields = []string{"id"}
+	got, err = sanitizeFilter(ent, json.RawMessage(`{"q":"x"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != `{"q[eq]":"x"}` {
+		t.Errorf("sanitizeFilter with SearchFields = %s, want q[eq]", got)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // F3: a brokered re-dispatch NEVER lifts owner scope, even when the
 // re-resolved caller legitimately holds CrossOwnerRead. The root-cause fix
