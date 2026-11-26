@@ -137,7 +137,7 @@
 
   function wireValidity(form) {
     const sync = function () {
-      const disabled = !form.checkValidity();
+      const disabled = !HTMLFormElement.prototype.checkValidity.call(form);
       document.querySelectorAll('button,input').forEach(function (btn) {
         if (btn.form === form && (btn.type === 'submit' || btn.type === 'image') && (form.hasAttribute('data-cui-disable-when-invalid') || btn.hasAttribute('data-cui-disable-when-invalid'))) btn.disabled = disabled;
       });

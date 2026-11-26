@@ -1,5 +1,5 @@
 primitive: check.js
-summary: The JavaScript idiom lints over the runtime and every registered behaviour - no var, no legacy idioms, no layer-prefix literals, key guards for Escape, IME and RTL, awaited clipboard writes, UTC year parts, localized number fills and replace fills, prose through the strings table - and RegisteredBehaviorSources, which finds the behaviour modules beside their Go packages.
+summary: The JavaScript idiom lints over the runtime and every registered behaviour - no var, no legacy idioms, no layer-prefix literals, key guards for Escape, IME and RTL, awaited clipboard writes, form members read through the prototype, UTC year parts, localized number fills and replace fills, prose through the strings table - and RegisteredBehaviorSources, which finds the behaviour modules beside their Go packages.
 code:
   - core-ui/check/novarjs.go
   - core-ui/check/legacyidioms.go
@@ -7,6 +7,7 @@ code:
   - core-ui/check/behaviors.go
   - core-ui/check/keyguard.go
   - core-ui/check/clipboardawait.go
+  - core-ui/check/formclobber.go
   - core-ui/check/dateutcyear.go
   - core-ui/check/numberfill.go
   - core-ui/check/replacefill.go
@@ -15,7 +16,7 @@ docs:
   - framework/docs/content/runtime-contract.md
 invariants:
   - id: each-lint-fires-on-its-shape
-    rule: LintNoVarJS, LintLegacyIdioms, LintLayerPrefixJS and LintLayerPrefixGo, LintKeyGuard, LintClipboardAwait, LintDateUTCYear, LintNumberFill, LintReplaceFill and LintRuntimeProse each report their bug shape in a fixture and stay quiet on its fixed spelling.
+    rule: LintNoVarJS, LintLegacyIdioms, LintLayerPrefixJS and LintLayerPrefixGo, LintKeyGuard, LintClipboardAwait, LintFormClobber, LintDateUTCYear, LintNumberFill, LintReplaceFill and LintRuntimeProse each report their bug shape in a fixture and stay quiet on its fixed spelling.
     enforced_by:
       - test: core-ui/check.TestLintNoVarJS_FlagsBareVar
       - test: core-ui/check.TestLintNoVarJS_IgnoresStringsAndComments
@@ -28,6 +29,7 @@ invariants:
       - test: core-ui/check.TestLintKeyGuard_IME
       - test: core-ui/check.TestLintKeyGuard_RTL
       - test: core-ui/check.TestLintClipboardAwait_FiresOnDroppedWrite
+      - test: core-ui/check.TestLintFormClobber_FiresThroughTheForm
       - test: core-ui/check.TestLintDateUTCYear_FiresOnYearParts
       - test: core-ui/check.TestLintNumberFill_FiresOnASCIIFill
       - test: core-ui/check.TestLintReplaceFill_FiresOnComputed
@@ -44,6 +46,7 @@ invariants:
       - test: core-ui/check.TestLintLayerPrefix_RepoIsClean
       - test: core-ui/check.TestLintKeyGuard_Repo
       - test: core-ui/check.TestLintClipboardAwait_Repo
+      - test: core-ui/check.TestLintFormClobber_Repo
       - test: core-ui/check.TestLintDateUTCYear_Repo
       - test: core-ui/check.TestLintNumberFill_Repo
       - test: core-ui/check.TestLintReplaceFill_RepoIsClean

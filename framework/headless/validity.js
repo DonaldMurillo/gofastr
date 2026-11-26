@@ -41,7 +41,7 @@
   // group is a radio's whole group (one verdict for all of it), or the
   // control alone.
   const group = (el) => el.type !== 'radio' || !el.name ? [el]
-    : [...(el.form ? el.form.elements : document.querySelectorAll('input[type="radio"]'))].filter((r) => r.type === 'radio' && r.name === el.name);
+    : [...(el.form ? Object.getOwnPropertyDescriptor(HTMLFormElement.prototype, 'elements').get.call(el.form) : document.querySelectorAll('input[type="radio"]'))].filter((r) => r.type === 'radio' && r.name === el.name);
 
   // mirror copies the browser's verdict, and only once it has one.
   function mirror(el) {

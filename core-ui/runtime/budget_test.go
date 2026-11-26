@@ -2073,7 +2073,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// body, as a form does (2026-11-10,
 		// TestNonFormCarrierLeavesButtonInputsOut). The carrier's walk
 		// is this module's own.
-		"rpc": 4276,
+		// 4314 measured (4276 + 38) after the hidden-checkbox pair and
+		// the multipart check read the form's controls and enctype
+		// through the prototype and the attribute, so a control named
+		// elements or enctype cannot shadow them (2026-11-26, the
+		// formclobber lint in core-ui/check).
+		"rpc": 4314,
 	}
 	const coreOverride = 0
 
