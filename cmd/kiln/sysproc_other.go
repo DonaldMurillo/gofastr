@@ -10,8 +10,6 @@ import (
 
 func childProcessGroup() *syscall.SysProcAttr { return nil }
 
-// openNoFollowDir opens path, refusing a symlink. There is no O_NOFOLLOW
-// here; claimAdapterDir's SameFile check after the open catches a swap.
 func openNoFollowDir(path string) (*os.File, error) {
 	fi, err := os.Lstat(path)
 	if err != nil {
@@ -23,5 +21,4 @@ func openNoFollowDir(path string) (*os.File, error) {
 	return os.Open(path)
 }
 
-// killGroup kills p only: there is no process group to signal here.
 func killGroup(p *os.Process) error { return p.Kill() }

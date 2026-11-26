@@ -16,12 +16,13 @@ import (
 //go:embed skill.md
 var kilnSkillContent string
 
-// runAgent is the turnkey "build with OMP/GLM-5.2" subcommand. It starts a long-
-// running `kiln serve` in the cwd, waits for the HTTP server to come
-// online, exports KILN_URL so the agent's skill can reach it, ensures
-// the Kiln skill is installed under ~/.claude/skills/kiln/, then execs
-// OMP with whatever args followed. On OMP exit we send the serve
-// subprocess SIGTERM and wait briefly for cleanup.
+func serveArgs(port int, journal string) []string {
+	return []string{"serve", "--addr", "127.0.0.1:" + strconv.Itoa(port), "--journal", journal}
+}
+
+// runAgent starts kiln serve on a loopback port, waits until it answers,
+// syncs the Kiln skill and runs OMP with args and KILN_URL set. It returns
+// OMP's exit code.
 func runAgent(args []string) int {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -32,7 +33,6 @@ func runAgent(args []string) int {
 	skillPath, err := installSkill()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[kiln] install skill: %v\n", err)
-		// non-fatal; OMP still runs, just without the framework skill
 	}
 
 	ompBin, err := exec.LookPath("omp")
@@ -53,20 +53,14 @@ func runAgent(args []string) int {
 	}
 	journal := filepath.Join(cwd, ".kiln.session.jsonl")
 
-	// Loopback bind: the spawned serve is only ever reached via
-	// localhost (kilnURL below), and its tool API is unauthenticated, so
-	// there's no reason to expose it on all interfaces.
-	serve := exec.Command(exe, "serve", "--addr", "127.0.0.1:"+strconv.Itoa(port), "--journal", journal)
+	serve := exec.Command(exe, serveArgs(port, journal)...)
 	serve.Dir = cwd
-	serve.Stdout = os.Stderr // panel banner goes to stderr so stdout stays clean
+	serve.Stdout = os.Stderr
 	serve.Stderr = os.Stderr
 	if err := serve.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "[kiln] start serve: %v\n", err)
 		return 1
 	}
-	// Readiness races the serve's exit so a serve that dies before
-	// binding (bad flag, missing journal perms) fails the run immediately
-	// instead of waiting out the 10s poll.
 	proc := watchServe(serve)
 	defer proc.stop(3 * time.Second)
 
@@ -116,10 +110,6 @@ func runAgent(args []string) int {
 	return 0
 }
 
-// serveProc is a started serve child whose one Wait runs in its own
-// goroutine. exited is closed, not sent on, so the readiness race and
-// the cleanup can both wait for the exit: a value sent once was taken by
-// the race, and the cleanup then blocked on it forever.
 type serveProc struct {
 	cmd    *exec.Cmd
 	exited chan struct{}
@@ -134,9 +124,6 @@ func watchServe(cmd *exec.Cmd) *serveProc {
 	return p
 }
 
-// stop sends SIGTERM, kills the child if it is still running after
-// grace, and returns once it has exited. A child that already exited
-// returns at once: exited is closed.
 func (p *serveProc) stop(grace time.Duration) {
 	_ = p.cmd.Process.Signal(syscall.SIGTERM)
 	select {
@@ -147,11 +134,6 @@ func (p *serveProc) stop(grace time.Duration) {
 	}
 }
 
-// pickPort returns desired if it's free, otherwise scans up by 1s. When
-// nothing in [desired, desired+10) is free it asks the kernel for a free
-// loopback port and returns that number: the caller builds kilnURL from
-// it, so a bare 0 would name a port serve never binds. It returns 0 only
-// when the kernel has none to give.
 func pickPort(desired int) int {
 	for p := desired; p < desired+10; p++ {
 		if portFree(p) {
@@ -167,28 +149,15 @@ func pickPort(desired int) int {
 	return p
 }
 
-// portFree reports whether TCP port p has no listener. The probe is a
-// dial with a deadline, not an HTTP fetch: connection success/refused
-// is the whole occupancy signal, so a wedged listener (accepts, never
-// responds) reads as busy in bounded time instead of hanging pickPort
-// — and every kiln boot behind it — forever.
 func portFree(p int) bool {
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", p), 500*time.Millisecond)
 	if err != nil {
-		return true // refused / unreachable: nothing is listening
+		return true
 	}
 	conn.Close()
 	return false
 }
 
-// waitReady polls url until the kiln runtime answers with its identity
-// marker, or timeout elapses. Any HTTP response is NOT readiness:
-// runAgent exports KILN_URL to a spawned agent running with
-// --auto-approve, so "ready" must mean "the kiln we started answered",
-// not "some server answered". kiln's Live.ServeHTTP stamps every
-// response with X-Kiln-Server; a responder without it is an impostor
-// that won the pickPort→bind race and keeps waitReady polling until
-// the timeout refuses it.
 func waitReady(url string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 500 * time.Millisecond}
@@ -206,9 +175,6 @@ func waitReady(url string, timeout time.Duration) error {
 	return fmt.Errorf("timed out waiting for %s", url)
 }
 
-// installSkill writes the Kiln skill into ~/.claude/skills/kiln/SKILL.md
-// so every adapter can inject the same framework knowledge on every run.
-// Idempotent: overwrites only if the embedded version differs from disk.
 func installSkill() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {

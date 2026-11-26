@@ -1,0 +1,66 @@
+primitive: kiln.cli
+summary: The kiln command - serve, mcp and acp boot one runtime and drive one transport behind a Host and Origin guard; freeze graduates a journal to an app spec.
+code:
+  - cmd/kiln/main.go
+  - cmd/kiln/freeze.go
+docs:
+  - framework/docs/content/kiln.md
+on_change:
+  - A new kiln subcommand or flag goes in usage() and in framework/docs/content/kiln.md.
+invariants:
+  - id: default-bind-is-loopback
+    rule: The --addr flag defaults to 127.0.0.1:8765, because the tool API that rewrites the in-memory app is unauthenticated.
+    enforced_by:
+      - test: cmd/kiln.TestDefaultBindIsLoopback
+  - id: bare-port-is-not-loopback
+    rule: isLoopbackBindAddr reports false for an --addr with an empty host such as ":8765", which binds every interface.
+    enforced_by:
+      - test: cmd/kiln.TestLoopbackBindDetection
+  - id: loopback-bind-pins-host
+    rule: On a loopback bind, originGuard refuses with 403 any request whose Host is not a loopback authority, for every method including GET, before it looks at Origin.
+    enforced_by:
+      - test: cmd/kiln.TestOriginGuardRejectsReboundHost
+  - id: unsafe-cross-origin-refused
+    rule: originGuard refuses with 403 a non-GET, HEAD or OPTIONS request whose Origin host differs from its Host, and passes one with no Origin header.
+    enforced_by:
+      - test: cmd/kiln.TestOriginGuard
+  - id: custom-agent-off-by-default
+    rule: The --allow-custom-agent flag defaults off, so a request cannot choose the argv kiln spawns unless the operator opted in.
+    enforced_by:
+      - test: cmd/kiln.TestCustomAgentFlagDefaultsOff
+  - id: stdio-stdout-is-frames-only
+    rule: In mcp and acp modes kiln writes nothing to stdout but the JSON-RPC frames; the logger, the banner and every diagnostic go to stderr.
+    judge: Does this change make kiln write anything other than JSON-RPC frames to stdout in mcp or acp mode?
+  - id: watcher-ends-before-run-returns
+    rule: run waits for the agent watcher to return after cancelling its context and before the journal and database close, so no adapter process outlives kiln and a turn's closing note is journaled.
+    judge: Does this change let run return, or close the journal or database, before the agent watcher goroutine has finished?
+  - id: freeze-reads-without-healing
+    rule: kiln freeze reads the journal with journal.ReadFile and never opens it for writing, so a torn tail that a running kiln serve is still appending is left as it is.
+    enforced_by:
+      - test: cmd/kiln.TestFreezeDoesNotTouchJournal
+  - id: freeze-diff-writes-nothing
+    rule: kiln freeze --diff prints its summary and creates no output directory or file.
+    enforced_by:
+      - test: cmd/kiln.TestFreezeDiffWritesNothing
+  - id: freeze-diff-is-sorted
+    rule: kiln freeze --diff lists entities and pages in name order, so two summaries compare with diff(1).
+    enforced_by:
+      - test: cmd/kiln.TestPrintFreezeDiffIsSorted
+decisions:
+  - id: host-pin-only-on-loopback
+    date: 2026-11-26
+    status: accepted
+    decision: originGuard pins Host to a loopback name only when kiln bound loopback; on a deliberate non-loopback --addr it skips the pin and the banner's unauthenticated warning is the contract.
+    rejected:
+      - option: Rely on the Origin check alone.
+        why: Under DNS rebinding the attacker controls both Origin and Host, so they match and the same-origin check passes.
+      - option: Pin Host on every bind.
+        why: On a deliberate public bind kiln cannot know the name it will be reached by.
+    upholds: [loopback-bind-pins-host]
+  - id: watcher-runs-without-startup-agent
+    date: 2026-11-26
+    status: accepted
+    decision: kiln serve runs the agent watcher even with no --agent, so a switch through POST /kiln/agent starts dispatching turns at once; stdio modes start it only with an adapter.
+    rejected:
+      - option: Start the watcher only when --agent resolved.
+        why: A panel switch would then need a restart to take effect.
