@@ -380,6 +380,18 @@ func TestTooltipFocusAndDismissalOutlastThePointer(t *testing.T) {
 	}
 }
 
+// cloneTooltip adds a second tooltip (#trigger2, #tip2) away from the
+// first; run it before either is upgraded.
+const cloneTooltip = `(() => {
+	const c = document.querySelector('#clip [data-hui-tooltip]').cloneNode(true);
+	c.querySelector('#trigger').id = 'trigger2';
+	c.querySelector('#tip').id = 'tip2';
+	const box = document.createElement('div');
+	box.style.cssText = 'position: fixed; left: 420px; top: 220px';
+	box.append(c);
+	document.body.append(box);
+})()`
+
 // gateModule holds the headless-tooltip module back until release is
 // closed, and closes requested when the browser asks for it.
 func gateModule(t *testing.T, requested, release chan struct{}) func(mux *http.ServeMux) {
@@ -408,7 +420,7 @@ func gateModule(t *testing.T, requested, release chan struct{}) func(mux *http.S
 // or hover; with both, it stays open when focus leaves and the pointer
 // stays.
 func TestTooltipOpensForATriggerUsedBeforeTheModuleLoads(t *testing.T) {
-	for _, how := range []string{"focus", "hover", "focus and hover"} {
+	for _, how := range []string{"focus", "hover", "focus and hover", "focus here, hover there"} {
 		t.Run(how, func(t *testing.T) {
 			requested, release := make(chan struct{}), make(chan struct{})
 			url := tooltipServer(t, true, gateModule(t, requested, release))
@@ -429,7 +441,12 @@ func TestTooltipOpensForATriggerUsedBeforeTheModuleLoads(t *testing.T) {
 			case <-time.After(10 * time.Second):
 				t.Fatal("the page never asked for headless-tooltip")
 			}
-			if how != "focus" {
+			if how == "focus here, hover there" {
+				if err := chromedp.Run(ctx, chromedp.Evaluate(cloneTooltip, nil)); err != nil {
+					t.Fatal(err)
+				}
+				hoverID(t, ctx, "trigger2")
+			} else if how != "focus" {
 				hoverID(t, ctx, "trigger")
 			}
 			if how != "hover" {
@@ -446,6 +463,15 @@ func TestTooltipOpensForATriggerUsedBeforeTheModuleLoads(t *testing.T) {
 			}
 			if !pollJS(ctx, `document.getElementById('tip').matches(':popover-open')`) {
 				t.Fatalf("the trigger that had %s before the module loaded did not open on the top layer", how)
+			}
+			if how == "focus here, hover there" {
+				var drawn bool
+				if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => { const s = getComputedStyle(document.getElementById('tip2')); return s.display !== 'none' && s.visibility === 'visible' && parseFloat(s.opacity) > 0; })()`, &drawn)); err != nil {
+					t.Fatal(err)
+				}
+				if drawn {
+					t.Fatal("the hovered tooltip is still drawn while the focused one is open: two tooltips show at once")
+				}
 			}
 			if how == "focus and hover" {
 				if err := chromedp.Run(ctx, chromedp.Focus(`#elsewhere`, chromedp.ByQuery)); err != nil {
@@ -489,15 +515,7 @@ func TestTooltipEscapePassesWhenItsTooltipIsGone(t *testing.T) {
 func TestTooltipDismissedOneLetsTheOpenOneClose(t *testing.T) {
 	ctx := tooltipPage(t, true)
 	// A second tooltip, cloned before either is upgraded.
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-		const c = document.querySelector('#clip [data-hui-tooltip]').cloneNode(true);
-		c.querySelector('#trigger').id = 'trigger2';
-		c.querySelector('#tip').id = 'tip2';
-		const box = document.createElement('div');
-		box.style.cssText = 'position: fixed; left: 420px; top: 220px';
-		box.append(c);
-		document.body.append(box);
-	})()`, nil)); err != nil {
+	if err := chromedp.Run(ctx, chromedp.Evaluate(cloneTooltip, nil)); err != nil {
 		t.Fatal(err)
 	}
 	if !pollJS(ctx, moduleLoaded("headless-tooltip")) {

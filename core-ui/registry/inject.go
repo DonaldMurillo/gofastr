@@ -268,19 +268,36 @@ func AddAttributeToken(src render.HTML, name, token string) (render.HTML, error)
 	if err != nil {
 		return src, fmt.Errorf("registry: AddAttributeToken: %w", err)
 	}
-	tokens := strings.FieldsFunc(htmlUnescape(raw), func(r rune) bool { return r < 0x80 && isHTMLSpace(byte(r)) })
-	if slices.Contains(tokens, token) {
-		return src, nil
+	for _, t := range strings.FieldsFunc(raw, isHTMLSpaceRune) {
+		if t == token || htmlUnescape(t) == token {
+			return src, nil
+		}
 	}
-	list := strings.Join(append(tokens, token), " ")
+	sep := " "
+	if raw == "" || isHTMLSpace(raw[len(raw)-1]) {
+		sep = ""
+	}
 	valueFrom, valueTo := start+from, start+to
-	return render.HTML(replaceAttrValue(html, valueFrom, valueTo, list)), nil
+	if to > from && (openTag[to-1] == '"' || openTag[to-1] == '\'') {
+		return render.HTML(insertBeforeQuote(html, valueTo-1, sep, token)), nil
+	}
+	return render.HTML(requoteValue(html, valueFrom, valueTo, raw, sep, token)), nil
 }
 
-// replaceAttrValue writes ="value", HTML-escaped, over html[from:to], the
-// span from the end of an attribute's name to the end of its old value.
-func replaceAttrValue(html string, from, to int, value string) string {
-	return html[:from] + `="` + htmlEscape(value) + `"` + html[to:]
+// insertBeforeQuote adds sep and the HTML-escaped token just before a
+// quoted value's closing quote at html[at], leaving the old bytes as they
+// were.
+func insertBeforeQuote(html string, at int, sep, token string) string {
+	return html[:at] + sep + htmlEscape(token) + html[at:]
 }
+
+// requoteValue writes a bare or unquoted value back double-quoted over
+// html[from:to], its bytes kept, then sep and the HTML-escaped token; an
+// unquoted value holds no quote, since rootTag refuses such a tag.
+func requoteValue(html string, from, to int, raw, sep, token string) string {
+	return html[:from] + `="` + raw + sep + htmlEscape(token) + `"` + html[to:]
+}
+
+func isHTMLSpaceRune(r rune) bool { return r < 0x80 && isHTMLSpace(byte(r)) }
 
 func htmlUnescape(v string) string { return html.UnescapeString(v) }

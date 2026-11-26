@@ -159,18 +159,13 @@
   window.addEventListener('scroll', follow, true);
   window.addEventListener('resize', follow);
 
-  // A trigger focused or hovered before the module ran opens now.
+  // A trigger focused or hovered before the module ran opens now; when
+  // focus and the pointer are on different tooltips, focus wins, and the
+  // hovered one is upgraded so the sheet's :hover reveal no longer shows it.
   const focused = document.activeElement;
-  const early = focused && focused !== document.body ? tipAt(focused) : null;
-  if (early) {
-    early.hovered = early.root.matches(':hover');
-    show(early);
-  } else {
-    const under = document.querySelectorAll(ROOT + ':hover');
-    const tip = under.length ? upgrade(under[under.length - 1]) : null;
-    if (tip) {
-      tip.hovered = true;
-      show(tip);
-    }
-  }
+  const focusTip = focused && focused !== document.body ? tipAt(focused) : null;
+  const under = document.querySelectorAll(ROOT + ':hover');
+  const hoverTip = under.length ? upgrade(under[under.length - 1]) : null;
+  if (hoverTip) hoverTip.hovered = true;
+  if (focusTip || hoverTip) show(focusTip || hoverTip);
 })();
