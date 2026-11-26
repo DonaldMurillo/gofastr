@@ -31,13 +31,22 @@ func TestBatch_DatabaseErrorDoesNotLeakDriverText(t *testing.T) {
 			ch, db := setupSecurityTestHandler(t, makeEntityConfig("posts", "posts", "", []schema.Field{
 				{Name: "title", Type: schema.String},
 			}), `CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT)`)
-			_ = db.Close()
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
 
-			req := httptest.NewRequest(tc.method, "/posts/_batch", strings.NewReader(tc.body))
-			req.Header.Set("Content-Type", "application/json")
+			req := makeRequest(t, RequestOpts{
+				Method: tc.method,
+				Path:   "/posts/_batch",
+				Body:   tc.body,
+				UserID: "alice",
+			})
 			rec := httptest.NewRecorder()
 			tc.serve(ch)(rec, req)
 
+			if rec.Code != http.StatusInternalServerError {
+				t.Fatalf("%s: status = %d, want 500: %s", tc.name, rec.Code, rec.Body.String())
+			}
 			body := strings.ToLower(rec.Body.String())
 			if strings.Contains(body, "database is closed") || strings.Contains(body, "sql:") {
 				t.Fatalf("SECURITY: [batch-error] %s leaked raw driver text: %s", tc.name, rec.Body.String())
