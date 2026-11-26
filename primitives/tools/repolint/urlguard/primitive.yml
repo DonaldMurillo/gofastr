@@ -1,0 +1,18 @@
+primitive: tools.repolint.urlguard
+summary: The duplicate-url-guard rule, which keeps core-ui/urlsafe the only URL-scheme allow-list.
+code:
+  - cmd/repolint/urlguard.go
+invariants:
+  - id: one-url-guard
+    rule: A non-test .go file outside core-ui/urlsafe and cmd/repolint that holds both the "%0d" and "%0a" string literals is a finding at the first "%0d" line.
+    enforced_by:
+      - test: cmd/repolint.TestDuplicateURLGuardIsFlagged
+decisions:
+  - id: fingerprint-the-crlf-rejection
+    date: 2026-11-26
+    status: accepted
+    decision: A copy of the guard is found by its percent-encoded CR and LF rejection, which every copy carried and little else does.
+    rejected:
+      - option: Keep the five byte-identical copies in ui, uihost, crud, apiversions and core-ui/patterns.
+        why: Each was free to drift from the others the day after it was written.
+    upholds: [one-url-guard]
