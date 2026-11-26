@@ -22,8 +22,8 @@ func normaliseRSS(raw int64) int64 {
 	if raw <= 0 {
 		return 0
 	}
-	if runtime.GOOS == "linux" {
-		return raw * 1024
+	if runtime.GOOS == "darwin" || runtime.GOOS == "ios" {
+		return raw
 	}
-	return raw // darwin, freebsd
+	return raw * 1024
 }

@@ -17,7 +17,7 @@ invariants:
       - test: cmd/check-embed/embedcheck.TestAnalyzerResolvesSupportedScreenShapes
       - test: cmd/check-embed/embedcheck.TestAnalyzerAnalysistest
   - id: walk-reaches-whole-tree
-    rule: The walk reaches every same-package component held in a field of the root or of a reached component (through pointers, slices, arrays, maps and nested plain structs), passed to the expression that built the root, or named in a Render or RenderCtx body or in a same-package component-returning helper that body calls.
+    rule: Up to maxReachDepth (12) levels of type nesting, where it stops without a note, the walk reaches every same-package component held in a field of the root or of a reached component (through pointers, slices, arrays, maps and nested plain structs), passed to the expression that built the root, or named in a Render or RenderCtx body or in a same-package component-returning helper that body calls.
     enforced_by:
       - test: cmd/check-embed/embedcheck.TestEachReachRouteFindsItsChild
       - test: cmd/check-embed/embedcheck.TestNotesIslandCrossPackageChild
@@ -28,7 +28,7 @@ invariants:
     enforced_by:
       - test: cmd/check-embed/embedcheck.TestEachReachRouteFindsItsChild
   - id: no-silent-give-up
-    rule: Each place the walk cannot follow yields exactly one note naming it, never silence - a Screen that is not an in-package app.NewScreen, a component with no visible concrete type, an interface- or function-typed field, a field of another package's component type, a child of another package built in Render, a server action inside a function literal, and a WithClientJS argument that is not a string literal.
+    rule: Apart from the silent stop at maxReachDepth, each place the walk cannot follow yields exactly one note naming it - a Screen that is not an in-package app.NewScreen, a component with no visible concrete type, an interface- or function-typed field, a field of another package's component type, a child of another package built in Render, a server action inside a function literal, and a WithClientJS argument that is not a string literal.
     enforced_by:
       - test: cmd/check-embed/embedcheck.TestEachGiveUpIsOneNote
       - test: cmd/check-embed/embedcheck.TestAnalyzerNotesUnfollowableChild

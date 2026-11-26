@@ -25,6 +25,7 @@ invariants:
     rule: check-embed prints every note, advisory or blocking, before its verdict, and a clean run that has notes says how many places it could not follow.
     enforced_by:
       - test: cmd/check-embed.TestCLIPrintsNotesAndFailsOnlyOnBlocking
+      - test: cmd/check-embed.TestCLIPrintsOneLinePerNoteBeforeTheVerdict
   - id: every-pattern-is-checked
     rule: CheckAll loads every pattern it is given, ./... when given none, and checks each package once.
     enforced_by:

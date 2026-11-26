@@ -50,7 +50,7 @@ decisions:
   - id: host-pin-only-on-loopback
     date: 2026-11-26
     status: accepted
-    decision: originGuard pins Host to a loopback name only when kiln bound loopback; on a deliberate non-loopback --addr it skips the pin and the banner's unauthenticated warning is the contract.
+    decision: originGuard pins Host to a loopback name only when kiln bound loopback; on a deliberate non-loopback --addr it skips the pin, and the --addr help text's warning that the tool API is unauthenticated is the contract.
     rejected:
       - option: Rely on the Origin check alone.
         why: Under DNS rebinding the attacker controls both Origin and Host, so they match and the same-origin check passes.

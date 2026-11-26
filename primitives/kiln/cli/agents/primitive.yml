@@ -10,7 +10,7 @@ on_change:
   - A new built-in adapter goes in adapters, adapterAutoOrder, the --agent help in main.go and kiln.md.
 invariants:
   - id: prompt-follows-end-of-options
-    rule: Every adapter that passes the prompt as its own argument puts "--" in front of it, a custom command included, so a prompt starting with "-" is never read as a flag.
+    rule: Every adapter whose last argument is the bare prompt (omp, claude-code and a custom command) puts "--" in front of it, and pi and codex prefix the prompt with a fixed <kiln-system> block instead, so a prompt starting with "-" is never read as a flag.
     enforced_by:
       - test: cmd/kiln.TestDashPromptIsNotAFlag
   - id: omp-is-pinned

@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -89,14 +91,18 @@ func TestStopDoesNotRetestATreeThatPassed(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "a/a.go"), []byte("package a\n\nfunc One() int { return 2 }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	var control bytes.Buffer
+	if run(root, []string{"stop"}, strings.NewReader(`{}`), &control, io.Discard); !strings.Contains(control.String(), "One is not 1") {
+		t.Fatalf("control: stop over the failing tree did not report the failure: %q", control.String())
+	}
 	head, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
 	rememberTold(root, "stop-pass", []string{treeState(root, strings.TrimSpace(string(head)), []string{"a/a.go"})})
 	var stdout, stderr bytes.Buffer
-	if code := run(root, []string{"stop"}, strings.NewReader(`{}`), &stdout, &stderr); code != 0 || stdout.Len() != 0 {
-		t.Errorf("stop over a tree recorded as passing: exit %d, %q; want it let go without running the tests again", code, stdout.String())
+	if code := run(root, []string{"stop"}, strings.NewReader(`{}`), &stdout, &stderr); code != 0 || stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Errorf("stop over a tree recorded as passing: exit %d, stdout %q, stderr %q; want it let go without running the tests again", code, stdout.String(), stderr.String())
 	}
 }
 
@@ -128,7 +134,7 @@ func TestHookStateIsKeptOnlyForANameableSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Errorf("hook state file mode %v, want 0600", info.Mode().Perm())
 	}
 }

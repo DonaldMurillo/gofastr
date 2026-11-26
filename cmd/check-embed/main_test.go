@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/check-embed/embedcheck"
 )
 
 func TestCLIHonorsAllPatternsAndRejectsEmptyMatches(t *testing.T) {
@@ -61,5 +63,31 @@ func TestCLIPrintsNotesAndFailsOnlyOnBlocking(t *testing.T) {
 				t.Errorf("failing run printed a tick\n%s", output)
 			}
 		})
+	}
+}
+
+func TestCLIPrintsOneLinePerNoteBeforeTheVerdict(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "check-embed")
+	if output, err := exec.Command("go", "build", "-o", binary, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, output)
+	}
+	t.Chdir("testdata")
+	_, notes, _, err := embedcheck.CheckAll("./src/giveups")
+	if err != nil || len(notes) < 2 {
+		t.Fatalf("fixture must yield several notes: %d, %v", len(notes), err)
+	}
+	output, _ := exec.Command(binary, "./src/giveups").CombinedOutput()
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	printed := 0
+	for i, line := range lines {
+		if strings.Contains(line, "giveups.go:") {
+			printed++
+			if i == len(lines)-1 {
+				t.Errorf("a note was printed after the verdict\n%s", output)
+			}
+		}
+	}
+	if printed != len(notes) {
+		t.Errorf("printed %d note lines for %d notes\n%s", printed, len(notes), output)
 	}
 }

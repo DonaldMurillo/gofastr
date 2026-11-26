@@ -161,6 +161,7 @@ func TestCancelledTurnJournalsItsCause(t *testing.T) {
 func TestInstallSkillSyncsEmbeddedCopy(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	path, err := installSkill()
 	if err != nil {
 		t.Fatal(err)
@@ -219,7 +220,9 @@ func TestPrintFreezeDiffIsSorted(t *testing.T) {
 }
 
 func TestInstalledSkillReachesEveryAdapter(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	skillHome := t.TempDir()
+	t.Setenv("HOME", skillHome)
+	t.Setenv("USERPROFILE", skillHome)
 	path, err := installSkill()
 	if err != nil {
 		t.Fatal(err)

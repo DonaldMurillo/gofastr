@@ -8,9 +8,9 @@ import (
 )
 
 func TestNormaliseRSSIsBytes(t *testing.T) {
-	want := int64(3)
-	if runtime.GOOS == "linux" {
-		want = 3 * 1024
+	want := int64(3 * 1024)
+	if runtime.GOOS == "darwin" || runtime.GOOS == "ios" {
+		want = 3
 	}
 	if got := normaliseRSS(3); got != want {
 		t.Fatalf("normaliseRSS(3) on %s = %d, want %d", runtime.GOOS, got, want)

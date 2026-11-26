@@ -6,7 +6,7 @@ docs:
   - primitives/README.md
 invariants:
   - id: only-lint-and-stop-run-on-a-broken-registry
-    rule: Every command but lint and stop refuses with exit 1 and the findings when the registry does not parse; lint prints the findings and exits 1, and stop turns them into a block.
+    rule: Every command but lint and stop refuses with exit 1 and the findings when the registry does not parse; lint prints the findings and exits 1, and stop turns them into a block once the session has changed a package, module, registry file or governed file, staying silent when it changed none.
     enforced_by:
       - test: cmd/primitives.TestOnlyLintAndStopRunOnARegistryThatDoesNotParse
       - test: cmd/primitives.TestStopBlocksOnARegistryThatDoesNotParse
@@ -27,3 +27,5 @@ invariants:
     rule: hook and stop read their event from the stdin run receives, not from os.Stdin.
     enforced_by:
       - test: cmd/primitives.TestHookReadsTheEventRunIsGiven
+      - test: cmd/primitives.TestStopBlocksOnARegistryThatDoesNotParse
+      - test: cmd/primitives.TestStopBlocksOnARegistryThatCannotBeRead

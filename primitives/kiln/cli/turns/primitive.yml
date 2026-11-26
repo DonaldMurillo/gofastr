@@ -59,7 +59,7 @@ invariants:
     enforced_by:
       - test: cmd/kiln.TestSafeBuildArgsRecoversPanic
   - id: destructive-request-needs-plan
-    rule: A message naming a destructive action (delete, remove, drop, wipe, rebuild, reset, clear all, scrap, tear down) reaches the adapter behind a directive to call propose_plan and wait for confirmation first.
+    rule: A message that contains, ignoring case, one of the literal substrings "delete ", "remove ", "drop ", "wipe", "rebuild", "reset ", "clear all", "scrap" or "tear down" (the trailing space is literal, so a newline or tab after the word does not match) reaches the adapter behind a directive to call propose_plan and wait for confirmation first.
     enforced_by:
       - test: cmd/kiln.TestDestructiveIntentForcesPlan
   - id: cancelled-turn-journals-its-cause

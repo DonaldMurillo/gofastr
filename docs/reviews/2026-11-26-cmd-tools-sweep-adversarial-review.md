@@ -57,3 +57,26 @@ Reported by a reviewer, not rerun by the lead:
 - kiln's judged-only `adapter-read-per-turn` and `stdio-stdout-is-frames-only` could be tests.
 - Reasons the sweep deleted and recorded nowhere: why kiln's Claude Code adapter passes `--dangerously-skip-permissions` (`claude --print` hangs without it), why `--no-session`, and the process-group reuse argument in `killGroup`.
 - New check-embed fixtures and the two `run_test.go` files have no owner in the registry; repolint's `on_change` says each rule has its own file, but `main.go` still holds about ten.
+
+## CodeRabbit, on `377084bc`
+
+Its usage limit reset and it reviewed the PR: 13 threads and one nitpick.
+Each was checked against the code; every mutation below was run with
+`go test -count=1`.
+
+| Thread | Verdict | Change |
+|---|---|---|
+| FreeBSD `ru_maxrss` is kilobytes, not bytes | real, a pre-existing bug | `normaliseRSS` passes only Darwin's value through and scales every other Unix; test and `rss-in-bytes` updated (returning raw -> `TestNormaliseRSSIsBytes`) |
+| kiln skill tests set `HOME` but not `USERPROFILE` | real on Windows | both tests set both |
+| stop's pass-cache test accepts a timeout warning as a cache hit | real | asserts empty stderr and runs an uncached control first (cache lookup off -> `TestStopDoesNotRetestATreeThatPassed`) |
+| hook-state 0600 check fails on Windows | real | the mode check runs off Windows only |
+| `prompt-follows-end-of-options` is false for pi and codex | real, text | rule names the `<kiln-system>` prefix those two use |
+| `host-pin-only-on-loopback` cites a banner warning that does not exist | real, text | cites the `--addr` help text |
+| `destructive-request-needs-plan` misses a keyword followed by a newline | real, text | rule lists the literal substrings |
+| `probes-are-bounded` overstates the deadline | real, text | rule states the per-request timeout |
+| `walk-reaches-whole-tree` and `no-silent-give-up` ignore the depth cap | real, text | both name the silent stop at `maxReachDepth` |
+| `cli-prints-every-note` test checks substrings only | real | `TestCLIPrintsOneLinePerNoteBeforeTheVerdict` counts note lines (print only the first note -> it fails; the old test passes) |
+| stop is silent on a broken registry when nothing changed | text, not code | the early return is deliberate, and blocking every untouched session on a broken base would be worse; the rule now says so |
+| `paths-are-relative-by-segment` lacks a `repo-other` case | real | case added (string-prefix `relPath` -> `TestRelPathComparesPathSegments`) |
+| stdin rule names no stop test | real | `TestStopBlocksOnARegistryThatDoesNotParse` and `...CannotBeRead` added (empty reader to stop -> both fail) |
+| nitpick: no positive test that a changed module builds whole | same as the follow-up above | left for the follow-up |
