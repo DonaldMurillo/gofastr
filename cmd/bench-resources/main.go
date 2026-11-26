@@ -1,22 +1,9 @@
-// bench-resources measures binary size, peak RAM during `go build`, and
-// runtime RAM (idle + under load) for the bench apps under
-// benchmarks/apps/ plus cmd/gofastr and cmd/kiln.
-//
-// Output is a Markdown table to stdout (also captured by `make bench-resources`).
-// Use it to see how each feature surface contributes to deployable cost.
-//
-// Usage:
-//
-//	go run ./cmd/bench-resources                # everything, default settings
-//	go run ./cmd/bench-resources -load=200      # 200 warmup requests per app
-//	go run ./cmd/bench-resources -apps=minimal,crud   # subset
-//
-// Unknown or empty names in -apps are refused before any benchmark runs.
-//
-// RAM-during-build is measured via the build subprocess's
-// syscall.Rusage.Maxrss; bytes on Darwin, kilobytes on Linux. Both
-// normalised to bytes here. Idle and loaded RAM come from `ps -o rss=`
-// against the running PID (kB on both Mac and Linux).
+// bench-resources prints a Markdown table of binary size, peak RAM during
+// go build, and idle and loaded RAM for the bench apps under
+// benchmarks/apps/ plus cmd/gofastr and cmd/kiln. Run it with
+// `make bench-resources`; -apps picks a subset, -load the request count,
+// -out where binaries go. Unknown or empty -apps names are refused before
+// any benchmark runs.
 package main
 
 import (
@@ -49,11 +36,6 @@ var apps = []appSpec{
 	{Name: "cmd-kiln", Package: "./cmd/kiln", Port: 0},       // build-only (serve subcommand exists but skip to keep this short)
 }
 
-// probeClient bounds every probe and load request: a bare http.Get (zero
-// timeout) would let one wedged app hang waitReady and the load loop past
-// their own deadlines, so each attempt fails fast on its own. The timeout
-// is sized under waitReady's loop budget (a failed attempt must not outlive
-// the deadline it feeds).
 var probeClient = &http.Client{Timeout: 1 * time.Second}
 
 type result struct {
@@ -124,12 +106,8 @@ func runOne(app appSpec, outDir string, loadReqs int) result {
 
 	binPath := filepath.Join(outDir, app.Name)
 
-	// 1. Build with rusage capture.
 	cmd := exec.Command("go", "build", "-o", binPath, app.Package)
 	cmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(outDir, ".gocache"))
-	// Force a cold compile so the measurement is comparable between apps.
-	// Without this, the first build pays for stdlib compilation and
-	// subsequent builds see a warm cache.
 	_ = os.RemoveAll(filepath.Join(outDir, ".gocache"))
 
 	start := time.Now()
@@ -140,12 +118,10 @@ func runOne(app appSpec, outDir string, loadReqs int) result {
 	r.BuildWall = time.Since(start)
 	r.BuildPeakRSS = peakRSSFromState(cmd.ProcessState)
 
-	// 2. Binary size.
 	if fi, err := statUnder(outDir, app.Name); err {
 		r.BinSizeBytes = fi
 	}
 
-	// 3. Runtime RAM (only for apps that have a server).
 	if app.Port == 0 {
 		return r
 	}
@@ -153,9 +129,6 @@ func runOne(app appSpec, outDir string, loadReqs int) result {
 	return r
 }
 
-// statUnder stats name under dir without following a symlinked name or
-// component out of it: containment is the os.Root kernel check, not a
-// lexical prefix (2026-09-04 red-probe round).
 func statUnder(dir, name string) (int64, bool) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -183,18 +156,15 @@ func runtimeRAM(r *result, binPath string, app appSpec, loadReqs int) {
 		_, _ = cmd.Process.Wait()
 	}()
 
-	// Wait for readiness.
 	probeURL := fmt.Sprintf("http://127.0.0.1:%d%s", app.Port, app.Probe)
 	if !waitReady(probeURL, 5*time.Second) {
 		r.RuntimeErr = "did not become ready in 5s"
 		return
 	}
 
-	// Settle: GC + a beat so allocator pools settle before measurement.
 	time.Sleep(500 * time.Millisecond)
 	r.IdleRSS = readRSS(cmd.Process.Pid)
 
-	// Drive load.
 	loadStart := time.Now()
 	for i := range loadReqs {
 		resp, err := probeClient.Get(probeURL)
@@ -208,14 +178,10 @@ func runtimeRAM(r *result, binPath string, app appSpec, loadReqs int) {
 	r.LoadDuration = time.Since(loadStart)
 	r.LoadRequests = loadReqs
 
-	// Settle again before the post-load reading so we measure steady state,
-	// not an in-flight spike.
 	time.Sleep(500 * time.Millisecond)
 	r.LoadedRSS = readRSS(cmd.Process.Pid)
 }
 
-// readRSS shells out to `ps -o rss= -p <pid>`. Works on Mac and Linux;
-// returns bytes (ps reports kB; we multiply).
 func readRSS(pid int) int64 {
 	out, err := exec.Command("ps", "-o", "rss=", "-p", strconv.Itoa(pid)).Output()
 	if err != nil {
@@ -248,7 +214,6 @@ func waitReady(url string, deadline time.Duration) bool {
 }
 
 func printReport(results []result) {
-	// Sort by app name for stable output, but keep "cmd-*" last.
 	sort.SliceStable(results, func(i, j int) bool {
 		a, b := results[i].App, results[j].App
 		ai := strings.HasPrefix(a, "cmd-")
