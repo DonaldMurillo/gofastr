@@ -9,6 +9,9 @@ import (
 // WriteModule lays down a throwaway module and returns its path.
 func WriteModule(t *testing.T, files map[string]string) string {
 	t.Helper()
+	if files == nil {
+		files = map[string]string{}
+	}
 	if _, ok := files["go.mod"]; !ok {
 		files["go.mod"] = "module example.com/app\n\ngo 1.26\n"
 	}

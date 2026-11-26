@@ -84,7 +84,7 @@ before calling `Build`.
 
 ## MCP tool arguments
 
-The generated `<table>_list` MCP tool accepts the same filter keys as typed JSON arguments (`status`, `amount_gte`, `status_in: ["draft", "sent"]`). For `_in`, pass a non-empty JSON array whose elements contain no commas.
+The generated `<table>_list` MCP tool accepts the same filter keys as typed JSON arguments (`status`, `amount_gte`, `status_in: ["draft", "sent"]`). For `_in`, pass a non-empty JSON array whose elements contain no commas. The equality filter on a column named after a reserved list key (`page`, `limit`, `per_page`, `offset`, `sort`, `cursor`, `direction`, `where`, `fields`, `include`, `trashed`, `stream`, and `q` when the entity has `SearchFields`) takes the bracket key, such as `page[eq]`, so the route does not read it as that control and the tool's own arguments keep their meaning and type. The other operators keep their suffix keys (`sort_like`).
 
 ## Common mistakes
 

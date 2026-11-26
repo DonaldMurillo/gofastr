@@ -478,6 +478,7 @@ func (s *Server) checkServerGate(ctx context.Context) (err error) {
 
 // CallTool runs a tool in process with its own gates and argument validation, but not the server-wide gate.
 func (s *Server) CallTool(ctx context.Context, name string, params map[string]any) (any, error) {
+	//gofastr:allow(nilmapwrite) omitted arguments reach the handler as a nil map by contract (mcp.md, schema enforcement)
 	return s.callTool(ctx, name, params)
 }
 
@@ -486,6 +487,7 @@ func (s *Server) CallToolFor(ctx context.Context, name string, params map[string
 	if err := s.checkServerGate(ctx); err != nil {
 		return nil, gateRefusal(err)
 	}
+	//gofastr:allow(nilmapwrite) omitted arguments reach the handler as a nil map by contract (mcp.md, schema enforcement)
 	return s.callTool(ctx, name, params)
 }
 

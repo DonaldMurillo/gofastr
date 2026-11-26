@@ -204,7 +204,7 @@ func resolveScreenSEOFor(ctx context.Context, screen *app.Screen, comp component
 	if article {
 		if meta.Headline == "" {
 			if t, ok := src.(app.ScreenTitler); ok {
-				meta.Headline = t.ScreenTitle(ctx)
+				meta.Headline = app.SafeScreenTitle(ctx, t)
 			}
 		}
 		if meta.Description == "" {

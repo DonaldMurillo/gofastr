@@ -199,6 +199,7 @@ func (a *App) Register(path string, comp component.Component, layout *Layout, op
 	}
 
 	if titler, ok := comp.(ScreenTitler); ok {
+		//gofastr:allow(guardbypass) registration reads the title once at boot and fails fast: a panicking title stops the app before it serves
 		screen.Title = titler.ScreenTitle(context.Background())
 	}
 	if describer, ok := comp.(ScreenDescriber); ok {

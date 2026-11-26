@@ -482,3 +482,80 @@ func StringConstant(pass *analysis.Pass, e ast.Expr) (string, bool) {
 	}
 	return constant.StringVal(tv.Value), true
 }
+
+// DirectRecover: the guard's body calls recover() on every path and
+// never panics again. Credit needs both: a recover that may not run
+// (`if enabled { recover() }`, `_ = enabled && recover() != nil`, or a
+// recover after an early return) contains nothing, and neither does a
+// guard that panics again (`if v := recover(); v != nil { panic(v) }`,
+// `defer panic(v)`). So the recover must sit in the guard's FIRST
+// statement (an assignment, an expression, a return, a var declaration, or the init
+// or leading operand of an if or switch), never on the right of && or
+// ||, and no builtin panic may appear anywhere in the body, deferred
+// calls and literals included. The recover itself is not under a defer
+// or inside a nested literal: it works only when the guard is the
+// deferred function itself, named or literal. It is recovercallback's
+// guard test and guardbypass's every-path recover test.
+func DirectRecover(pass *analysis.Pass, body *ast.BlockStmt) bool {
+	isBuiltin := func(expression ast.Expr, name string) bool {
+		call, ok := ast.Unparen(expression).(*ast.CallExpr)
+		if !ok {
+			return false
+		}
+		identifier, ok := ast.Unparen(call.Fun).(*ast.Ident)
+		if !ok || identifier.Name != name {
+			return false
+		}
+		_, builtin := pass.TypesInfo.ObjectOf(identifier).(*types.Builtin)
+		return builtin
+	}
+	// panics: a builtin panic anywhere, deferred calls and literals
+	// included, since a panic escapes from any of them.
+	panics := false
+	ast.Inspect(body, func(x ast.Node) bool {
+		if expression, ok := x.(ast.Expr); ok && isBuiltin(expression, "panic") {
+			panics = true
+		}
+		return !panics
+	})
+	if panics || len(body.List) == 0 {
+		return false
+	}
+	// recovers: a recover the node always evaluates, in this frame: not
+	// in a nested literal or defer, and not on the right of && or ||.
+	var recovers func(node ast.Node) bool
+	recovers = func(node ast.Node) bool {
+		if node == nil {
+			return false
+		}
+		found := false
+		ast.Inspect(node, func(x ast.Node) bool {
+			switch x := x.(type) {
+			case *ast.FuncLit, *ast.DeferStmt:
+				return false
+			case *ast.BinaryExpr:
+				if x.Op == token.LAND || x.Op == token.LOR {
+					found = found || recovers(x.X)
+					return false
+				}
+			case ast.Expr:
+				if IsRecover(pass, x) {
+					found = true
+				}
+			}
+			return !found
+		})
+		return found
+	}
+	switch first := body.List[0].(type) {
+	case *ast.AssignStmt, *ast.ExprStmt, *ast.DeclStmt, *ast.ReturnStmt:
+		return recovers(first)
+	case *ast.IfStmt:
+		return recovers(first.Init) || recovers(first.Cond)
+	case *ast.SwitchStmt:
+		return recovers(first.Init) || recovers(first.Tag)
+	case *ast.TypeSwitchStmt:
+		return recovers(first.Init) || recovers(first.Assign)
+	}
+	return false
+}

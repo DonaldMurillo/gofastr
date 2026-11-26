@@ -53,6 +53,8 @@ func (u unsupported) installed(*Battery) (bool, error)    { return false, nil }
 func (u unsupported) logs(*Battery, int, bool) error      { return u.err() }
 
 type toolRunner interface {
+	// output runs a tool and returns its stdout, or stdout then stderr
+	// when it fails, so the error can quote the tool.
 	output(name string, args ...string) ([]byte, error)
 	stream(w io.Writer, name string, args ...string) error
 }
@@ -68,11 +70,13 @@ func (execTools) output(name string, args ...string) ([]byte, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.WaitDelay = 2 * time.Second
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
-	err := cmd.Run()
-	return buf.Bytes(), err
+	var out, stderr bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return append(out.Bytes(), stderr.Bytes()...), err
+	}
+	return out.Bytes(), nil
 }
 
 func (execTools) stream(w io.Writer, name string, args ...string) error {

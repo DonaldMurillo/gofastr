@@ -437,7 +437,10 @@ func (a *App) SweepErasureRetention(ctx context.Context) error {
 	if a == nil || a.DB == nil {
 		return nil
 	}
-	dialect := migrate.DetectDialect(a.DB)
+	dialect, err := migrate.DetectDialectStrictContext(ctx, a.DB)
+	if err != nil {
+		return err
+	}
 	phys, exists, err := physicalTable(ctx, a.DB, eraseIdentitiesTable, dialect, false)
 	if err != nil || !exists {
 		return err
