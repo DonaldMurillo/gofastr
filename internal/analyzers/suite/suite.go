@@ -116,6 +116,7 @@ import (
 	// 2026-11-25 round-12 rules
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/combinedparse"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/guardbypass"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/nilmapwrite"
 )
 
 // repoAnalyzers are the repo invariants, each born from a bug that
@@ -239,6 +240,7 @@ var repoAnalyzers = []*analysis.Analyzer{
 	// called bare where its recover guard exists.
 	allow.Guard(combinedparse.Analyzer),
 	allow.Guard(guardbypass.Analyzer),
+	allow.Guard(nilmapwrite.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means

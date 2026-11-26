@@ -86,6 +86,9 @@ func Attrs(pairs map[string]string) html.Attrs {
 
 // Mark sets each named attribute present with an empty value.
 func Mark(a html.Attrs, names ...string) html.Attrs {
+	if a == nil {
+		a = html.Attrs{}
+	}
 	for _, n := range names {
 		a[n] = ""
 	}
@@ -106,6 +109,9 @@ func Internal(own html.Attrs) html.Attrs {
 // Flag sets a boolean attribute when on.
 func Flag(a html.Attrs, name string, on bool) html.Attrs {
 	if on {
+		if a == nil {
+			a = html.Attrs{}
+		}
 		a[name] = ""
 	}
 	return a

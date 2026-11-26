@@ -859,6 +859,7 @@ func HelperSinkParams(
 				if !ok {
 					return true
 				}
+				//gofastr:allow(nilmapwrite) sinkOf only looks functions up in pkgFuncs; it never writes into it
 				for _, s := range sinkOf(pass, call, bound, pkgFuncs, helpers) {
 					i, ok := SinkParam(pass, s.Path, bound, idx)
 					if !ok || resolvedHere(pass, decl.Body, s, bound, evals, isGuard, call) {

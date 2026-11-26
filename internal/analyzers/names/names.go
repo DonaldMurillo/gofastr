@@ -93,6 +93,7 @@ var Analyzers = []string{
 	// 2026-11-25 round-12 rules
 	"combinedparse",
 	"guardbypass",
+	"nilmapwrite",
 }
 
 // Lints is every source lint outside the vettool that shares the
