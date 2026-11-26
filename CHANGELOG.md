@@ -54,6 +54,13 @@ few lines, and link the PR or the docs page for the rest.
   (`/items`), not under `WithAPIPrefix` (`/api/items`).
   `CrudHandlerForEntity` and the startup banner report the same path.
   Regenerate clients built from the spec.
+- **BREAKING: Migration files with SQL before the first section are
+  rejected.** That SQL used to be skipped even when the migration was
+  recorded as applied. If the migration hasn't been applied, move the SQL
+  under `-- +migrate Up` (or `-- +migrate Down` for rollback SQL). If it
+  has already been applied, remove the stray SQL from that file and put
+  it in a new migration. See
+  [Migrations](framework/docs/content/migrations.md#sql-file-format).
 - **CI actions run on Node 24 (#891).** `checkout` v5, `setup-go` v6,
   `cache` v5, `setup-chrome` v2, `upload-pages-artifact` v5 and
   `deploy-pages` v5 replace the majors GitHub was forcing off Node 20.

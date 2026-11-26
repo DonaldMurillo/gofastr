@@ -8,6 +8,10 @@ import (
 )
 
 func splitStatements(body string) []string {
+	return splitStatementsWithCommentNesting(body, true)
+}
+
+func splitStatementsWithCommentNesting(body string, nest bool) []string {
 	var out []string
 	start := 0
 	hasCode := false
@@ -28,7 +32,7 @@ func splitStatements(body string) []string {
 				i++
 			}
 		case c == '/' && i+1 < n && body[i+1] == '*':
-			i = sqllex.SkipBlockComment(body, i, true)
+			i = sqllex.SkipBlockComment(body, i, nest)
 		case c == '\'':
 			escapes := i > 0 && (body[i-1] == 'E' || body[i-1] == 'e') && (i < 2 || !identByte(body[i-2]))
 			hasCode = true
