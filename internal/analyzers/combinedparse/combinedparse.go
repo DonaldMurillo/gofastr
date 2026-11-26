@@ -119,13 +119,13 @@ type checker struct {
 	// tainted holds the locals that carry merged output.
 	tainted map[types.Object]bool
 	// merged holds the buffers wired to both streams of one Cmd.
-	merged map[types.Object]bool
+	merged map[bufKey]bool
 	// reported dedupes one finding per line.
 	reported map[int]bool
 }
 
 func checkFunc(pass *analysis.Pass, ft *ast.FuncType, body *ast.BlockStmt) {
-	c := &checker{pass: pass, tainted: map[types.Object]bool{}, merged: map[types.Object]bool{}, reported: map[int]bool{}}
+	c := &checker{pass: pass, tainted: map[types.Object]bool{}, merged: map[bufKey]bool{}, reported: map[int]bool{}}
 	c.findMergedBuffers(body)
 	// Two passes reach a local assigned before the one it reads in
 	// source order (a loop body, a closure).
@@ -153,8 +153,8 @@ func checkFunc(pass *analysis.Pass, ft *ast.FuncType, body *ast.BlockStmt) {
 // findMergedBuffers records a buffer whose address feeds both Stdout and
 // Stderr of the same *exec.Cmd.
 func (c *checker) findMergedBuffers(body *ast.BlockStmt) {
-	stdout := map[types.Object]types.Object{}
-	stderr := map[types.Object]types.Object{}
+	stdout := map[types.Object]bufKey{}
+	stderr := map[types.Object]bufKey{}
 	ast.Inspect(body, func(n ast.Node) bool {
 		as, ok := n.(*ast.AssignStmt)
 		if !ok || len(as.Lhs) != len(as.Rhs) {
@@ -176,7 +176,7 @@ func (c *checker) findMergedBuffers(body *ast.BlockStmt) {
 					buf = stderr[cmd]
 				}
 			}
-			if cmd == nil || buf == nil {
+			if cmd == nil || buf == (bufKey{}) {
 				continue
 			}
 			if sel.Sel.Name == "Stdout" {
@@ -215,21 +215,28 @@ func (c *checker) objOf(x ast.Expr) types.Object {
 	return nil
 }
 
-// bufferOf resolves &buf, buf, &x.buf or x.buf to buf's object.
-func (c *checker) bufferOf(x ast.Expr) types.Object {
+// bufKey names one buffer: a local (root only), or a field of one value
+// (root and field), so two values of one struct type stay apart.
+type bufKey struct{ root, field types.Object }
+
+// bufferOf resolves &buf, buf, &x.buf or x.buf to its buffer.
+func (c *checker) bufferOf(x ast.Expr) bufKey {
 	x = ast.Unparen(x)
 	if u, ok := x.(*ast.UnaryExpr); ok && u.Op == token.AND {
 		x = ast.Unparen(u.X)
 	}
 	switch e := x.(type) {
 	case *ast.Ident:
-		return c.pass.TypesInfo.ObjectOf(e)
+		if obj := c.pass.TypesInfo.ObjectOf(e); obj != nil {
+			return bufKey{root: obj}
+		}
 	case *ast.SelectorExpr:
-		if _, field := c.pass.TypesInfo.ObjectOf(e.Sel).(*types.Var); field {
-			return c.pass.TypesInfo.ObjectOf(e.Sel)
+		field, isVar := c.pass.TypesInfo.ObjectOf(e.Sel).(*types.Var)
+		if root := c.objOf(e.X); isVar && root != nil {
+			return bufKey{root: root, field: field}
 		}
 	}
-	return nil
+	return bufKey{}
 }
 
 func (c *checker) propagate(lhs, rhs []ast.Expr) {
@@ -303,7 +310,7 @@ func (c *checker) taintedExpr(x ast.Expr) bool {
 		}
 		// buf.String() / buf.Bytes() on a merged buffer.
 		if sel, ok := ast.Unparen(e.Fun).(*ast.SelectorExpr); ok && (fn.Name() == "String" || fn.Name() == "Bytes") {
-			if obj := c.bufferOf(sel.X); obj != nil && c.merged[obj] {
+			if buf := c.bufferOf(sel.X); buf != (bufKey{}) && c.merged[buf] {
 				return true
 			}
 		}

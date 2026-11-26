@@ -135,3 +135,14 @@ func sharedWriter() string {
 	_ = cmd.Run()
 	return strings.TrimSpace(b.String()) // want `merged stdout and stderr`
 }
+
+type capture struct{ buf bytes.Buffer }
+
+// twoValues keeps stdout and stderr in two values of one type.
+func twoValues() []string {
+	var out, errOut capture
+	cmd := exec.Command("tool")
+	cmd.Stdout, cmd.Stderr = &out.buf, &errOut.buf
+	_ = cmd.Run()
+	return strings.Fields(out.buf.String())
+}
