@@ -456,4 +456,3 @@ func TestLinuxUpdateVersionWarning(t *testing.T) {
 		}
 	}
 }
-
