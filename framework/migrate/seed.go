@@ -97,7 +97,7 @@ func RunSeeds(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 	if !hasSeed {
 		return nil
 	}
-	dialect, err := detectDialectFailClosed(db)
+	dialect, err := DetectDialectStrictContext(ctx, db)
 	if err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}

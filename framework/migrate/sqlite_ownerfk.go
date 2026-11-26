@@ -34,7 +34,7 @@ func FindStaleOwnerForeignKeys(ctx context.Context, db *sql.DB, registry entity.
 	if db == nil || registry == nil {
 		return nil, nil
 	}
-	dialect, err := DetectDialectStrict(db)
+	dialect, err := DetectDialectStrictContext(ctx, db)
 	if err != nil {
 		return nil, err
 	}

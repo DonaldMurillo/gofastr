@@ -276,6 +276,11 @@ invariants:
       - test: framework.TestExpiredKeptIdentityIsSwept
       - test: framework.TestExpiredRowDoesNotBlockANewFailure
       - test: framework.TestAppStartSweepsExpiredRetention
+  - id: erase-retention-probe-honors-context
+    rule: App.SweepErasureRetention uses its caller's context for the dialect probe and fails closed. When the probe is cancelled, hits the caller's deadline or keeps failing, the sweep returns that error and deletes nothing, rather than sweeping with a guessed dialect.
+    enforced_by:
+      - test: framework.TestEraseRetentionCancelsDialectProbe
+      - test: framework.TestEraseRetentionProbeFailsClosed
   - id: shutdown-joins-retention-sweep
     rule: App shutdown cancels the retention sweep, stops the host without waiting for the sweep, then waits for an unfinished sweep until the shutdown context ends before OnStop hooks can close the database, even when shutdown interrupts boot. If the sweep is still running when shutdown stops waiting, teardown continues and reports the context error unless an earlier step failed.
     enforced_by:

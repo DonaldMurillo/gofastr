@@ -1,12 +1,63 @@
 package migrate
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
+
+func TestDialectProbeReturnsCallerDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		db, m := mock(t)
+		for range 2 {
+			m.ExpectQuery("SELECT version").WillReturnError(errors.New("connection refused"))
+		}
+		m.ExpectQuery("SELECT version").WillDelayFor(10 * time.Second).WillReturnError(errors.New("connection refused"))
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		if _, err := DetectDialectStrictContext(ctx, db); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("dialect probe error = %v, want context.DeadlineExceeded", err)
+		}
+		if err := m.ExpectationsWereMet(); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestMigrationEntryPointsCancelDialectProbe(t *testing.T) {
+	for name, run := range map[string]func(context.Context, *sql.DB) error{
+		"auto migrate": func(ctx context.Context, db *sql.DB) error {
+			return AutoMigratePlanContext(ctx, db, Plan{})
+		},
+		"diff": func(ctx context.Context, db *sql.DB) error {
+			_, err := DiffSchema(ctx, db, testReg{})
+			return err
+		},
+		"stale owner foreign keys": func(ctx context.Context, db *sql.DB) error {
+			_, err := FindStaleOwnerForeignKeys(ctx, db, testReg{})
+			return err
+		},
+		"seed": func(ctx context.Context, db *sql.DB) error {
+			reg := testReg{"posts": seededEnt("posts", func(context.Context, *sql.DB) error { return nil })}
+			return RunSeeds(ctx, db, reg)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			db, _ := mock(t)
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			if err := run(ctx, db); !errors.Is(err, context.Canceled) {
+				t.Fatalf("dialect probe error = %v, want context.Canceled", err)
+			}
+		})
+	}
+}
 
 // TestAutoMigratePlan_DialectDetectFailClosed is the red-first test for the
 // fail-closed dialect-detection invariant (v0.62): when the version() probe
