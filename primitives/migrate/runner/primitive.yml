@@ -39,6 +39,12 @@ invariants:
       - test: core/migrate.TestKnownDirectivesStillParse
       - test: core/migrate.TestMissingUpDirectiveFailsLoud
       - test: framework/migrate.TestGeneratorGuardCoversNearMissDirectives
+  - id: unsectioned-sql-refused
+    rule: RegisterFromReader refuses SQL statements before the first Up or Down section even when Up contains SQL, while allowing a preamble of whitespace and SQL comments in the selected dialect.
+    enforced_by:
+      - test: core/migrate.TestMigrationRefusesUnsectionedSQL
+      - test: core/migrate.TestMigrationAcceptsCommentPreamble
+      - test: core/migrate.TestMigrationAcceptsNestedPGComment
   - id: tracking-table-shape
     rule: The tracking table gains group_name and a (group_name, version) key only in an Up, Down or Force that registers or selects a named group, older tables gain the checksum and dirty columns in any call including Status, Status never adds group_name or changes the key, and reads follow the columns the table has.
     enforced_by:
