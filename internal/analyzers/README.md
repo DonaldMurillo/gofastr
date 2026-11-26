@@ -514,3 +514,35 @@ an `_html` call, a `Worker` or created `<script>` URL that is not a
 `_scriptURL` call, and the sinks no policy covers (`document.write`,
 `eval`, `new Function`, `importScripts`, `setHTMLUnsafe`,
 `createContextualFragment`). Under the default CSP each of these throws.
+The 2026-11-25 round-12 bug bash added three rules. `combinedparse`
+reports merged command output (`CombinedOutput`, or one buffer set as
+both `Stdout` and `Stderr`) that reaches a parser, a comparison with a
+non-empty constant, a non-error return or a struct field: a warning on
+stderr then breaks the parse. It stays quiet on `Contains`/`Index`
+probes, error and log text, and length checks. `nilmapwrite` reports an
+exported function that writes into its map parameter and then hands it
+on, or hands it to a callback that takes a map (through any number of
+package-local hops), with no nil check first: a caller passing nil
+panics the write, the shape of the S2-09 hook write through
+`UpdateOne`. A JSON `null` body decoding to a nil map is not covered;
+the crud and mcp tests hold that. `guardbypass` reports a direct `x.M()`
+call on an interface method when a recover guard for that method
+exists (a function that defers a recover and whose only work is
+`return p.M(…)` on one of its interface parameters, like
+`app.SafeScreenTitle`); exported guards reach importing packages as
+facts, and a call is quiet inside the guard or after a deferred recover
+in its own function. It is the S1a-05/S1b-09 shape: the full page load
+used the guard and soft navigation called the hook bare.
+The same round added `formclobber` to core-ui/check (`LintFormClobber`,
+run over every shipped `.js` file): a form method (`requestSubmit`,
+`submit`, `reset`, `checkValidity`, `reportValidity`) or behaviour
+property (`action`, `method`, `target`, `enctype`, `elements`) read
+through the form itself, which a control of that name replaces. Use
+`HTMLFormElement.prototype.X.call(form)`, the prototype's `elements`
+getter, or `getAttribute`; a plain write such as `form.action = x` stays
+quiet. `framework/crud`'s reserved-names table
+(`TestReservedNamesKeepBothMeanings`, `TestReservedNamesMCPListTool`)
+gives an entity a column named after every key
+`filter.ListControlParams` reserves and checks the bracket filter and
+the control on the list route and the MCP list tool; a new reserved key
+fails `TestReservedNamesTableCoversTheParser` until it has a row.
