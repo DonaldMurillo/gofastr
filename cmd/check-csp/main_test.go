@@ -60,3 +60,12 @@ func TestCLINormalizesExplicitRootSpelling(t *testing.T) {
 		}
 	}
 }
+
+func TestCLIExitsTwoWhenTheWalkFails(t *testing.T) {
+	binary := buildCSPCommand(t)
+	command := exec.Command(binary, filepath.Join(t.TempDir(), "missing"))
+	output, _ := command.CombinedOutput()
+	if code := command.ProcessState.ExitCode(); code != 2 {
+		t.Fatalf("exit %d, want 2\n%s", code, output)
+	}
+}

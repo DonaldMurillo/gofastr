@@ -1,0 +1,114 @@
+primitive: kiln.cli.agents
+summary: The coding-agent adapters kiln can run per chat turn, the store holding the active one and the in-flight turn's cancel hook, and the /kiln/agent routes that switch or cancel them.
+code:
+  - cmd/kiln/adapters.go
+  - cmd/kiln/adapter_store.go
+  - cmd/kiln/agent_http.go
+docs:
+  - framework/docs/content/kiln.md
+on_change:
+  - A new built-in adapter goes in adapters, adapterAutoOrder, the --agent help in main.go and kiln.md.
+invariants:
+  - id: prompt-follows-end-of-options
+    rule: Every adapter whose last argument is the bare prompt (omp, claude-code and a custom command) puts "--" in front of it, and pi and codex prefix the prompt with a fixed <kiln-system> block instead, so a prompt starting with "-" is never read as a flag.
+    enforced_by:
+      - test: cmd/kiln.TestDashPromptIsNotAFlag
+  - id: omp-is-pinned
+    rule: The omp adapter runs glm-5.2 with only the bash tool, --no-session and the kiln system prompt.
+    enforced_by:
+      - test: cmd/kiln.TestOMPAdapterPinsGLM52AndKilnBoundary
+  - id: claude-has-bash-only
+    rule: The claude-code adapter passes --tools Bash, --dangerously-skip-permissions and the kiln system prompt through --append-system-prompt.
+    enforced_by:
+      - test: cmd/kiln.TestClaudeCodeAdapterEnforcesKilnContract
+  - id: pi-gets-skill-and-contract
+    rule: The pi adapter restricts pi to bash, passes the installed skill with --skill and puts the contract preamble at the head of the prompt.
+    enforced_by:
+      - test: cmd/kiln.TestInstalledSkillReachesEveryAdapter
+      - test: cmd/kiln.TestPiAdapterIncludesContractPreamble
+  - id: codex-gets-prompt-prefix
+    rule: The codex adapter puts the kiln system prompt in a <kiln-system> block at the head of the prompt, since codex has no system-prompt flag.
+    enforced_by:
+      - test: cmd/kiln.TestInstalledSkillReachesEveryAdapter
+  - id: system-prompt-carries-skill
+    rule: kilnSystemPrompt appends the installed skill in a <kiln-skill> block, so omp, claude-code and codex each receive it.
+    enforced_by:
+      - test: cmd/kiln.TestInstalledSkillReachesEveryAdapter
+  - id: contract-forbids-file-tools
+    rule: The contract preamble says the world is reachable only over $KILN_URL and forbids the file tools.
+    enforced_by:
+      - test: cmd/kiln.TestContractForbidsFileTools
+      - test: cmd/kiln.TestKilnContractPreambleMentionsTheBoundary
+  - id: builtins-run-in-temp-dirs
+    rule: Every built-in adapter has a fixed Dir directly under os.TempDir(), so no built-in turn runs in kiln's own working directory; a custom adapter has no Dir and its turn runs in kiln's working directory.
+    enforced_by:
+      - test: cmd/kiln.TestEveryBuiltinAdapterHasIsolatedDir
+  - id: auto-prefers-omp
+    rule: --agent auto tries omp first.
+    enforced_by:
+      - test: cmd/kiln.TestAdapterAutoOrderPrefersOMP
+  - id: freeform-preset-resolves-by-name
+    rule: A free-form --agent command equal to a built-in adapter's argv without its prompt resolves to that named adapter, not to custom.
+    enforced_by:
+      - test: cmd/kiln.TestResolveAdapterFreeformMatchesBuiltin
+  - id: unknown-name-refused
+    rule: POST /kiln/agent refuses a name that is not a registered adapter, a sentinel or custom, rather than running it as a free-form command.
+    enforced_by:
+      - test: cmd/kiln.TestAgentHTTPSetUnknownReturnsError
+  - id: custom-needs-opt-in
+    rule: POST /kiln/agent refuses name="custom" unless kiln was started with --allow-custom-agent.
+    enforced_by:
+      - test: cmd/kiln.TestCustomAgentDisabledByDefault
+  - id: agent-body-is-strict-and-capped
+    rule: POST /kiln/agent answers 400 to a body over maxAgentBody or one with a duplicate or case-folded key.
+    enforced_by:
+      - test: cmd/kiln.TestAgentBodyIsCapped
+      - test: cmd/kiln.TestAgentEndpointRejectsDuplicateKeys
+      - test: cmd/kiln.TestAgentEndpointRejectsCaseFoldedKeys
+  - id: agent-state-is-sorted
+    rule: The agent state lists every registered adapter in name order, each with its installed flag.
+    enforced_by:
+      - test: cmd/kiln.TestAgentStateListsAdaptersInNameOrder
+  - id: agent-json-is-no-store
+    rule: writeJSON sets Cache-Control no-store and answers 500 with a body when the value cannot encode.
+    enforced_by:
+      - test: cmd/kiln.TestWriteJSONAnswersEncodingFailure
+  - id: switch-cancels-with-its-cause
+    rule: Set cancels an in-flight turn with errAgentSwitched, SetTurnCancel cancels the previous turn with errSupersededByNewMessage, and CancelInFlight cancels with errCancelledByUser and keeps the adapter.
+    enforced_by:
+      - test: cmd/kiln.TestAgentHTTPSetAcceptsCustomAndCancelsInflight
+      - test: cmd/kiln.TestAgentCancelEndpointKeepsAdapter
+      - test: cmd/kiln.TestSupersedeCancelsWithNewMessageCause
+  - id: stale-clear-keeps-live-turn
+    rule: ClearTurnCancel clears the slot only for the token that still owns it, so a superseded turn finishing late leaves the live turn cancellable.
+    enforced_by:
+      - test: cmd/kiln.TestStaleTurnClearKeepsLiveCancel
+  - id: cancel-hook-panic-recovered
+    rule: A panicking cancel hook is recovered and logged through textsafe.Recovered, never crashing the store's caller.
+    enforced_by:
+      - test: cmd/kiln.TestCancelHookPanicIsRecovered
+decisions:
+  - id: system-prompt-per-cli
+    date: 2026-11-26
+    status: accepted
+    decision: Each adapter carries the contract preamble and skill through the strongest channel its CLI has - a system-prompt flag for omp and claude, --skill plus a prompt prefix for pi, a prompt prefix for codex.
+    rejected:
+      - option: Rely on the CLI discovering the skill under ~/.claude/skills.
+        why: Discovery is advisory; spawned in a real Go checkout the models fell back to reading and editing files instead of calling kiln tools.
+    upholds: [contract-forbids-file-tools]
+  - id: claude-tools-not-allowed-tools
+    date: 2026-11-26
+    status: accepted
+    decision: The claude-code adapter limits claude with --tools Bash.
+    rejected:
+      - option: --allowedTools Bash.
+        why: It only skips the permission prompt for the tools it names and left every tool available.
+    upholds: [claude-has-bash-only]
+  - id: custom-agent-is-opt-in
+    date: 2026-11-26
+    status: accepted
+    decision: The request-borne custom adapter is off unless --allow-custom-agent is passed.
+    rejected:
+      - option: Accept name="custom" on every kiln.
+        why: The body supplies the whole argv of a spawned process, so anything reaching the unauthenticated tool API had remote code execution.
+    upholds: [custom-needs-opt-in, kiln.cli/custom-agent-off-by-default]

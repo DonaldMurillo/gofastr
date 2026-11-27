@@ -1,0 +1,19 @@
+primitive: tools.repolint.wiring
+summary: The untyped-fui-wiring rule, which makes the code that emits island wiring use core-ui/interactive instead of raw data-cui-rpc attributes.
+code:
+  - cmd/repolint/wiring.go
+invariants:
+  - id: emitters-use-typed-wiring
+    rule: A data-cui-rpc attribute literal followed by a quote or "=" in a non-test .go file under cmd/gofastr/ or battery/ is a finding; data-cui-rpc-method, -body and the other suffixed attributes are not.
+    enforced_by:
+      - test: cmd/repolint.TestEmittedRPCMarkupIsUntypedWiring
+      - test: cmd/repolint.TestUntypedWiringScope
+decisions:
+  - id: scope-to-emitters
+    date: 2026-11-26
+    status: accepted
+    decision: The rule covers the app generator and the batteries only.
+    rejected:
+      - option: Cover examples and docs too.
+        why: The showcase renders raw data-cui-* attributes in copy shown to visitors.
+    upholds: [emitters-use-typed-wiring]

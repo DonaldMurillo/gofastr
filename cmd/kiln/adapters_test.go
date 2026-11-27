@@ -296,8 +296,8 @@ func TestDashPromptIsNotAFlag(t *testing.T) {
 	}
 	for _, name := range []string{"pi", "codex"} {
 		last := adapters[name].BuildArgs(msg)
-		if p := last[len(last)-1]; strings.HasPrefix(p, "-") {
-			t.Errorf("%s: prompt argument starts with a dash: %q", name, p)
+		if p := last[len(last)-1]; !strings.HasPrefix(p, "<kiln-system>\n") || !strings.HasSuffix(p, msg) {
+			t.Errorf("%s: prompt argument %q does not lead with the <kiln-system> block", name, p)
 		}
 	}
 }
