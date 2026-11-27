@@ -88,6 +88,14 @@ invariants:
     enforced_by:
       - test: cmd/kiln.TestCancelHookPanicIsRecovered
 decisions:
+  - id: builtins-get-a-clean-dir
+    date: 2026-11-27
+    status: accepted
+    decision: Every built-in adapter runs its turns in a fixed, clean directory under os.TempDir().
+    rejected:
+      - option: Inherit kiln's working directory.
+        why: pi cats any Go file it finds in its working directory and reports on it as if it were the kiln world.
+    upholds: [builtins-run-in-temp-dirs]
   - id: system-prompt-per-cli
     date: 2026-11-26
     status: accepted

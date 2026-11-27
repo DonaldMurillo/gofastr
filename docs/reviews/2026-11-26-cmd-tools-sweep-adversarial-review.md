@@ -90,8 +90,11 @@ analyzer's summary names the depth cutoff.
 
 ## Follow-up, #923
 
-Every item listed above as left for a follow-up now has a test watched
-failing under its mutation, or a rule narrowed to what the code does. The
+Every item listed above as left for a follow-up, and the three a post-merge
+review of #918 added (classify's order, the //gofastr: prefix in the stop
+check's comment-only test, the reason built-ins get a clean directory), now
+has a test watched failing under its mutation, a rule narrowed to what the
+code does, or a recorded decision. The
 lead reran one proof per group on the merged tree (the guard served
 without `originGuard`, `-tags` dropped, the signal handler's `interrupt()`
 removed, the unreadable `.gitignore` ignored, the `=======` marker
@@ -177,3 +180,10 @@ Changed code, not only tests:
 - origins.go: the `"::1"` allowlist entry is removed. The URL pattern matches name and IPv4 hosts only, so it could never match; the `allowed-hosts` rule says so.
 - main.go: the `[Unreleased]` skip in latestReleaseMinor is removed as dead code. An `[Unreleased]` heading has no X.Y version, so the version parse already skips it; the two existing supported-version tests carry an `[Unreleased]` heading and still pass.
 - The tools.repolint on_change line now says per-line rules live in lintBytes in main.go, which is true; only repository-level rules get their own file.
+
+### Added by the post-merge review of #918
+
+cmd/mutate/main.go: the `--- FAIL` check moved after `isBuildFailure` -> TestClassifyIsNotFooledByApplicationLogOutput
+cmd/primitives/harness.go: `//gofastr:` comments dropped from the code tokens -> TestStop
+
+The reason built-ins run in a clean temp directory (pi reads the Go files in its working directory as the kiln world) is decision `builtins-get-a-clean-dir`.
