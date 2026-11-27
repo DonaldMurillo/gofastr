@@ -14,10 +14,11 @@ invariants:
     enforced_by:
       - test: cmd/affected.TestFilesMapToImportClosure
   - id: embed-patterns-select-the-embedder
-    rule: A changed file, present or deleted, selects every package whose //go:embed patterns, test patterns included, cover it, even when it sits inside a nested package.
+    rule: A changed file, present or deleted, selects every package whose //go:embed patterns, in-package and external test patterns included, cover it, even when it sits inside a nested package.
     enforced_by:
       - test: cmd/affected.TestEmbeddedNestedPackageSelectsTheEmbedder
       - test: cmd/affected.TestTestEmbedSelectsThePackage
+      - test: cmd/affected.TestExternalTestEmbedSelectsThePackage
   - id: transitive-importers-selected
     rule: Every package that imports an affected package, directly or transitively, is affected.
     enforced_by:
@@ -46,6 +47,7 @@ invariants:
     enforced_by:
       - test: cmd/affected.TestDeclaredTestReadsSelectThePackage
       - test: cmd/affected.TestTestReadsStarStaysInOneSegment
+      - test: cmd/affected.TestTestReadsDirectoryReachesEveryLevel
   - id: test-reads-is-a-comment-directive
     rule: A test-reads directive counts only where it opens a // comment; prose that mentions it and raw-string fixtures declare nothing.
     enforced_by:
@@ -77,6 +79,11 @@ invariants:
     rule: A base ref that cannot be resolved, or a merge base that cannot be computed, selects every package with a note on stderr, never an error or an empty set.
     enforced_by:
       - test: cmd/affected.TestGitChangeSet
+      - test: cmd/affected.TestUnrelatedBaseTestsEverything
+  - id: tags-reach-go-list
+    rule: -tags is passed to both go list runs, the selection's and -files-differ-from's, so a file behind a build tag counts when the tag is given and only then.
+    enforced_by:
+      - test: cmd/affected.TestTagsReachGoList
   - id: change-set-is-the-working-tree
     rule: The change set is the staged, unstaged, untracked and deleted files against the merge base of HEAD and the base ref, or against the base ref itself with -diff-base.
     enforced_by:
