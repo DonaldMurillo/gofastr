@@ -2,6 +2,7 @@ primitive: tools.primitives.harness
 summary: The Claude Code hooks behind primitives hook and primitives stop - the same-job notice after a tool call, and the stop check that runs vet and tests over changed packages and asks what else a change needs.
 code:
   - cmd/primitives/harness.go
+  - cmd/primitives/run_test.go
 docs:
   - primitives/README.md
 on_change:
@@ -33,10 +34,11 @@ invariants:
     enforced_by:
       - test: cmd/primitives.TestStopRunsNestedModuleInItsOwnModule
   - id: changed-module-builds-whole
-    rule: A changed go.mod or go.sum makes the stop check run go build ./... in that module.
+    rule: A changed go.mod or go.sum makes the stop check run go build ./... in that module and block on a package there that no longer builds, changed or not.
     enforced_by:
       - test: cmd/primitives.TestStop
       - test: cmd/primitives.TestStopDoesNotBuildTestdataModule
+      - test: cmd/primitives.TestStopBuildsAChangedModuleWhole
   - id: testdata-is-skipped
     rule: No package or module under a testdata directory is built, vetted or tested by the stop check.
     enforced_by:
