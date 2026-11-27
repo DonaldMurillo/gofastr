@@ -22,6 +22,7 @@ invariants:
     enforced_by:
       - test: cmd/bench-resources.TestNormaliseRSSIsBytes
       - test: cmd/bench-resources.TestReadRSSIsBytes
+      - test: cmd/bench-resources.TestPeakRSSFromStateIsBytes
 decisions:
   - id: cold-build-cache
     date: 2026-11-26

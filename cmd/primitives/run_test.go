@@ -138,3 +138,20 @@ func TestHookStateIsKeptOnlyForANameableSession(t *testing.T) {
 		t.Errorf("hook state file mode %v, want 0600", info.Mode().Perm())
 	}
 }
+
+func TestStopBuildsAChangedModuleWhole(t *testing.T) {
+	root := fixtureRepo(t, map[string]string{
+		"go.mod":                     "module example.test/m\n\ngo 1.24\n",
+		"a/a.go":                     "package a\n",
+		"b/b.go":                     "package b\n\nvar _ = doesNotExist\n",
+		"primitives/x/primitive.yml": "primitive: x\nsummary: Does x.\ncode:\n  - a/\n",
+	})
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/m\n\ngo 1.24\n\n// changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	run(root, []string{"stop"}, strings.NewReader(`{}`), &stdout, io.Discard)
+	if out := stdout.String(); !strings.Contains(out, "go build ./... failed") || !strings.Contains(out, "doesNotExist") {
+		t.Fatalf("stop after a go.mod change did not report the unchanged package that no longer builds: %q", out)
+	}
+}

@@ -47,6 +47,17 @@ func (*mixedOptions) Actions() {
 
 func extraOption() component.ActionOption { return component.WithClientJS(`G.serverAction("hidden")`) }
 
+func pick() component.Component { return &funcRoot{} }
+
+type node struct {
+	a, b *node
+	c    component.Component
+}
+
+type selfRefRoot struct{ n node }
+
+func (selfRefRoot) Render() render.HTML { return "" }
+
 func Surfaces() []fembed.Surface {
 	return []fembed.Surface{
 		{Name: "func-field", Screen: app.NewScreen("/func", &funcRoot{})},
@@ -55,5 +66,7 @@ func Surfaces() []fembed.Surface {
 		{Name: "xpkg-iface-render", Screen: app.NewScreen("/xiface", &xpkgIfaceRoot{})},
 		{Name: "mixed-options", Screen: app.NewScreen("/mixed", &mixedOptions{})},
 		{Name: "xpkg-twice", Screen: app.NewScreen("/twice", &twiceRoot{})},
+		{Name: "no-concrete", Screen: app.NewScreen("/n", pick())},
+		{Name: "self-ref", Screen: app.NewScreen("/self", &selfRefRoot{})},
 	}
 }

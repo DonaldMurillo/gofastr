@@ -290,9 +290,10 @@ not write it reviewed it adversarially
 (`docs/reviews/2026-11-26-cmd-tools-sweep-adversarial-review.md`): no
 blocker and no behaviour change, but about 35 rules whose named tests pass
 with the code broken, among them kiln's Host and Origin guard wiring and
-affected's `-tags`. They are listed there for a follow-up.
+affected's `-tags`. The follow-up (#923, with the three items a post-merge review of #918 added)
+gave each a test watched failing, or narrowed the rule to what the code does.
 
-Next: that follow-up, `cmd/gofastr`, then `internal/`. The repository as a whole is at
+Next: `cmd/gofastr`, then `internal/`. The repository as a whole is at
 10.1%.
 
 ### 3. Bring the known twins in, and merge them

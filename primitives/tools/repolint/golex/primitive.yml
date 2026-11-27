@@ -12,9 +12,12 @@ invariants:
     rule: A backslash-escaped quote inside an interpreted string or rune literal does not close it.
     enforced_by:
       - test: cmd/repolint.TestExampleOriginsEscapedQuoteKeepsTheString
+      - test: cmd/repolint.TestStringEscapesHideAClosingQuote
   - id: multiline-state-carries
-    rule: A block comment and a raw string literal left open at a line's end carry into the next line; an interpreted string does not.
+    rule: A block comment and a raw string literal left open at a line's end carry into the next line; an interpreted string left open does not, and neither does a raw string closed before a line comment.
     enforced_by:
+      - test: cmd/repolint.TestLexStateAfterALine
+      - test: cmd/repolint.TestCRUDExposureSeenPastAURLString
       - test: cmd/repolint.TestExampleOriginsRespectsMultiLineContexts
   - id: strings-are-not-code
     rule: outsideGoStrings drops the contents of every string and rune literal, including a raw string carried in from the line before.

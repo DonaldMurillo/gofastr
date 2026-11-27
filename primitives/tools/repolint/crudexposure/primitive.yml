@@ -4,11 +4,12 @@ code:
   - cmd/repolint/crudexposure.go
 invariants:
   - id: unclassified-reads-fail
-    rule: A read of Exposure.CRUD in the code of a non-test, non-testdata .go file outside crudExposureClassified is a finding; a mention in a comment or a string is not.
+    rule: A read of Exposure.CRUD in the code of a non-test .go file outside testdata, cmd/repolint and crudExposureClassified is a finding; a mention in a comment or a string is not.
     enforced_by:
       - test: cmd/repolint.TestLintRepoFlagsRederivedCRUDExposure
       - test: cmd/repolint.TestLintRepoAcceptsClassifiedCRUDExposure
       - test: cmd/repolint.TestCRUDExposureSeenPastAURLString
+      - test: cmd/repolint.TestCRUDExposureExclusions
   - id: classified-entries-have-reasons
     rule: Each crudExposureClassified entry says why its read is not a decision about whether routes exist.
     judge: Does this change add a crudExposureClassified entry whose reason is not why that read cannot advertise routes a DB-less app does not mount?

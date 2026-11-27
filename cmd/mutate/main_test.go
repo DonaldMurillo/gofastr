@@ -213,6 +213,12 @@ func TestClassifyIsNotFooledByApplicationLogOutput(t *testing.T) {
 			output: "app: undefined: column\napp: cannot use value\n--- FAIL: TestThing (0.00s)\nFAIL\tgithub.com/x/y\t0.2s\n",
 			want:   caughtStatus,
 		},
+		{
+			name: "a test failure whose logs carry a build-failure header and diagnostic",
+			output: "# github.com/x/y\nfile.go:1:2: undefined: thing\n" +
+				"--- FAIL: TestThing (0.00s)\nFAIL\tgithub.com/x/y\t0.2s\n",
+			want: caughtStatus,
+		},
 		// The remaining compile-error and bare-FAIL shapes are pinned
 		// byte-for-byte by TestClassifyDistinguishesFailureFromNotRunning;
 		// this test keeps only the cases its name promises: compiler-ish

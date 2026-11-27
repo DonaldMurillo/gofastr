@@ -2,6 +2,7 @@ primitive: tools.primitives
 summary: The primitives command - it lists the registry, says what governs a file, shows one primitive, lints the registry, writes the generated import tests and lists the judged questions for changed files.
 code:
   - cmd/primitives/main.go
+  - cmd/primitives/main_test.go
 docs:
   - primitives/README.md
 invariants:

@@ -8,8 +8,9 @@ invariants:
     enforced_by:
       - test: cmd/repolint.TestLintExampleOrigins
       - test: cmd/repolint.TestExampleOriginsReadTestApps
+      - test: cmd/repolint.TestExampleOriginReportedOncePerFile
   - id: allowed-hosts
-    rule: allowedExampleHost accepts the RFC 2606 example names and the .example TLD, loopback by name or address, the listed spec and schema hosts, and the hosts the project serves from, and nothing else.
+    rule: allowedExampleHost accepts the RFC 2606 example names and the .example TLD, loopback by name or IPv4 address (the URL pattern matches names and IPv4 hosts only, so a bracketed IPv6 literal is not checked), the listed spec and schema hosts, and the hosts the project serves from, and nothing else.
     enforced_by:
       - test: cmd/repolint.TestLintExampleOrigins
   - id: comments-are-prose

@@ -88,6 +88,14 @@ invariants:
     enforced_by:
       - test: cmd/kiln.TestCancelHookPanicIsRecovered
 decisions:
+  - id: builtins-get-a-clean-dir
+    date: 2026-11-27
+    status: accepted
+    decision: Every built-in adapter runs its turns in a fixed, clean directory under os.TempDir().
+    rejected:
+      - option: Inherit kiln's working directory.
+        why: pi cats any Go file it finds in its working directory and reports on it as if it were the kiln world.
+    upholds: [builtins-run-in-temp-dirs]
   - id: system-prompt-per-cli
     date: 2026-11-26
     status: accepted
@@ -112,3 +120,19 @@ decisions:
       - option: Accept name="custom" on every kiln.
         why: The body supplies the whole argv of a spawned process, so anything reaching the unauthenticated tool API had remote code execution.
     upholds: [custom-needs-opt-in, kiln.cli/custom-agent-off-by-default]
+  - id: claude-runs-without-permission-prompts
+    date: 2026-11-27
+    status: accepted
+    decision: The claude-code adapter passes --dangerously-skip-permissions.
+    rejected:
+      - option: Run claude --print with its default permission prompts.
+        why: The turn is non-interactive, so claude hangs at its first Bash call waiting for a prompt nobody can answer; --tools Bash and the kiln contract bound what it may do instead.
+    upholds: [claude-has-bash-only]
+  - id: omp-keeps-no-session
+    date: 2026-11-27
+    status: accepted
+    decision: The omp adapter passes --no-session, so each turn sees only the journal and world context kiln injects.
+    rejected:
+      - option: Let omp keep its own session across turns.
+        why: Its session state becomes a second source of truth beside the journal, and a turn can act on a world kiln has since changed.
+    upholds: [omp-is-pinned]

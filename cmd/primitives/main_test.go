@@ -194,6 +194,10 @@ func TestStop(t *testing.T) {
 	if commentOnly(root, "HEAD", "a/a.go") {
 		t.Error("a new build constraint is a comment that changes the code")
 	}
+	write("a/a.go", "package a\n\n// One is one.\n//gofastr:allow(x) a reason\nfunc One() int { return 1 }\n")
+	if commentOnly(root, "HEAD", "a/a.go") {
+		t.Error("a new //gofastr: directive is a comment that changes the code")
+	}
 	write("a/a.go", "package a\n\n// One is one.\nfunc One() int { return 1 + 0 }\n")
 	if commentOnly(root, "HEAD", "a/a.go") {
 		t.Error("a changed expression is not comment-only")
