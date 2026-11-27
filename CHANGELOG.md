@@ -47,6 +47,14 @@ few lines, and link the PR or the docs page for the rest.
   Regenerate SDKs, CLIs and OpenAPI clients. See
   [Query DSL](framework/docs/content/query-dsl.md#columns-named-like-a-list-control)
   ([#915](https://github.com/DonaldMurillo/gofastr/issues/915)).
+- **`ui.Tooltip` is stricter** (#706). It renders through
+  `headless.Tooltip`, so it now panics where it used to render: on a
+  `Placement` other than top (or empty), bottom, left or right, on an
+  `ID` that is not a fragment identifier (whitespace, `#`, quotes, `<`
+  or `>`), on whitespace-only `Text` and on a blank trigger. `ExtraAttrs`
+  now go through `headless.Safe`, which also drops `role`, `style`,
+  `on*` and the framework's `data-hui-*`, `data-cui-*`, `data-action*`,
+  `data-param-*` and `data-kiln-*` keys.
 - **BREAKING: `entity.Define` refuses a JSON field as a cursor column**
   (`CursorField`, `CursorFields`; `cursor_field` and `cursor_fields` in
   `gofastr.yml`). A keyset cursor over a JSON column repeated its own page
@@ -84,6 +92,29 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **Tooltip meets WCAG 1.4.13** (#706). With the `headless-tooltip`
+  module, `ui.Tooltip` opens in the top layer, so a scrolling or
+  clipping container no longer cuts it off. It stays open while the
+  pointer is over it, and Escape closes it without moving the pointer or
+  focus. It sits beside its trigger by CSS anchor positioning, or by the
+  module where the browser lacks it, and flips when its side has no
+  room. Without script it still shows on hover and focus. A trigger
+  that already has an `aria-describedby` keeps it, with the tooltip's id
+  added to the list. A tap on a trigger that cannot take focus keeps
+  it open until the next tap elsewhere, a click on the open pop stays on
+  the pop and dismisses it, so a control it covered takes the next click, and a left or right tooltip with no room on either side
+  moves below or above its trigger. A tooltip that closed when another opened
+  over it comes back once that one closes, if its trigger still has
+  focus, and under forced colours the pop keeps a border. It now renders
+  through the new `headless.Tooltip`, and the new
+  `registry.AddAttributeToken` adds one id to such a list. See
+  [New components](framework/docs/content/ui-new-components.md).
+- **Registry attribute reads follow the browser:** `registry.Attribute`,
+  `InjectAttribute`, the component marker and the template scan now read
+  a start tag as the HTML tokenizer does, so an attribute after `/` or a
+  closing quote, a word after `title= ` and quotes inside an unquoted
+  value are read as a browser reads them, and `<!-->` counts as a whole
+  comment.
 - **Static export:** under `--base`, the Markdown index and every
   root-relative link in exported page docs carry the base path, and the
   HTML rewrite matches URL attributes in any case (`HREF="/up"`). A page

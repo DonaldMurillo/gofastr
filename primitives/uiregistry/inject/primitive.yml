@@ -1,12 +1,12 @@
 primitive: uiregistry.inject
-summary: The attribute splice on a component's first opening tag - the data-cui-comp marker, InjectAttribute, AppendAttributes and Attribute - with no HTML parser, one quote-aware scan to the tag's >.
+summary: The attribute splice on a component's first opening tag - the data-cui-comp marker, InjectAttribute, AppendAttributes, AddAttributeToken and Attribute - read by one walk of the start tag that follows the HTML tokenizer (walkTag, which render.go's template scan shares), with golang.org/x/net/html's tokenizer only to decode a value for AddAttributeToken's duplicate check.
 code:
   - core-ui/registry/inject.go
 docs:
   - core-ui/ARCHITECTURE.md
 invariants:
   - id: splice-into-the-first-open-tag
-    rule: The splice skips leading whitespace and comments, refuses output whose first token is not an element open tag or whose tag never ends, inserts before a self-closing / keeping a space before it, and writes every spliced value HTML-escaped, the data-cui-comp name included, after InjectAttribute refuses an unsafe attribute name; AppendAttributes adds sorted render.Attr pairs and returns a fragment with no usable root unchanged.
+    rule: The splice skips leading whitespace and comments (<!--> and <!---> are whole comments, --!> closes one), refuses output whose first token is not an element open tag or whose tag never ends, inserts before a self-closing / (one between attributes, not one ending an unquoted value) keeping a space before it, gives a last attribute left as a bare = its empty "" first, and writes every spliced value HTML-escaped, the data-cui-comp name included, after InjectAttribute refuses an unsafe attribute name; AppendAttributes adds sorted render.Attr pairs and returns a fragment with no usable root unchanged.
     enforced_by:
       - test: core-ui/registry.TestInjectIntoSimpleDiv
       - test: core-ui/registry.TestInjectIntoSelfClosingTag
@@ -18,10 +18,17 @@ invariants:
       - test: core-ui/registry.TestInjectMarkerEscapesName
       - test: core-ui/interactive.TestInteractiveAttributesReachRootAfterComments
   - id: attribute-found-at-a-name-boundary
-    rule: An attribute counts only outside quoted values, preceded by whitespace and followed by =, whitespace, / or the tag end; injectMarker and InjectAttribute return a tag that already carries it unchanged, AppendAttributes keeps the existing bytes and appends each pair render.Attr accepts, even a name the tag already has, and Attribute reads a quoted value to its own closing quote.
+    rule: Attributes are read as the HTML tokenizer reads them - the tag name to HTML whitespace, / or >; each name to whitespace, /, > or = (a leading = is part of it), matched with ASCII letters' case ignored and nothing else folded (a long s is not an s); a value after = and optional whitespace quoted to its own closing quote or unquoted to whitespace or > - so a word after title= is title's value, an attribute after / or a closing quote counts, quotes inside an unquoted value belong to it, the first of a repeated name wins, and Attribute reads what a browser reads; injectMarker and InjectAttribute return a tag that already carries it unchanged, AppendAttributes keeps the existing bytes and appends each pair render.Attr accepts, even a name the tag already has, and Attribute returns the raw value.
     enforced_by:
+      - test: core-ui/registry.TestAttributeSpliceMatchesABrowser
       - test: core-ui/registry.TestInjectIdempotentWhenAlreadyMarked
       - test: core-ui/registry.TestInjectIgnoresAttrNameInsideQuotedValue
       - test: core-ui/registry.TestInjectIdempotentAcrossLineBreaks
       - test: core-ui/registry.TestInjectSkipsWhenWrappedByDifferentName
       - test: core-ui/registry.TestAttribute
+  - id: token-joins-the-list
+    rule: AddAttributeToken refuses an unsafe attribute name and a token that is empty or holds whitespace or a NUL (which a browser reads as U+FFFD), adds name="token" to a root tag without the attribute, keeps an existing value's bytes as written and adds a space (unless the value is empty or ends in HTML whitespace) and the HTML-escaped token, inside a quoted value's own quotes or by double-quoting an unquoted or bare one (its " written as &quot;), with or without whitespace around the =, and returns a list that already holds the token, as the value decodes in an attribute (golang.org/x/net/html's tokenizer, which leaves a semicolonless reference before = or an alphanumeric literal) split on HTML whitespace, or a fragment with no usable root, unchanged.
+    enforced_by:
+      - test: core-ui/registry.TestAddAttributeToken
+      - test: core-ui/registry.TestAddAttributeTokenRefusesABadName
+      - test: core-ui/registry.TestAttributeSpliceMatchesABrowser

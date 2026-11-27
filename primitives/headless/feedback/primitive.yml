@@ -17,7 +17,51 @@ code:
   - framework/headless/copy_behavior.go
   - framework/headless/copy.js
   - framework/headless/selectioncopy_behavior.go
+  - framework/headless/tooltip.go
+  - framework/headless/tooltip_behavior.go
+  - framework/headless/tooltip.js
 invariants:
+  - id: tooltip-rises-to-the-top-layer
+    rule: On a Tooltip's first hover or focus, or when the module loads while the trigger already has focus or the pointer, headless-tooltip makes its pop a manual popover and marks the wrapper data-hui-tooltip-live, so the pop renders in the top layer past any ancestor that clips its overflow.
+    enforced_by:
+      - test: framework/ui.TestTooltipRisesIntoTheTopLayerOutOfAClippingBox
+      - test: framework/ui.TestTooltipOpensForATriggerUsedBeforeTheModuleLoads
+  - id: tooltip-is-hoverable-and-dismissable
+    rule: An upgraded Tooltip is the only one open, stays open while the pointer is over its trigger or its pop or focus is inside the wrapper, closes once both have left (the pointer counting as over every tooltip whose wrapper holds it, and leaving every tooltip they were in, nested ones included), stays open after a tap until the next pointerdown outside its wrapper, keeps a click on its open pop from reaching what it sits in and dismisses itself on that click, and closes on Escape, which it consumes from every later listener, staying closed until pointer and focus have both left the wrapper; a dismissed Tooltip the pointer enters does not keep another open, and Escape passes through during IME composition, when another handler has already taken it with preventDefault and when the open Tooltip's wrapper has left the page or other code has hidden its pop; a Tooltip closed when another opened over it reopens once that one closes if its trigger still has focus; a Tooltip hovered and then focused stays open when focus leaves while the pointer stays; a trigger focused and hovered at load stays open when focus leaves while the pointer stays, and with focus and the pointer on different tooltips at load the focused one opens and the hovered one is upgraded but stays closed.
+    enforced_by:
+      - test: framework/ui.TestTooltipCanBeHoveredAndClosesWhenThePointerLeaves
+      - test: framework/ui.TestTooltipEscapeDismissesWithoutMovingThePointer
+      - test: framework/ui.TestTooltipEscapeIsConsumed
+      - test: framework/ui.TestTooltipEscapeLeavesTheDialogOpen
+      - test: framework/ui.TestTooltipFocusAndDismissalOutlastThePointer
+      - test: framework/ui.TestTooltipFollowsFocus
+      - test: framework/ui.TestTooltipDismissedOneLetsTheOpenOneClose
+      - test: framework/ui.TestTooltipEscapePassesWhenItsTooltipIsGone
+      - test: framework/ui.TestTooltipOpensForATriggerUsedBeforeTheModuleLoads
+      - test: framework/ui.TestTooltipDismissalHoldsWhileEitherStays
+      - test: framework/ui.TestTooltipOneOpenAtATime
+      - test: framework/ui.TestTooltipHoverOutlastsFocus
+      - test: framework/ui.TestTooltipStaysAfterATap
+      - test: framework/ui.TestTooltipClickOnThePopStaysOnThePop
+      - test: framework/ui.TestTooltipClickOnThePopGetsItOutOfTheWay
+      - test: framework/ui.TestTooltipNestedLetsGoOfTheOuter
+      - test: framework/ui.TestTooltipNestedHoverReachesTheOuter
+      - test: framework/ui.TestTooltipLeavesAnEscapeAlreadyTaken
+      - test: framework/ui.TestTooltipEscapePassesWhenItsPopIsAlreadyHidden
+      - test: framework/ui.TestTooltipFocusedOneComesBackAfterAHover
+      - test: core-ui/check.TestLintKeyGuard_Repo
+  - id: tooltip-sits-beside-its-trigger
+    rule: An open Tooltip's pop is centred on its trigger on the preferred side (left and right following the reading direction of the tooltip's own subtree), else the opposite one, else for left and right below then above - at the sheet's --fui-tooltip-gap (6px when a skin sets none) - by framework/ui's sheet with anchor positioning where the browser has it, and otherwise (no anchor positioning, or a skin whose pop has no position-area) by the module's fixed coordinates, clamped into the viewport, kept in step on scroll and resize and hidden while the trigger is scrolled out of view or out of a box that clips it on an axis that box clips.
+    enforced_by:
+      - test: framework/ui.TestTooltipRisesIntoTheTopLayerOutOfAClippingBox
+      - test: framework/ui.TestTooltipPlacesItselfWithoutAnchorPositioning
+      - test: framework/ui.TestTooltipOpensOnItsPreferredSide
+      - test: framework/ui.TestTooltipLeavesItsTriggerUncoveredOnANarrowScreen
+      - test: framework/ui.TestTooltipFallbackFollowsScrollAndStaysOnScreen
+      - test: framework/ui.TestTooltipFallbackHidesWithItsClippedTrigger
+      - test: framework/ui.TestHeadlessTooltipWithoutTheKitSheetSitsBesideItsTrigger
+      - test: framework/ui.TestTooltipGapFollowsTheSpacingToken
+      - test: framework/ui.TestTooltipFallbackClipsOnlyOnTheAxisABoxClips
   - id: action-endpoint-same-origin
     rule: OptimisticAction and ToggleAction panic at render on an empty Endpoint and on an Endpoint or UntoggleEndpoint that is not same-origin.
     enforced_by:

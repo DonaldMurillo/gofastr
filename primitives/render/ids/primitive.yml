@@ -9,14 +9,12 @@ on_change:
   - core-ui/app installs the scope once per page (WithRequest), renders islands and deferred outlets as namespaced regions and runs signal seeds through SettleIDs; a change to when ids are handed out must be checked against those callers.
 twins:
   - job: Scan an HTML start tag's attributes, quote-aware, up to its closing >.
-    why: Nothing but work not yet done; the id reader needs values and raw-text skipping, the registry splice needs names and a splice point, and neither has been rebuilt on one tokenizer.
+    why: The registry's scans are one walk now (walkTag in inject.go, which render.go's startTagEnd and hasAttrName call), but core/render cannot import core-ui/registry, and its id reader also skips raw text; both read a tag as the HTML tokenizer does (names to whitespace, '/', '>' or '=', values quoted to their own quote or unquoted to whitespace or '>'), so a fix to that reading lands in both.
     sites:
       - path: core/render/ids.go
         note: writtenIDs and readAttrs, which read id values for ReserveRendered.
       - path: core-ui/registry/inject.go
-        note: rootTag (via findOpenTagEnd) and hasAttribute, for the marker and attribute splice.
-      - path: core-ui/registry/render.go
-        note: startTagEnd and hasAttrName, for scanning template tags for shadowrootmode.
+        note: walkTag, behind rootTag, findAttr and spliceAttrs, for the marker and attribute splice, and behind render.go's startTagEnd and hasAttrName for the template scan.
 invariants:
   - id: unique-per-scope
     rule: Within one scope UniqueID returns id the first time and id-2, id-3 on each repeat, skipping a suffixed id already taken or reserved.
