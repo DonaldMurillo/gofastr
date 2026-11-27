@@ -1,0 +1,36 @@
+primitive: tools.repolint.frontdoor
+summary: The front-door-missing rule, which keeps this repository's README linking the deployed docs site, plus the go.mod module-line parser repolint's module-scoped rules share.
+code:
+  - cmd/repolint/frontdoor.go
+invariants:
+  - id: readme-links-the-site
+    rule: In this module, a README.md without the deployed site URL is a front-door-missing finding, and a missing README.md is the same finding, not a pass.
+    enforced_by:
+      - test: cmd/repolint.TestLintFrontDoor
+  - id: front-door-scoped-to-this-module
+    rule: The front-door rule reports nothing for a tree whose go.mod declares another module or none.
+    enforced_by:
+      - test: cmd/repolint.TestLintFrontDoorIgnoresOtherModules
+  - id: one-module-line-parser
+    rule: moduleLine reads `module<space or tab>path`, drops a trailing // comment and surrounding quotes, and returns "" for a line that declares no path; moduleIs and the chromium-shard rule both use it.
+    enforced_by:
+      - test: cmd/repolint.TestModuleLine
+      - test: cmd/repolint.TestLintFrontDoorSurvivesATabAfterModule
+      - test: cmd/repolint.TestLintFrontDoorSurvivesACommentOnTheModuleLine
+decisions:
+  - id: site-url-is-a-literal
+    date: 2026-11-26
+    status: accepted
+    decision: The site URL is a constant here, matching the Pages workflow's export base.
+    rejected:
+      - option: Import it from the site example.
+        why: That links the whole example into the lint.
+    upholds: [readme-links-the-site]
+  - id: missing-readme-fails
+    date: 2026-11-26
+    status: accepted
+    decision: An absent README.md is a finding.
+    rejected:
+      - option: Skip the rule when README.md is missing.
+        why: Deleting the README is the strongest form of the failure, and skipping let it pass the gate clean.
+    upholds: [readme-links-the-site]

@@ -7,23 +7,10 @@ import (
 	"strings"
 )
 
-// testOperandPrefix matches the text in front of a command substitution
-// that is the operand of a -n/-z test: `[ -n "`, `[[ -z `, `test -n "`,
-// with a `!` before the operator or not. `test` counts only in command
-// position: at the line start, after a separator (; & | ( ! {), after a
-// YAML `run:`, or after a keyword such as if, then, do or while. `echo
-// test -n "$(…)"` passes test as an argument and keeps the status.
-// Inside a test the command substitution's exit status is lost, so a
-// selector that fails prints nothing and reads as "nothing affected": the
-// step skips a suite where it should fail. Assigning the output on its own
-// line keeps the status, and the step's `bash -e` stops on it.
-var testOperandPrefix = regexp.MustCompile(`(?:\[\[?|(?:(?:^|[;&|(!{]|\brun:)\s*|(?:^|[\s;&|(!{])(?:then|do|if|elif|while|until|else)\s+)test)\s+(?:!\s+)?-[nz]\s+"?$`)
+var testOperandPrefix = regexp.MustCompile(`(?:\[|(?:(?:^|[;&|(!{]|\brun:)\s*|(?:^|[\s;&|(!{])(?:then|do|if|elif|while|until|else)\s+)test)\s+(?:!\s+)?-[nz]\s+"?$`)
 
 const affectedTestedMessage = "tests a cmd/affected command substitution inside [ ], [[ ]] or test: the selector's exit status is lost, so a failure reads as nothing affected and the suite skips; assign the output on its own line, then test the variable"
 
-// lintSelectorStatus applies the selector-status rule to the workflow
-// files, which lintRepo's walk skips with the other dot directories.
-// Build scripts get the same rule from lintBytes.
 func lintSelectorStatus(root string) ([]finding, error) {
 	paths, err := filepath.Glob(filepath.Join(root, ".github", "workflows", "*.y*ml"))
 	if err != nil {
@@ -55,17 +42,11 @@ func selectorStatusFindings(rel string, body []byte) []finding {
 		}
 		i += start
 		start = i + 2
-		// The span runs to the ")" that closes it: nested parentheses, an
-		// inner $(dirname "$0") and a quoted ")" do not end it, and it may
-		// cross lines.
 		span := text[i+2:]
 		span = span[:substitutionEnd(span)]
 		if !strings.Contains(span, "cmd/affected") {
 			continue
 		}
-		// The test may start on an earlier line joined by a trailing
-		// backslash (`if [ -n \` then the substitution).
-		// A backslash inside a comment continues nothing.
 		lineStart := strings.LastIndexByte(text[:i], '\n') + 1
 		for lineStart >= 2 && text[lineStart-2] == '\\' {
 			prev := strings.LastIndexByte(text[:lineStart-2], '\n') + 1
@@ -93,12 +74,7 @@ func selectorStatusFindings(rel string, body []byte) []finding {
 	return out
 }
 
-// substitutionEnd returns the index in s of the ")" that closes a command
-// substitution whose "$(" was just read, or len(s) when none does. It
-// reads the shell's quoting: a ")" inside '…' or "…", or after a
-// backslash, is text, a "#" that starts a word comments out the rest of
-// its line, and a "$(" inside either nesting level opens its own
-// substitution.
+// substitutionEnd returns the index of the ")" closing a "$(" just read, or len(s).
 func substitutionEnd(s string) int {
 	depth := 0
 	for i := 0; i < len(s); i++ {
@@ -137,8 +113,7 @@ func substitutionEnd(s string) int {
 	return len(s)
 }
 
-// doubleQuoteEnd returns the index of the '"' closing a double-quoted
-// string that opens just before s[i], or len(s).
+// doubleQuoteEnd returns the index of the '"' closing a string that opens just before s[i], or len(s).
 func doubleQuoteEnd(s string, i int) int {
 	for ; i < len(s); i++ {
 		switch s[i] {
@@ -155,10 +130,7 @@ func doubleQuoteEnd(s string, i int) int {
 	return len(s)
 }
 
-// opensShellComment reports whether a # in the text before a substitution
-// starts a comment: one at the start of a word (after white space or a
-// shell metacharacter), outside quotes. The shell
-// (and YAML around a run: block) never executes what follows it.
+// opensShellComment reports whether a # in prefix starts a shell comment.
 func opensShellComment(prefix string) bool {
 	for i := 0; i < len(prefix); i++ {
 		c := prefix[i]
@@ -172,8 +144,6 @@ func opensShellComment(prefix string) bool {
 			}
 			i += j + 1
 		case c == '"':
-			// Substitution-aware: a quote inside "$(… " … ")" does not
-			// end the outer string.
 			i = doubleQuoteEnd(prefix, i+1)
 		case c == '$' && i+1 < len(prefix) && prefix[i+1] == '(':
 			i += 1 + substitutionEnd(prefix[i+2:]) + 1

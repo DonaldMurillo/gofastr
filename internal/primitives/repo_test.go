@@ -281,6 +281,17 @@ var ownedPackages = []string{
 	"battery/desktop/windows",
 	"battery/auth",
 	"battery/auth/authui",
+	"cmd/affected",
+	"cmd/bench-resources",
+	"cmd/check-csp",
+	"cmd/check-embed",
+	"cmd/check-embed/embedcheck",
+	"cmd/kiln",
+	"cmd/mutate",
+	"cmd/mutate/guardmut",
+	"cmd/primitives",
+	"cmd/repolint",
+	"cmd/vettool",
 }
 
 //gofastr:test-reads primitives/ *.go

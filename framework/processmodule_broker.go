@@ -519,9 +519,16 @@ func sanitizeFilter(ent *entity.Entity, raw json.RawMessage) (json.RawMessage, e
 	allowed := queryableFieldKeys(ent)
 	out := make(map[string]any, len(m))
 	for k, v := range m {
-		if allowed[k] {
-			out[k] = v
+		if !allowed[k] {
+			continue
 		}
+		if filter.IsListControl(k) && (k != "q" || len(ent.Config.SearchFields) > 0) {
+			if _, both := m[filter.BracketKey(k, filter.OpEq)]; both {
+				continue
+			}
+			k = filter.BracketKey(k, filter.OpEq)
+		}
+		out[k] = v
 	}
 	if len(out) == 0 {
 		return nil, nil

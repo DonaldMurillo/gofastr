@@ -1,0 +1,26 @@
+primitive: tools.check-csp
+summary: The make build gate that walks a tree with core-ui/check and fails on an inline script block or style attribute in production Go source, which the framework's default Content-Security-Policy would block in the browser.
+code:
+  - cmd/check-csp/
+docs:
+  - docs/contributing.md
+invariants:
+  - id: exit-code-says-what-failed
+    rule: check-csp exits 0 on a clean tree, 1 when it finds an inline script or an inline style, and 2 when the walk itself fails.
+    enforced_by:
+      - test: cmd/check-csp.TestCLIExitsTwoWhenTheWalkFails
+      - test: cmd/check-csp.TestCLINormalizesExplicitRootSpelling
+      - test: cmd/check-csp.TestCLIIgnoresDanglingNonSourceLinks
+  - id: reports-scripts-and-styles-in-one-run
+    rule: One run reports both the inline-script and the inline-style violations, each with its count, rather than stopping at the first kind found.
+    enforced_by:
+      - test: cmd/check-csp.TestCLINormalizesExplicitRootSpelling
+decisions:
+  - id: inline-markup-fails-the-build
+    date: 2026-11-26
+    status: accepted
+    decision: make build runs check-csp as a prerequisite, so a tree with inline script or style does not build.
+    rejected:
+      - option: Rely on the browser's CSP report at runtime.
+        why: The default policy blocks the script silently in production, so a page breaks with only a console error to show for it.
+    upholds: [exit-code-says-what-failed]

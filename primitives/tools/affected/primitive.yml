@@ -1,0 +1,217 @@
+primitive: tools.affected
+summary: cmd/affected, the default scope of make test, the git hooks, the red and coverage sweeps and CI's pull-request run, which prints the packages whose tests a change could affect or runs a command with them appended.
+code:
+  - cmd/affected/
+docs:
+  - docs/contributing.md
+on_change:
+  - GOFASTR_AFFECTED_FILES and GOFASTR_TEST_ALL are read by cmd/gofastr/internal/clitest.VariantBuild; a change to what either means changes it too.
+  - A new way for a test to depend on a file no import reaches (a repo walk, a subprocess) needs a selection rule here and a case in the audit scripts/test-reads-audit.sh runs (TestRecordedReadsSelectTheirReader).
+  - The Makefile's ANALYZE_AFFECTED and CI pass -all-if-changed and -files-differ-from; a change to either flag's meaning is checked against both.
+invariants:
+  - id: changed-file-marks-enclosing-package
+    rule: A changed file selects the nearest enclosing package directory, so testdata, embedded assets and fixtures below a package select it, and a file under no package selects nothing.
+    enforced_by:
+      - test: cmd/affected.TestFilesMapToImportClosure
+  - id: embed-patterns-select-the-embedder
+    rule: A changed file, present or deleted, selects every package whose //go:embed patterns, test patterns included, cover it, even when it sits inside a nested package.
+    enforced_by:
+      - test: cmd/affected.TestEmbeddedNestedPackageSelectsTheEmbedder
+      - test: cmd/affected.TestTestEmbedSelectsThePackage
+  - id: transitive-importers-selected
+    rule: Every package that imports an affected package, directly or transitively, is affected.
+    enforced_by:
+      - test: cmd/affected.TestFilesMapToImportClosure
+  - id: test-importers-selected
+    rule: A package whose in-package or external test files import an affected package is affected.
+    enforced_by:
+      - test: cmd/affected.TestFilesMapToImportClosure
+      - test: cmd/affected.TestExternalTestOfAnImporterIsSelected
+  - id: deleted-package-selects-importers
+    rule: A changed file's directory counts by its import path, so a deleted or moved package selects whatever still imports it, test-only importers included.
+    enforced_by:
+      - test: cmd/affected.TestDeletedPackageSelectsItsImporters
+  - id: command-run-is-a-test-edge
+    rule: A test file that spells one of the module's main packages as a quoted import path depends on that command as if it imported it; a library path in a string adds no edge.
+    enforced_by:
+      - test: cmd/affected.TestGoRunOfACommandIsATestEdge
+      - test: cmd/affected.TestLibraryPathInAStringIsNoEdge
+  - id: test-reads-selects-only-the-reader
+    rule: A //gofastr:test-reads match selects the package that declares it and none of that package's importers.
+    enforced_by:
+      - test: cmd/affected.TestTestReadsMatchSelectsOnlyTheReader
+      - test: cmd/affected.TestDeclaredTestReadsSelectThePackage
+  - id: test-reads-pattern-grammar
+    rule: In a test-reads pattern a trailing slash is a directory prefix, a pattern with no slash matches a base name anywhere, a leading slash anchors at the repo root, ** spans zero or more directories, and * and ? stay within one segment.
+    enforced_by:
+      - test: cmd/affected.TestDeclaredTestReadsSelectThePackage
+      - test: cmd/affected.TestTestReadsStarStaysInOneSegment
+  - id: test-reads-is-a-comment-directive
+    rule: A test-reads directive counts only where it opens a // comment; prose that mentions it and raw-string fixtures declare nothing.
+    enforced_by:
+      - test: cmd/affected.TestDeclaredTestReadsSelectThePackage
+      - test: cmd/affected.TestTestReadsInARawStringIsData
+  - id: unmatchable-test-reads-is-an-error
+    rule: A test-reads directive with no pattern, an empty importers:, a ./ or ../ path, a bare /, or no space before its patterns fails the run instead of selecting nothing.
+    enforced_by:
+      - test: cmd/affected.TestUnmatchableTestReadsIsAnError
+  - id: importers-pattern-is-direct
+    rule: "importers:<path> selects its reader when a changed package imports that path directly, and not when a changed package reaches it only through another package."
+    enforced_by:
+      - test: cmd/affected.TestTestReadsImportersOfAPackage
+  - id: importers-pattern-reads-file-text
+    rule: "importers:<path> also selects its reader when a changed .go file names the path in quotes, in the working tree or at the base: a nested module's file, a deleted file, a file that dropped the import, or a build-excluded file of a changed package."
+    enforced_by:
+      - test: cmd/affected.TestTestReadsImportersOfAPackage
+      - test: cmd/affected.TestTestReadsImportersSeesTheBase
+  - id: module-files-widen-to-all
+    rule: A change to go.mod, go.sum, go.work, go.work.sum, anything under cmd/affected/ or scripts/coverage-floors.sh selects every package and says why on stderr.
+    enforced_by:
+      - test: cmd/affected.TestModuleFilesWidenToEverything
+      - test: cmd/affected.TestWorkspaceFilesWidenToEverything
+  - id: all-if-changed-is-a-prefix
+    rule: An -all-if-changed entry ending in a slash widens on any changed path that starts with it, never on one that merely contains it, and any other entry widens only on that exact path.
+    enforced_by:
+      - test: cmd/affected.TestModuleFilesWidenToEverything
+  - id: doubt-widens-to-all
+    rule: A base ref that cannot be resolved, or a merge base that cannot be computed, selects every package with a note on stderr, never an error or an empty set.
+    enforced_by:
+      - test: cmd/affected.TestGitChangeSet
+  - id: change-set-is-the-working-tree
+    rule: The change set is the staged, unstaged, untracked and deleted files against the merge base of HEAD and the base ref, or against the base ref itself with -diff-base.
+    enforced_by:
+      - test: cmd/affected.TestGitChangeSet
+  - id: rename-counts-both-paths
+    rule: A rename counts as its old path deleted and its new path added.
+    enforced_by:
+      - test: cmd/affected.TestRenameCountsBothPaths
+  - id: git-paths-are-literal
+    rule: Changed paths are read NUL-separated from git, so whitespace, quotes, backslashes, line breaks and non-ASCII names reach the selection unchanged.
+    enforced_by:
+      - test: cmd/affected.TestGitPathsStayLiteral
+  - id: default-base
+    rule: Without -base or GOFASTR_AFFECTED_BASE the base ref is origin/main when that ref exists, else main.
+    enforced_by:
+      - test: cmd/affected.TestDefaultBasePrefersOriginMain
+      - test: cmd/affected.TestDefaultBaseFallsBackToMain
+  - id: env-spells-the-flags
+    rule: GOFASTR_TEST_ALL=1, GOFASTR_AFFECTED_BASE and GOFASTR_AFFECTED_DIFF_BASE=1 act as -all, -base and -diff-base.
+    enforced_by:
+      - test: cmd/affected.TestEnvironmentSpellsTheFlags
+  - id: output-filters
+    rule: -exclude drops matching import paths, -match keeps only matching ones, and -format dir prints ./relative directories with the module root as a bare dot.
+    enforced_by:
+      - test: cmd/affected.TestExcludeAndDirFormat
+      - test: cmd/affected.TestDirFormatSpellsRootAsDot
+  - id: files-differ-from
+    rule: -files-differ-from keeps only the packages whose Go, cgo, test and external test file lists differ from the ones go list reports under the named environment.
+    enforced_by:
+      - test: cmd/affected.TestFilesDifferFromKeepsOSSpecificPackages
+      - test: cmd/affected.TestFilesDifferFromCountsCgoFiles
+  - id: empty-set-skips-the-command
+    rule: "With a command after --, an empty set skips the command, exits 0 and starts its stderr note with \"affected: no packages affected\", the line CI's replay gate greps."
+    enforced_by:
+      - test: cmd/affected.TestEmptySelectionSkipsTheCommand
+  - id: exit-status
+    rule: The tool exits with the wrapped command's status when it ran one, and with 2 on an infrastructure error.
+    enforced_by:
+      - test: cmd/affected.TestWrappedCommandExitStatusPropagates
+      - test: cmd/affected.TestInfrastructureErrorExitsTwo
+  - id: change-env-names-the-source
+    rule: The wrapped command gets the change set in GOFASTR_AFFECTED_FILES, one path per line, after a graph walk, and GOFASTR_TEST_ALL=1 instead on a full run, when a path holds a line break, or when the list passes maxChangedEnv.
+    enforced_by:
+      - test: cmd/affected.TestChangeEnvNamesWhatTheSetCameFrom
+      - test: cmd/affected.TestWrappedCommandGetsTheChangeSet
+      - test: cmd/affected.TestNewlinePathsWidenCommandEnv
+  - id: change-env-fits-one-string
+    rule: maxChangedEnv keeps GOFASTR_AFFECTED_FILES within Linux's 128 KiB limit on one environment string.
+    enforced_by:
+      - test: cmd/affected.TestChangedFilesFitOneEnvString
+  - id: coverage-dir-outside-the-module
+    rule: The wrapped command's coverage root (coverageroot.AxeDirEnv) is a per-checkout directory outside the module that stays the same between runs; an explicit setting wins, -coverage-dir prints the same value, and with no user cache it falls back to the module with a warning on stderr.
+    enforced_by:
+      - test: cmd/affected.TestCoverageDirIsOutsideTheModule
+      - test: cmd/affected.TestExplicitCoverageDirWins
+      - test: cmd/affected.TestWrappedCommandGetsCoverageDir
+      - test: cmd/affected.TestCoverageDirFlagPrintsTheWrappedValue
+      - test: cmd/affected.TestCoverageDirFlagPrintsTheExplicitSetting
+      - test: cmd/affected.TestCoverageDirWarnsWithoutAUserCache
+  - id: wrapped-builds-unstamped
+    rule: The wrapped command's GOFLAGS gains -buildvcs=false unless it already sets -buildvcs, so its go builds leave .git alone.
+    enforced_by:
+      - test: cmd/affected.TestCommandEnvTurnsOffVCSStamping
+      - test: cmd/affected.TestWrappedBuildLeavesGitDirAlone
+decisions:
+  - id: doubt-degrades-to-full-run
+    date: 2026-11-26
+    status: accepted
+    decision: Every failure to establish the change set widens the run to every package.
+    rejected:
+      - option: Fail the run.
+        why: A misconfigured checkout would block every gate that scopes through this tool.
+      - option: Select nothing.
+        why: A gate would pass having tested nothing.
+    upholds: [doubt-widens-to-all]
+  - id: coverage-floors-widen
+    date: 2026-11-26
+    status: accepted
+    decision: scripts/coverage-floors.sh is an always-all trigger.
+    rejected:
+      - option: Let it select by ownership like any other file.
+        why: The script owns no package, so a pull request that only edited a floor checked none of the floored packages, and CI's coverage gate reads the profile the widened run writes.
+    upholds: [module-files-widen-to-all]
+  - id: embed-patterns-not-embed-files
+    date: 2026-11-26
+    status: accepted
+    decision: Embedded files are matched against each package's //go:embed patterns, and a matched directory's dot and underscore files count even without all:.
+    rejected:
+      - option: go list's EmbedFiles.
+        why: It lists only files that exist now, so a deleted template, or the old name of a renamed one, selected nothing.
+      - option: Skip dot and underscore files as Go does without all:.
+        why: Counting them only selects more.
+    upholds: [embed-patterns-select-the-embedder]
+  - id: tests-declare-what-they-read
+    date: 2026-11-26
+    status: accepted
+    decision: A test that reads files no import edge reaches declares them with //gofastr:test-reads in its own test file.
+    rejected:
+      - option: A list of repo-walking gates kept in cmd/affected.
+        why: It goes stale as gates are added, and a gate missing from it is skipped without a sound.
+    upholds: [test-reads-selects-only-the-reader, unmatchable-test-reads-is-an-error]
+  - id: coverage-root-in-user-cache
+    date: 2026-11-26
+    status: accepted
+    decision: Wrapped commands keep coverage manifests in a fixed per-checkout directory under the user cache.
+    rejected:
+      - option: The module's own .gofastr/ directory.
+        why: Go's test cache hashes the in-module files a test opens, and the manifest changes on every sweep, so every package that touched it re-ran on an unchanged tree.
+      - option: A fresh directory per run.
+        why: The variable's value is a test cache input too, and a package replayed from the cache records nothing, so the directory must survive runs.
+    upholds: [coverage-dir-outside-the-module]
+  - id: wrapped-builds-skip-vcs-stamp
+    date: 2026-11-26
+    status: accepted
+    decision: Every go build under the wrapped command runs with -buildvcs=false.
+    rejected:
+      - option: Go's default VCS stamping.
+        why: A stamped build runs git, whose index.lock moves the .git directory's mtime, and every test that hashes the root listing re-ran on the next sweep; tests do not read the stamp.
+    upholds: [wrapped-builds-unstamped]
+  - id: change-set-env-capped
+    date: 2026-11-26
+    status: accepted
+    decision: GOFASTR_AFFECTED_FILES is capped at 64 KiB, and a longer or ambiguous list degrades to GOFASTR_TEST_ALL=1.
+    rejected:
+      - option: Hand over a list of any size.
+        why: Linux refuses to exec a process with one environment string over 128 KiB, and the whole wrapped run would fail instead of testing.
+      - option: Export a list whose paths contain line breaks.
+        why: One path per line could not be split back unambiguously.
+    upholds: [change-env-fits-one-string, change-env-names-the-source]
+  - id: cross-os-vet-reads-differing-packages
+    date: 2026-11-26
+    status: accepted
+    decision: The windows and darwin vet passes read only the packages whose own Go files differ from the linux pass.
+    rejected:
+      - option: Vet every affected package under each OS.
+        why: The rest hold the same source the first pass read, three times over.
+    revisit_if: A cross-OS vet finding shows up in a package whose own files are the same on every OS, through another package's OS-specific types.
+    upholds: [files-differ-from]

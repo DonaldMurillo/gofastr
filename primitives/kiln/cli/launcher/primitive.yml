@@ -1,0 +1,43 @@
+primitive: kiln.cli.launcher
+summary: kiln agent - it starts a kiln serve child on a free loopback port, waits until that kiln answers, syncs the embedded Kiln skill into ~/.claude/skills and runs OMP against it.
+code:
+  - cmd/kiln/agent.go
+  - cmd/kiln/skill.md
+docs:
+  - framework/docs/content/kiln.md
+on_change:
+  - A change to skill.md's tool surface matches kiln/protocol's tools; every adapter reads it on its next turn.
+invariants:
+  - id: serve-child-binds-loopback
+    rule: The serve child kiln agent starts binds 127.0.0.1, since it is reached only through localhost and its tool API is unauthenticated.
+    enforced_by:
+      - test: cmd/kiln.TestAgentServeBindsLoopback
+  - id: ready-means-our-kiln
+    rule: waitReady counts a response as ready only when it carries the X-Kiln-Server header, so a server that won the port first is never handed to the agent as KILN_URL.
+    enforced_by:
+      - test: cmd/kiln.TestKilnWaitReadyRefusesImpostor
+  - id: serve-exit-is-seen-twice
+    rule: serveProc closes exited when the child exits, so both the readiness race and stop see the exit and neither blocks on it.
+    enforced_by:
+      - test: cmd/kiln.TestServeExitBeforeReadyStops
+  - id: serve-stop-escalates
+    rule: serveProc.stop sends SIGTERM, kills the child once grace has passed, and returns after the child exited.
+    enforced_by:
+      - test: cmd/kiln.TestServeStopTerminates
+      - test: cmd/kiln.TestServeStopKillsAfterGrace
+  - id: pick-port-names-a-real-port
+    rule: pickPort falls back to a kernel-assigned loopback port when none of the ten from desired is free, and returns 0 only when the kernel has none.
+    enforced_by:
+      - test: cmd/kiln.TestPickPortFallbackIsARealPort
+  - id: port-probe-is-a-connect
+    rule: portFree decides by a TCP connect with a deadline and never waits for a response, so a listener that accepts and never answers reads as busy in bounded time.
+    enforced_by:
+      - test: cmd/kiln.TestPortFreeBounded
+  - id: installed-skill-tracks-embedded
+    rule: installSkill writes the embedded skill.md to ~/.claude/skills/kiln/SKILL.md whenever the file there differs, and kilnSkillPath finds it there.
+    enforced_by:
+      - test: cmd/kiln.TestInstallSkillSyncsEmbeddedCopy
+  - id: skill-examples-parse
+    rule: Every fenced json block in skill.md parses as JSON.
+    enforced_by:
+      - test: cmd/kiln.TestSkillJSONExamplesParse

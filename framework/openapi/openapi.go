@@ -365,7 +365,11 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 				if o.stringSchema {
 					ps = map[string]any{"type": "string"}
 				}
-				listOp.AddParameter(spell.Key(name, o.op), "query", o.desc(name), false, ps)
+				desc := o.desc(name)
+				if o.op == filter.OpEq && filter.IsListControl(name) && (name != "q" || len(ent.Config.SearchFields) > 0) {
+					desc += " (bracket form: a bare " + name + " is the list control)"
+				}
+				listOp.AddParameter(spell.Key(name, o.op), "query", desc, false, ps)
 			}
 		}
 

@@ -452,17 +452,17 @@ func renderSDKJSReadme(spec sdkSpec) string {
 	// spec with no range-able column shows plain equality.
 	if picked, filterOp := sdkExampleFilter(first.Fields); picked != nil {
 		// A bare key that reads two ways (a field beside its name plus a
-		// suffix) is a 400; the example then names the operator in
-		// brackets, the spelling the server reads one way.
+		// suffix) is a 400, and one named like a list control sets the
+		// control; the example then names the operator in brackets.
 		if filterOp == "" {
 			eq := ""
-			if first.filterKeys.Ambiguous(picked.Snake, filter.OpEq) {
+			if first.filterKeys.Key(picked.Snake, filter.OpEq) != picked.Snake {
 				eq = ` + "[eq]"`
 			}
 			fmt.Fprintf(&sb, "```js\nimport { %sFields } from \"./client.js\";\nawait api.%s.list({ filters: { [%sFields.%s%s]: \"x\" } });\n```\n\n", prop, prop, prop, picked.Wire, eq)
 		} else {
 			op := `"_gte"`
-			if first.filterKeys.Ambiguous(picked.Snake, filter.OpGte) {
+			if first.filterKeys.Key(picked.Snake, filter.OpGte) != filter.SuffixKey(picked.Snake, filter.OpGte) {
 				op = `"[gte]"`
 			}
 			fmt.Fprintf(&sb, "```js\nimport { %sFields } from \"./client.js\";\nawait api.%s.list({ filters: { [%sFields.%s + %s]: \"10\" } });\n```\n\n", prop, prop, prop, picked.Wire, op)

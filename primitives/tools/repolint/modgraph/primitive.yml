@@ -1,0 +1,39 @@
+primitive: tools.repolint.modgraph
+summary: The test-only-dep-in-consumer-graph rule, which keeps dependencies only this repository's tests use out of the root go.mod that every app inherits.
+code:
+  - cmd/repolint/modgraph.go
+invariants:
+  - id: test-only-require-fails
+    rule: A require of a module in testOnlyModules, or of a submodule under it, in the root go.mod is a finding, in block or single-line form, quoted or not, with any blank between fields.
+    enforced_by:
+      - test: cmd/repolint.TestConsumerModuleGraphRuleDistinguishesRequireFromReplace
+      - test: cmd/repolint.TestQuotedRequireIsRead
+      - test: cmd/repolint.TestRequireBlockWithCommentIsRead
+  - id: only-requires-count
+    rule: A replace, exclude or other directive naming the module, and a module that only shares its prefix without a slash, are not findings.
+    enforced_by:
+      - test: cmd/repolint.TestConsumerModuleGraphRuleDistinguishesRequireFromReplace
+      - test: cmd/repolint.TestRequireBlockWithCommentIsRead
+      - test: cmd/repolint.TestConsumerModuleGraphRuleQuietWhenAbsent
+  - id: comments-do-not-hide-blocks
+    rule: A go.mod comment, including one on a block opener such as `require ( // pinned`, is cut before the line is read.
+    enforced_by:
+      - test: cmd/repolint.TestRequireBlockWithCommentIsRead
+decisions:
+  - id: test-only-deps-stay-out-of-go-mod
+    date: 2026-11-26
+    status: accepted
+    decision: A test-only dependency is reached through an env var CI supplies (TEST_POSTGRES_DSN) or a nested module, never a require in the root go.mod.
+    rejected:
+      - option: Require it behind a build tag.
+        why: go mod tidy considers every build configuration, so a tagged file's imports are recorded anyway.
+      - option: Accept the require.
+        why: Every app that imports the framework inherits it; testcontainers pulled the Docker client stack and a dozen platform modules into a hello-world scaffold.
+    upholds: [test-only-require-fails]
+  - id: runtime-deps-not-listed
+    date: 2026-11-26
+    status: accepted
+    decision: chromedp and lib/pq are not in testOnlyModules.
+    rejected:
+      - option: List them with testcontainers.
+        why: battery/print renders PDFs with chromedp and framework/fanout speaks Postgres with lib/pq, so both are runtime dependencies of code an app can import.

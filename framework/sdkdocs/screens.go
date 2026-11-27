@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -657,9 +656,6 @@ func (sc *entityScreen) exampleTabs(e *entity.Entity) render.HTML {
 	if sample.field != "" && err == nil {
 		speller := filter.SpellerFor(cfg.Fields)
 		filterKey := speller.Key(sample.field, sample.op)
-		if slices.Contains(filter.ListControlParams(), filterKey) {
-			filterKey = filter.BracketKey(sample.field, sample.op)
-		}
 		raw := fmt.Sprint(sample.value)
 		params := url.Values{filterKey: {raw}}
 		goParams = fmt.Sprintf("params := url.Values{}\nparams.Set(%q, %q)\n", filterKey, raw)

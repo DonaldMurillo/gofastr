@@ -98,6 +98,11 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 				notes += ", "
 			}
 			notes += "not filterable/sortable"
+		} else if key, ok := controlNamedKey(ent, f); ok {
+			if notes != "" {
+				notes += ", "
+			}
+			notes += fmt.Sprintf("filter with `%s[eq]=`: a bare `%s=` is the list control", key, key)
 		}
 		if opt.ReadOnly {
 			fmt.Fprintf(&b, "| `%s` | %s | %s |\n", wireKey(f.Name), schema.FieldTypeLabel(f.Type, false), notes)

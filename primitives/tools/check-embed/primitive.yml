@@ -1,0 +1,67 @@
+primitive: tools.check-embed
+summary: The build-time check that fails when an embeddable surface's screen renders a component registering a G.serverAction, the action a frame refuses (uihost.embed's boot walk refuses the same at Mount); this entry owns the CLI and the driver that loads packages for it and for gofastr build.
+code:
+  - cmd/check-embed/main.go
+  - cmd/check-embed/embedcheck/check.go
+docs:
+  - framework/docs/content/embed.md
+on_change:
+  - gofastr build runs the same driver through buildEmbedGate in cmd/gofastr/internal/buildcmd/build.go; a change to what fails the CLI changes what fails the build there too.
+twins:
+  - job: Turn CheckAll's findings and notes into a verdict, printing every note and failing on a finding or a blocking note.
+    why: The build gate adds --allow-unverified-embeds and prints through the gofastr cli helpers; nothing but work keeps the verdict out of embedcheck, and cmd/gofastr is swept in a later pull request.
+    sites:
+      - path: cmd/check-embed/main.go
+        note: main, the standalone CLI.
+      - path: cmd/gofastr/internal/buildcmd/build.go
+        note: buildEmbedGate, the gofastr build step.
+invariants:
+  - id: cli-exit-codes
+    rule: check-embed exits 1 on a finding or a blocking note, 2 when nothing was found and a package failed to load or a pattern matched no package, and 0 otherwise, and a failing run prints no tick.
+    enforced_by:
+      - test: cmd/check-embed.TestCLIHonorsAllPatternsAndRejectsEmptyMatches
+      - test: cmd/check-embed.TestCLIPrintsNotesAndFailsOnlyOnBlocking
+  - id: cli-prints-every-note
+    rule: check-embed prints every note, advisory or blocking, before its verdict, and a clean run that has notes says how many places it could not follow.
+    enforced_by:
+      - test: cmd/check-embed.TestCLIPrintsNotesAndFailsOnlyOnBlocking
+      - test: cmd/check-embed.TestCLIPrintsOneLinePerNoteBeforeTheVerdict
+  - id: every-pattern-is-checked
+    rule: CheckAll loads every pattern it is given, ./... when given none, and checks each package once.
+    enforced_by:
+      - test: cmd/check-embed.TestCLIHonorsAllPatternsAndRejectsEmptyMatches
+      - test: cmd/check-embed/embedcheck.TestCheckAllDefaultsToEveryPackage
+      - test: cmd/check-embed/embedcheck.TestCheckAllChecksEachPackageOnce
+  - id: test-files-are-not-checked
+    rule: The driver loads packages without their _test.go files, so a surface a test declares is never a finding.
+    enforced_by:
+      - test: cmd/check-embed/embedcheck.TestCheckSkipsTestFiles
+  - id: findings-precede-load-errors
+    rule: Check and CheckAll return their findings with a nil error even when a package failed to load or a pattern matched nothing.
+    enforced_by:
+      - test: cmd/check-embed/embedcheck.TestCheckFindingsPrecedeLoadErrors
+      - test: cmd/check-embed/embedcheck.TestCheckAllFindingsPrecedeUnmatchedPatterns
+  - id: load-failure-is-not-clean
+    rule: With no finding, a parse, type or list error in a package, a pattern that matches no package, or an empty package set is returned as an error, never as a clean result.
+    enforced_by:
+      - test: cmd/check-embed/embedcheck.TestCheckReturnsLoadErrorWhenNoFindingsExist
+      - test: cmd/check-embed/embedcheck.TestCheckAllPreservesPackageAndPatternErrors
+      - test: cmd/check-embed/embedcheck.TestCheckAllFindingsPrecedeUnmatchedPatterns
+      - test: cmd/check-embed/embedcheck.TestEmptyPackageSetIsNotClean
+decisions:
+  - id: findings-before-load-errors
+    date: 2026-11-26
+    status: accepted
+    decision: A finding is returned with a nil error even when some package failed to load.
+    rejected:
+      - option: Return the load error whenever a package fails.
+        why: It hides the one actionable signal, a real violation, behind an infrastructure failure.
+    upholds: [findings-precede-load-errors]
+  - id: notes-are-a-separate-return
+    date: 2026-11-26
+    status: accepted
+    decision: CheckAll returns findings and notes separately, and a caller prints both and fails on a finding or a blocking note.
+    rejected:
+      - option: Drop the places the walk could not follow.
+        why: A gate that quietly gives up reads exactly like one that checked and found nothing, which is how a rendered child's server action survived a release.
+    upholds: [cli-prints-every-note]
