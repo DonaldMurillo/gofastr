@@ -159,6 +159,17 @@ invariants:
     enforced_by:
       - test: framework/headless.TestToastRefusesBrokenConfigurations
       - test: framework/headless.TestToastFamilyRefusesTheEdgesOfItsRanges
+  - id: toast-stack-rises-to-the-top-layer
+    rule: headless-feedback makes the widget a toast stack is mounted in (data-cui-widget, as uihost's default and preset.ToastStack mount it) a manual popover, open while the stack holds a row and closed once its last row leaves, so a toast shows above whatever is already in the top layer; a stack with no widget around it stays where its layout placed it.
+    enforced_by:
+      - test: framework/ui.TestToastStackRisesIntoTheTopLayer
+      - test: framework/ui.TestToastStackLeavesTheTopLayerWhenEmpty
+  - id: toast-held-while-the-page-is-modal
+    rule: A toast raised while a modal is open (a :modal element, a widget modal on _modalStack) or while its stack sits in an inert subtree is built and its id returned, but joins its stack only once none of those holds, checked when a dialog closes, a widget closes (fui:widget-close) or an open, inert or hidden attribute or the tree changes.
+    enforced_by:
+      - test: framework/ui.TestToastHeldWhileAModalIsOpen
+      - test: framework/ui.TestToastHeldWhileTheStackIsInert
+      - test: framework/ui.TestToastHeldWhileAWidgetModalIsOpen
   - id: toast-role-from-live
     rule: A Toast renders role=status, or role=alert when Live is LiveAssertive.
     enforced_by:
@@ -461,6 +472,20 @@ decisions:
       - option: One name.
         why: The kernel's response-header path and auto-mount look for the framework's name, infrastructure this package does not own, while the module binds this package's.
     upholds: [toast-stack-carries-both-contracts]
+  - id: toast-stack-is-a-manual-popover-widget
+    date: 2026-11-27
+    status: accepted
+    decision: The toast stack's widget is a manual popover while the stack holds a row, and a toast raised behind a modal is held until the modal closes (#706, Modern Web Guidance's persistent-toast-notifications).
+    rejected:
+      - option: The stack element itself as the popover.
+        why: The browser's popover defaults centre it, and the widget around it already carries the mount position its corner classes set.
+      - option: popover="manual" rendered by the server.
+        why: A closed popover is not drawn, so server-rendered toasts would vanish without script.
+      - option: Raising a bare headless.ToastStack too.
+        why: A layout places that stack with its own CSS, which the browser's popover defaults would override.
+      - option: Showing toasts behind a modal.
+        why: Content behind a modal is inert, so the toast is neither announced nor reachable and is likely missed.
+    upholds: [toast-stack-rises-to-the-top-layer, toast-held-while-the-page-is-modal]
   - id: toast-words-travel-on-the-stack
     date: 2026-11-16
     status: accepted
