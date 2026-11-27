@@ -162,7 +162,7 @@ func runMutant(path string, original []byte, g guardmut.Guard, pkg, run, moduleR
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout+baselineBuildGrace)
 	defer cancel()
-	out, testErr := goTest(ctx, moduleRoot, testArgs(pkg, run, timeout)).CombinedOutput()
+	out, testErr := newGoTest(ctx, moduleRoot, testArgs(pkg, run, timeout)).CombinedOutput()
 	if ctx.Err() != nil {
 		st, err := expiredVerdict(string(out), timeout+baselineBuildGrace)
 		if err != nil {
@@ -214,6 +214,8 @@ func testArgs(pkg, run string, timeout time.Duration) []string {
 	return args
 }
 
+var newGoTest = goTest
+
 func goTest(ctx context.Context, moduleRoot string, args []string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = moduleRoot
@@ -224,7 +226,7 @@ func goTest(ctx context.Context, moduleRoot string, args []string) *exec.Cmd {
 func checkBaseline(pkg, run, moduleRoot string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout+baselineBuildGrace)
 	defer cancel()
-	out, err := goTest(ctx, moduleRoot, testArgs(pkg, run, timeout)).CombinedOutput()
+	out, err := newGoTest(ctx, moduleRoot, testArgs(pkg, run, timeout)).CombinedOutput()
 	if ctx.Err() != nil {
 		return fmt.Errorf("the baseline suite did not finish within %s (build plus -timeout=%s), so no verdict below would mean anything:\n%s",
 			timeout+baselineBuildGrace, timeout, truncate(string(out)))

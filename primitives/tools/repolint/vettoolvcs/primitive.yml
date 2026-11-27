@@ -6,9 +6,10 @@ docs:
   - docs/contributing.md
 invariants:
   - id: vettool-builds-unstamped
-    rule: A non-comment line in a .go, .sh, .yml, .yaml, Makefile or .githooks file outside testdata that builds cmd/vettool (go build, or an exec "build" argument) without -buildvcs=false is a finding; a path that only starts with cmd/vettool is not.
+    rule: A line that is not a comment (one starting with // or with a hash) in a .go, .sh, .yml, .yaml, Makefile or .githooks file outside testdata that builds cmd/vettool or cmd/vettool/ (go build, or an exec "build" argument) without -buildvcs=false is a finding; a path that only starts with cmd/vettool is not.
     enforced_by:
       - test: cmd/repolint.TestVettoolBuildNeedsBuildVCSFalse
+      - test: cmd/repolint.TestVettoolBuildCommentsAndTrailingSlash
 decisions:
   - id: no-vcs-stamp-in-vettool
     date: 2026-11-26

@@ -87,3 +87,103 @@ wait-for-confirmation directive (four keywords cut -> fails; directive cut
 `<kiln-system>` prefix (prefix dropped -> fails), the note-order check
 finds the verdict line (notes printed after it -> fails), and the
 analyzer's summary names the depth cutoff.
+
+## Follow-up, #923
+
+Every item listed above as left for a follow-up, and the three a post-merge
+review of #918 added (classify's order, the //gofastr: prefix in the stop
+check's comment-only test, the reason built-ins get a clean directory), now
+has a test watched failing under its mutation, a rule narrowed to what the
+code does, or a recorded decision. The
+lead reran one proof per group on the merged tree (the guard served
+without `originGuard`, `-tags` dropped, the signal handler's `interrupt()`
+removed, the unreadable `.gitignore` ignored, the `=======` marker
+dropped): each failed. Each line below is `mutation -> failing test`.
+
+### kiln (#923)
+
+Each line is `file: mutation -> failing test`, run with `go test -count=1`.
+
+- cmd/kiln/main.go: `kilnLoopbackBound = isLoopbackBindAddr(opts.addr)` deleted -> TestServeRunsBehindTheGuard
+- cmd/kiln/main.go: runHTTP serves `l` instead of `originGuard(l)` -> TestServeRunsBehindTheGuard
+- cmd/kiln/main.go: the logger writes to os.Stdout -> TestStdioModesWriteOnlyFrames
+- cmd/kiln/agent_watcher.go: the journaled turn summary removed -> TestWatcherJournalsATurnSummary
+- cmd/kiln/agent_watcher.go: the adapter read once before the loop instead of per message -> TestWatcherReadsTheAdapterPerMessage
+- cmd/kiln/agent.go: runAgent builds the serve argv by hand (`--addr :port`) instead of calling serveArgs -> TestRunAgentStartsServeWithServeArgs (TestAgentServeBindsLoopback passes)
+
+The deleted reasons for `--dangerously-skip-permissions`, `--no-session` and killGroup's `-pid` are decisions `claude-runs-without-permission-prompts`, `omp-keeps-no-session` and `kill-the-whole-group`.
+
+### affected, bench-resources (#923)
+
+Each line is `file: mutation -> failing test`, run with `go test -count=1`.
+
+- cmd/affected/main.go:731: failed merge base returns the base's tip, not an error -> TestUnrelatedBaseTestsEverything
+- cmd/affected/main.go:481: -tags dropped from the selection's go list -> TestTagsReachGoList
+- cmd/affected/main.go:447: -tags dropped from -files-differ-from's go list -> TestTagsReachGoList
+- cmd/affected/main.go:600: a dir/ pattern gets * instead of ** -> TestTestReadsDirectoryReachesEveryLevel
+- cmd/affected/main.go:357: XTestEmbedPatterns dropped -> TestExternalTestEmbedSelectsThePackage
+- cmd/bench-resources/rusage_unix.go:16: peakRSSFromState returns the raw Maxrss -> TestPeakRSSFromStateIsBytes
+
+Not a rule: deleting `sort.Strings(out)` (cmd/affected/main.go:431) passes every test, because `go list ./...` already returns packages sorted by import path and `format` keeps that order. The call stays as a guard, and no invariant claims it.
+
+### mutate, check-embed, primitives (#923)
+
+cmd/mutate/main.go: signal handler's `restoreAll.interrupt()` removed -> TestInterruptMidRunRestoresTheSourceAndExits130
+cmd/mutate/main.go: `interrupt` restores before it stops (runAll, then stop) -> TestInterruptStopsBeforeItRestores (failed in 5 of 5 runs)
+cmd/mutate/main.go: mutant run builds its own `exec.CommandContext(ctx, "go", ...)` instead of `newGoTest` -> TestBaselineAndMutantRunsGoThroughTheBoundedSeam
+cmd/mutate/main.go: baseline run builds its own `go test pkg` with no -timeout -> TestBaselineAndMutantRunsGoThroughTheBoundedSeam
+cmd/mutate/main.go: baseline run under `context.Background()` -> TestBaselineAndMutantRunsGoThroughTheBoundedSeam
+cmd/mutate/main.go: mutant run's deadline without baselineBuildGrace -> TestBaselineAndMutantRunsGoThroughTheBoundedSeam
+cmd/mutate/main.go: baseline run's deadline without baselineBuildGrace -> TestBaselineAndMutantRunsGoThroughTheBoundedSeam
+cmd/check-embed/embedcheck/analyzer.go: "no concrete type visible" note removed -> TestEachGiveUpIsOneNote (no-concrete: 0 notes)
+cmd/check-embed/embedcheck/analyzer.go: `visited[t]` dropped from the walk -> TestEachGiveUpIsOneNote (self-ref: 15 notes)
+cmd/primitives/harness.go: a changed module's failed `go build ./...` not reported -> TestStopBuildsAChangedModuleWhole
+
+### repolint (#923)
+
+Each mutation passed `go test -count=1 ./cmd/repolint/` without
+`followup_test.go` and fails with it, except where a line says an existing
+test already caught it.
+
+cmd/repolint/main.go: "=======" marker dropped -> TestEveryConflictMarkerFails
+cmd/repolint/main.go: ">>>>>>> " marker dropped -> TestEveryConflictMarkerFails
+cmd/repolint/main.go: "tmp" dropped from the skipped dirs -> TestLintRepoSkipsEveryOutputDir
+cmd/repolint/main.go: "vendor" dropped from the skipped dirs -> TestLintRepoSkipsEveryOutputDir
+cmd/repolint/main.go: isRoot early return removed (a root named "." or ".x" lints nothing) -> TestLintRepoLintsADotNamedRoot
+cmd/repolint/main.go: bad-filename path not quoted -> TestBadFilenameIsReportedQuoted
+cmd/repolint/main.go: go-syntax line left at 1 -> TestGoSyntaxFindingNamesTheErrorLine
+cmd/repolint/main.go: "LEDGER" dropped from the process tokens -> TestEveryProcessTokenIsFlaggedOnlyInAllCaps
+cmd/repolint/main.go: all-caps check dropped -> TestEveryProcessTokenIsFlaggedOnlyInAllCaps
+cmd/repolint/main.go: "ROADMAP.md" dropped from the allowlist -> TestLintRepoAcceptsLowercaseFeatureDocs (already caught), TestEveryAllowlistedRootMarkdownPasses
+cmd/repolint/main.go: "SUPPORT.md" dropped from the allowlist -> TestEveryAllowlistedRootMarkdownPasses
+cmd/repolint/main.go: "mvdan.cc/gofumpt" dropped from the banned modules -> TestEveryExternalLinterIsFlagged
+cmd/repolint/main.go: "staticcheck" dropped from the banned tools -> TestEveryExternalLinterIsFlagged
+cmd/repolint/golex.go: outsideGoStrings ignores a backslash escape -> TestStringEscapesHideAClosingQuote
+cmd/repolint/golex.go: st.inRawString not reset before the line-comment return -> TestLexStateAfterALine
+cmd/repolint/golex.go: inRawString = quote != 0 (an open interpreted string carried) -> TestLexStateAfterALine
+cmd/repolint/golex.go: st.inBlockComment = true removed -> TestCRUDExposureSeenPastAURLString (already caught), TestLexStateAfterALine
+cmd/repolint/crudexposure.go: _test.go exclusion dropped -> TestCRUDExposureExclusions
+cmd/repolint/crudexposure.go: /testdata/ exclusion dropped -> TestCRUDExposureExclusions
+cmd/repolint/origins.go: seen[host] dedup dropped -> TestExampleOriginReportedOncePerFile
+cmd/repolint/selectorstatus.go: substitutionEnd ignores a backslash escape -> TestSelectorSpanFollowsEscapesAndQuotes
+cmd/repolint/selectorstatus.go: opensShellComment ignores double quotes -> TestSelectorSpanFollowsEscapesAndQuotes
+cmd/repolint/selectorstatus.go: opensShellComment ignores single quotes -> TestSelectorSpanFollowsEscapesAndQuotes
+cmd/repolint/vettoolbuildvcs.go: "//" comment-line skip dropped -> TestVettoolBuildCommentsAndTrailingSlash
+cmd/repolint/vettoolbuildvcs.go: `cmd/vettool/?` back to `cmd/vettool` (a trailing-slash build unflagged) -> TestVettoolBuildCommentsAndTrailingSlash
+cmd/repolint/chromiumshard.go: package-clause stop removed -> TestChromiumTagAfterThePackageClauseIsNoConstraint
+cmd/repolint/cmdignore.go: unreadable .gitignore ignored -> TestUnreadableCommandInputsAreErrors
+cmd/repolint/cmdignore.go: unreadable cmd/ returns nil, nil -> TestUnreadableCommandInputsAreErrors
+
+Changed code, not only tests:
+
+- vettoolbuildvcs.go: a build of `./cmd/vettool/` (trailing slash) is now a finding; it slipped past before. The repository has none.
+- origins.go: the `"::1"` allowlist entry is removed. The URL pattern matches name and IPv4 hosts only, so it could never match; the `allowed-hosts` rule says so.
+- main.go: the `[Unreleased]` skip in latestReleaseMinor is removed as dead code. An `[Unreleased]` heading has no X.Y version, so the version parse already skips it; the two existing supported-version tests carry an `[Unreleased]` heading and still pass.
+- The tools.repolint on_change line now says per-line rules live in lintBytes in main.go, which is true; only repository-level rules get their own file.
+
+### Added by the post-merge review of #918
+
+cmd/mutate/main.go: the `--- FAIL` check moved after `isBuildFailure` -> TestClassifyIsNotFooledByApplicationLogOutput
+cmd/primitives/harness.go: `//gofastr:` comments dropped from the code tokens -> TestStop
+
+The reason built-ins run in a clean temp directory (pi reads the Go files in its working directory as the kiln world) is decision `builtins-get-a-clean-dir`.

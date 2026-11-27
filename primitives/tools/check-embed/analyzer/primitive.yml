@@ -2,6 +2,17 @@ primitive: tools.check-embed.analyzer
 summary: The static walk from each embed.Surface to the component tree its screen renders, reporting every reachable G.serverAction as a finding and every place it could not follow as a note, down to maxReachDepth levels of type nesting, where it stops without one.
 code:
   - cmd/check-embed/embedcheck/analyzer.go
+  - cmd/check-embed/embedcheck/analyzer_test.go
+  - cmd/check-embed/embedcheck/analyzer_unresolved_test.go
+  - cmd/check-embed/embedcheck/fixture_deps_test.go
+  - cmd/check-embed/embedcheck/fixtures_test.go
+  - cmd/check-embed/embedcheck/giveups_test.go
+  - cmd/check-embed/embedcheck/lookalike_test.go
+  - cmd/check-embed/embedcheck/reach_test.go
+  - cmd/check-embed/embedcheck/scan_corpus_test.go
+  - cmd/check-embed/embedcheck/tools_regression_test.go
+  - cmd/check-embed/embedcheck/wrapper_not_noted_test.go
+  - cmd/check-embed/testdata/
 docs:
   - framework/docs/content/embed.md
 on_change:
@@ -24,9 +35,10 @@ invariants:
       - test: cmd/check-embed/embedcheck.TestSeesRenderBuiltChild
       - test: cmd/check-embed/embedcheck.TestNotesHelperIndirectBuiltChild
   - id: walk-terminates
-    rule: The type walk ends on a self-referential type graph and still reports what the graph holds.
+    rule: The type walk ends on a self-referential type graph and visits each type once, so what the graph holds is reported once, not once per path to it.
     enforced_by:
       - test: cmd/check-embed/embedcheck.TestEachReachRouteFindsItsChild
+      - test: cmd/check-embed/embedcheck.TestEachGiveUpIsOneNote
   - id: no-silent-give-up
     rule: Apart from the silent stop at maxReachDepth, each place the walk cannot follow yields exactly one note naming it - a Screen that is not an in-package app.NewScreen, a component with no visible concrete type, an interface- or function-typed field, a field of another package's component type, a child of another package built in Render, a server action inside a function literal, and a WithClientJS argument that is not a string literal.
     enforced_by:

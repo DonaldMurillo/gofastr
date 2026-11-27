@@ -9,9 +9,10 @@ on_change:
   - A change to skill.md's tool surface matches kiln/protocol's tools; every adapter reads it on its next turn.
 invariants:
   - id: serve-child-binds-loopback
-    rule: The serve child kiln agent starts binds 127.0.0.1, since it is reached only through localhost and its tool API is unauthenticated.
+    rule: runAgent starts its one serve child with serveArgs, which binds 127.0.0.1, since the child is reached only through localhost and its tool API is unauthenticated.
     enforced_by:
       - test: cmd/kiln.TestAgentServeBindsLoopback
+      - test: cmd/kiln.TestRunAgentStartsServeWithServeArgs
   - id: ready-means-our-kiln
     rule: waitReady counts a response as ready only when it carries the X-Kiln-Server header, so a server that won the port first is never handed to the agent as KILN_URL.
     enforced_by:

@@ -308,7 +308,7 @@ func lintRepositoryTruth(root string) ([]finding, error) {
 
 func latestReleaseMinor(changelog string) string {
 	for line := range strings.SplitSeq(changelog, "\n") {
-		if !strings.HasPrefix(line, "## [") || strings.HasPrefix(line, "## [Unreleased]") {
+		if !strings.HasPrefix(line, "## [") {
 			continue
 		}
 		end := strings.Index(line, "]")
