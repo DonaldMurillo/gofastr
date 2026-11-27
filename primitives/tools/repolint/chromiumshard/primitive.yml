@@ -4,10 +4,11 @@ code:
   - cmd/repolint/chromiumshard.go
 invariants:
   - id: every-tagged-package-is-run
-    rule: Each root-module package with a _test.go file whose //go:build line names chromium positively, anywhere in the expression, must be named by the chromium-ui run (as ./dir, ./dir/ or under ./prefix/...) and matched by its pkg regexp.
+    rule: Each root-module package with a _test.go file whose //go:build line before the package clause names chromium positively, anywhere in the expression, must be named by the chromium-ui run (as ./dir, ./dir/ or under ./prefix/...) and matched by its pkg regexp.
     enforced_by:
       - test: cmd/repolint.TestChromiumShardFlagsUnnamedPackage
       - test: cmd/repolint.TestChromiumShardAcceptsCoveredTree
+      - test: cmd/repolint.TestChromiumTagAfterThePackageClauseIsNoConstraint
   - id: negated-nested-and-fixture-tests-are-out
     rule: A file whose constraint names chromium only under a negation, a package in a nested module, and a file under testdata are not packages the shard must run.
     enforced_by:

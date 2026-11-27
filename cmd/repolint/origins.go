@@ -16,7 +16,7 @@ var exampleAbsoluteURLRe = regexp.MustCompile(`(?i)https://([A-Za-z0-9._-]+)`)
 func allowedExampleHost(host string) bool {
 	switch host {
 	case "example.com", "example.net", "example.org",
-		"localhost", "127.0.0.1", "::1",
+		"localhost", "127.0.0.1",
 		"schema.org", "www.schema.org", "www.sitemaps.org", "www.w3.org",
 		"llmstxt.org", "spec.modelcontextprotocol.io", "modelcontextprotocol.io",
 		"pkg.go.dev", "go.dev", "github.com", "donaldmurillo.github.io",
