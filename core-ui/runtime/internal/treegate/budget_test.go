@@ -44,8 +44,12 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 		// TestIslandToastReturnsFocus: focused-row detach observation and
 		// origin recovery share the toast lifecycle; a toast action
 		// refuses a non-string label or endpoint and copies only string
-		// RPC hooks (+32). 3176 measured + 2.
-		"framework/headless/feedback.js": 3178,
+		// RPC hooks (+32). TestToastStackRisesIntoTheTopLayer and
+		// TestToastHeldWhileAModalIsOpen (#706): the stack's widget is a
+		// manual popover while it holds a row, and a toast raised behind a
+		// modal waits for it to close; both are the toast lifecycle's
+		// (+410). 3586 measured + 2.
+		"framework/headless/feedback.js": 3588,
 		// framework/headless's disclosure, at the walk's line before the
 		// 2026-11-05 IME Escape fix: an Escape handler ignores a
 		// composition event (`isComposing` or keyCode 229, Safari's), so

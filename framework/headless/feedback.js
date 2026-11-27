@@ -87,70 +87,43 @@
 
   // ─── the top layer and the modal hold ─────────────────────────────
 
-  // A stack mounted as a widget (uihost's default, preset.ToastStack)
-  // rises with its widget: the widget is a manual popover while the
-  // stack holds a row, so a toast shows above whatever is already in the
-  // top layer, and the widget's position class keeps it in its corner.
-  // A stack a layout places itself stays where the layout put it.
-  function layerOf(stack) {
-    const host = stack.closest('[data-cui-widget]');
-    return host && typeof host.showPopover === 'function' ? host : null;
-  }
+  // A stack mounted in a widget (uihost's default, preset.ToastStack)
+  // rises with it: the widget root is a manual popover while the stack
+  // holds a row, so a toast shows above whatever is already in the top
+  // layer. A stack a layout places itself stays put.
   function syncLayer(stack) {
-    const host = layerOf(stack);
-    if (!host) return;
-    const rows = stack.querySelector('[data-hui-toast-id]:not([data-hui-toast-leaving]), [data-hui-toast]:not([data-hui-toast-leaving])');
-    const open = host.matches(':popover-open');
-    if (rows && !open) {
-      if (host.getAttribute('popover') !== 'manual') host.setAttribute('popover', 'manual');
-      try { host.showPopover(); } catch (_) {}
-    } else if (!rows && open) {
-      try { host.hidePopover(); } catch (_) {}
-    }
+    const h = stack.closest('[data-cui-widget]');
+    if (!h || !h.showPopover) return;
+    const rows = !!stack.querySelector(':is([data-hui-toast-id],[data-hui-toast]):not([data-hui-toast-leaving])');
+    if (rows === h.matches(':popover-open')) return;
+    if (rows) h.setAttribute('popover', 'manual');
+    try { rows ? h.showPopover() : h.hidePopover(); } catch (_) {}
   }
 
-  // Content behind a modal is inert: a toast shown there is neither
-  // seen nor announced. While a modal dialog is open, a widget modal is
-  // up, or the stack sits in an inert subtree (a focus trap), a new
-  // toast is held and joins its stack once the page is live again.
+  // Behind a modal, or in an inert subtree, a toast is neither seen nor
+  // announced: it is held, and joins its stack once the page is live.
   const pending = [];
-  let holdWatch = null;
+  let watch = null;
   function held(stack) {
-    let modal = false;
-    try { modal = !!document.querySelector(':modal'); } catch (_) {}
-    return modal || !!(NS._modalStack && NS._modalStack.length) || !!stack.closest('[inert]');
+    try { if (document.querySelector(':modal')) return true; } catch (_) {}
+    return !!(NS._modalStack?.length || stack.closest('[inert]'));
   }
-  function releaseHeld() {
-    for (let i = 0; i < pending.length;) {
-      const { stack, item } = pending[i];
-      if (!stack.isConnected) { pending.splice(i, 1); continue; }
-      if (held(stack)) { i++; continue; }
-      pending.splice(i, 1);
-      showRow(stack, item);
+  function release() {
+    for (const p of pending.splice(0)) {
+      if (!p.s.isConnected) continue;
+      if (held(p.s)) pending.push(p);
+      else showRow(p.s, p.i);
     }
-    if (!pending.length && holdWatch) {
-      holdWatch.disconnect();
-      document.removeEventListener('close', checkHeld, true);
-      document.removeEventListener('fui:widget-close', checkHeld);
-      holdWatch = null;
-    }
+    if (!pending.length && watch) { watch.disconnect(); watch = null; }
   }
-  let checkQueued = false;
-  function checkHeld() {
-    if (checkQueued) return;
-    checkQueued = true;
-    queueMicrotask(() => { checkQueued = false; releaseHeld(); });
+  function hold(s, i) {
+    pending.push({ s, i });
+    if (!watch) (watch = new MutationObserver(release)).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['open', 'inert'] });
   }
-  function hold(stack, item) {
-    pending.push({ stack, item });
-    if (holdWatch) return;
-    holdWatch = new MutationObserver(checkHeld);
-    holdWatch.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['open', 'inert', 'hidden'] });
-    // A dialog's close, and a widget modal's (widgets.js pops
-    // _modalStack and dispatches fui:widget-close on document).
-    document.addEventListener('close', checkHeld, true);
-    document.addEventListener('fui:widget-close', checkHeld);
-  }
+  // A dialog's close; a widget modal's close is announced before its
+  // teardown pops _modalStack, so it is read a microtask later.
+  document.addEventListener('close', release, true);
+  document.addEventListener('fui:widget-close', () => queueMicrotask(release));
 
   // showRow puts a built row on its stack: past the capacity the oldest
   // rows go, so a burst of toasts cannot pile a column over the page.
@@ -183,7 +156,6 @@
     // rendered carries the toast marker and, when it has a lifetime,
     // the TTL. Both arm here; a server row is given its id on sight.
     const items = root.querySelectorAll('[data-hui-toast-id], [data-hui-toast-ttl-ms]');
-    for (const stack of within(root, '[data-hui-toast-stack],[data-cui-toast-stack]')) syncLayer(stack);
     items.forEach((item) => {
       if (!item.hasAttribute('data-hui-toast-id')) item.setAttribute('data-hui-toast-id', 's' + (++NS._toastSeq));
       const id = item.getAttribute('data-hui-toast-id');
@@ -234,6 +206,7 @@
         if (e.target.closest('[data-hui-toast-action]')) NS._dismissToast(item, id);
       });
     });
+    for (const stack of within(root, '[data-hui-toast-stack],[data-cui-toast-stack]')) syncLayer(stack);
   };
 
   NS._dismissToast = (item, id) => {
