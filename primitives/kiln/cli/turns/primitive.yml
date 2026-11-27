@@ -29,7 +29,8 @@ invariants:
       - test: cmd/kiln.TestShutdownWaitOutlastsTurnWaitDelay
   - id: adapter-read-per-turn
     rule: The watcher reads the store's adapter when each chat message arrives, so a switch through /kiln/agent applies to the next turn.
-    judge: Does this change make the watcher use an adapter captured before the chat message arrived instead of reading the store per message?
+    enforced_by:
+      - test: cmd/kiln.TestWatcherReadsTheAdapterPerMessage
   - id: turn-wait-is-bounded
     rule: A turn's cmd.Wait is bounded by WaitDelay, so a descendant holding the stdout pipe cannot wedge the turn after its context ends.
     enforced_by:
@@ -70,6 +71,7 @@ invariants:
     rule: Every turn ends with a journaled summary line giving its tool count, error count and duration, marked with a warning when a tool failed.
     enforced_by:
       - test: cmd/kiln.TestTurnSummary
+      - test: cmd/kiln.TestWatcherJournalsATurnSummary
 decisions:
   - id: cancel-and-replace
     date: 2026-11-26
@@ -105,3 +107,12 @@ decisions:
       - option: Ask a model to classify the message.
         why: It adds a call per turn; the scan is cheap and deterministic, and a false positive only costs a plan.
     upholds: [destructive-request-needs-plan]
+  - id: kill-the-whole-group
+    date: 2026-11-27
+    status: accepted
+    decision: killGroup SIGKILLs the process group the adapter child leads (-pid); the group id stays reserved while any member lives, so the signal cannot reach another process's group while anything is left to kill.
+    rejected:
+      - option: SIGKILL only the child's pid.
+        why: A shell the adapter backgrounded outlives the turn and keeps editing the world.
+    revisit_if: A supported platform reuses a process-group id while members of the old group still run.
+    upholds: [turn-kills-its-group]

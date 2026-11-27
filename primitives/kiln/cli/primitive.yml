@@ -20,6 +20,10 @@ invariants:
     rule: On a loopback bind, originGuard refuses with 403 any request whose Host is not a loopback authority, for every method including GET, before it looks at Origin.
     enforced_by:
       - test: cmd/kiln.TestOriginGuardRejectsReboundHost
+  - id: serve-runs-behind-the-guard
+    rule: run sets the Host pin from --addr before anything serves, and runHTTP serves the runtime only through originGuard, so a kiln serve on loopback refuses a rebound Host and a cross-origin write.
+    enforced_by:
+      - test: cmd/kiln.TestServeRunsBehindTheGuard
   - id: unsafe-cross-origin-refused
     rule: originGuard refuses with 403 a non-GET, HEAD or OPTIONS request whose Origin host differs from its Host, and passes one with no Origin header.
     enforced_by:
@@ -30,7 +34,8 @@ invariants:
       - test: cmd/kiln.TestCustomAgentFlagDefaultsOff
   - id: stdio-stdout-is-frames-only
     rule: In mcp and acp modes kiln writes nothing to stdout but the JSON-RPC frames; the logger, the banner and every diagnostic go to stderr.
-    judge: Does this change make kiln write anything other than JSON-RPC frames to stdout in mcp or acp mode?
+    enforced_by:
+      - test: cmd/kiln.TestStdioModesWriteOnlyFrames
   - id: watcher-ends-before-run-returns
     rule: run waits for the agent watcher to return after cancelling its context and before the journal and database close, so no adapter process outlives kiln and a turn's closing note is journaled.
     judge: Does this change let run return, or close the journal or database, before the agent watcher goroutine has finished?
