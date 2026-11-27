@@ -144,7 +144,7 @@ func indexTemplateTag(html string, from int) int {
 		case name == "" || n == i+1 && !isASCIILetter(html[n]):
 			i++
 			continue
-		case strings.EqualFold(name, "template"):
+		case asciiEqualFold(name, "template"):
 			return i
 		}
 		i = startTagEnd(html, i)
@@ -163,7 +163,7 @@ var rawTextElements = []string{"script", "style", "textarea", "title", "xmp", "i
 
 func isRawTextElement(name string) bool {
 	for _, r := range rawTextElements {
-		if strings.EqualFold(name, r) {
+		if asciiEqualFold(name, r) {
 			return true
 		}
 	}
@@ -178,7 +178,7 @@ func indexEndTag(html string, from int, name string) int {
 		}
 		i += j
 		n := i + 2
-		if n+len(name) <= len(html) && strings.EqualFold(html[n:n+len(name)], name) &&
+		if n+len(name) <= len(html) && asciiEqualFold(html[n:n+len(name)], name) &&
 			(n+len(name) == len(html) || !isTagNameByte(html[n+len(name)])) {
 			return i
 		}

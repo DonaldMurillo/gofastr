@@ -195,13 +195,35 @@ func walkTag(html string, start int, fn func(attrSpan) bool) (end, slash int) {
 	return -1, -1
 }
 
+// asciiEqualFold reports whether a and b are equal with ASCII letters'
+// case ignored, as HTML compares names; strings.EqualFold also folds
+// Unicode, so "ſ" (long s) would match "s".
+func asciiEqualFold(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		x, y := a[i], b[i]
+		if 'A' <= x && x <= 'Z' {
+			x += 'a' - 'A'
+		}
+		if 'A' <= y && y <= 'Z' {
+			y += 'a' - 'A'
+		}
+		if x != y {
+			return false
+		}
+	}
+	return true
+}
+
 // findAttr returns the first attribute named name, without regard to
 // ASCII case, of the start tag at html[start].
 func findAttr(html string, start int, name string) (attrSpan, bool) {
 	var found attrSpan
 	ok := false
 	walkTag(html, start, func(a attrSpan) bool {
-		if strings.EqualFold(a.name, name) {
+		if asciiEqualFold(a.name, name) {
 			found, ok = a, true
 			return false
 		}

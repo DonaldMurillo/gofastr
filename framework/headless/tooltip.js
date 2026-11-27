@@ -114,11 +114,12 @@
   // Whether el is scrolled out of the viewport or of a box that clips it.
   function clippedOut(el) {
     const r = el.getBoundingClientRect();
-    const out = (c) => r.bottom <= c.top || r.top >= c.bottom || r.right <= c.left || r.left >= c.right;
-    if (out({ top: 0, left: 0, bottom: window.innerHeight, right: window.innerWidth })) return true;
+    // Only the axes a box clips on: overflow-x: clip leaves y visible.
+    const out = (c, x, y) => (y && (r.bottom <= c.top || r.top >= c.bottom)) || (x && (r.right <= c.left || r.left >= c.right));
+    if (out({ top: 0, left: 0, bottom: window.innerHeight, right: window.innerWidth }, true, true)) return true;
     for (let a = el.parentElement; a && a !== document.body && a !== document.documentElement; a = a.parentElement) {
       const s = getComputedStyle(a);
-      if ((s.overflowX !== 'visible' || s.overflowY !== 'visible') && out(a.getBoundingClientRect())) return true;
+      if (out(a.getBoundingClientRect(), s.overflowX !== 'visible', s.overflowY !== 'visible')) return true;
     }
     return false;
   }
@@ -168,10 +169,15 @@
     return left;
   }
 
+  // The pointer is over every tooltip whose wrapper holds it; only the
+  // innermost opens.
   document.addEventListener('pointerover', (e) => {
     const tip = tipAt(e.target);
     if (!tip) return;
-    tip.hovered = true;
+    for (let root = tip.root; root; root = rootOf(root.parentElement)) {
+      const t = upgrade(root);
+      if (t) t.hovered = true;
+    }
     show(tip);
   }, true);
   // A touch pointer goes out as the finger lifts: the tap pins the pop

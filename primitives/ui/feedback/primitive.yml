@@ -138,7 +138,7 @@ invariants:
       - test: framework/ui.TestTooltipsGetDistinctIDs
       - test: framework/ui.TestTooltipsWithoutAScopeGetDistinctIDs
   - id: tooltip-splices-the-first-open-tag
-    rule: Tooltip adds its pop's id to the aria-describedby list on the trigger's first open tag with registry.AddAttributeToken, past leading comments and before a self-closing slash, keeping the ids already listed, naming the pop once, leaving text-only triggers intact and ignoring tag delimiters and attribute-like text inside quotes.
+    rule: Tooltip adds its pop's id to the aria-describedby list on the trigger's first open tag with registry.AddAttributeToken, past leading comments and before a self-closing slash, keeping the ids already listed, naming the pop once, leaving text-only triggers intact (headless.Tooltip logs one warning per id for such a trigger, which cannot carry the link) and ignoring tag delimiters and attribute-like text inside quotes.
     enforced_by:
       - test: framework/ui.TestTooltipWiresTheRootWhenADescendantCarriesDescribedBy
       - test: framework/ui.TestTooltipSplicesPastAGtInsideAQuotedValue
@@ -148,6 +148,7 @@ invariants:
       - test: framework/ui.TestSweepFeedbackTooltipSkipsLeadingComments
       - test: framework/ui.TestSweepFeedbackTooltipSplicesBeforeASelfClose
       - test: framework/headless.TestTooltipJoinsTheTriggersDescription
+      - test: framework/headless.TestTooltipWarnsWhenItsTriggerCannotBeDescribed
 decisions:
   - id: tooltip-unscoped-id-takes-a-counter
     date: 2026-11-16

@@ -1,7 +1,9 @@
 package headless
 
 import (
+	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	uiregistry "github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -52,13 +54,28 @@ func Tooltip(p TooltipProps, s Classes) render.HTML {
 	own := Safe(p.ExtraAttrs, "role")
 	Mark(own, "data-hui-tooltip")
 	own["data-hui-tooltip-placement"] = placement
-	trigger, _ := uiregistry.AddAttributeToken(p.Trigger, "aria-describedby", p.ID)
+	trigger, err := uiregistry.AddAttributeToken(p.Trigger, "aria-describedby", p.ID)
+	if err != nil {
+		warnUndescribedTrigger(p.ID, err)
+	}
 	popAttrs := Internal(Attrs(map[string]string{"id": p.ID, "role": "tooltip"}))
 	Mark(popAttrs, "data-hui-tooltip-pop")
 	return b.El("span", PartRoot, own,
 		trigger,
 		b.El("span", PartTooltipPop, popAttrs, render.Text(scrubControlBytes(p.Text))),
 	)
+}
+
+// warnedTriggers holds the tooltip ids already warned about, so a page
+// rendered on every request logs a trigger it cannot describe once.
+var warnedTriggers sync.Map
+
+func warnUndescribedTrigger(id string, err error) {
+	if _, seen := warnedTriggers.LoadOrStore(id, true); seen {
+		return
+	}
+	slog.Warn("headless: Tooltip trigger has no opening tag to carry aria-describedby, so assistive technology does not tie the tooltip to it; wrap the trigger in an element",
+		"id", id, "err", err)
 }
 
 func init() {

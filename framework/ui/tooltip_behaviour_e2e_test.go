@@ -530,3 +530,39 @@ func TestTooltipGapFollowsTheSpacingToken(t *testing.T) {
 		})
 	}
 }
+
+// A box that clips only one axis does not hide a pop whose trigger
+// overflows it on the other.
+func TestTooltipFallbackClipsOnlyOnTheAxisABoxClips(t *testing.T) {
+	tip := ui.Tooltip(ui.TooltipConfig{Text: "Saves the draft", ID: "tip"},
+		render.HTML(`<button id="trigger" type="button">Save</button>`))
+	ctx := tooltipBodyPage(t, fallbackKit, `<div style="overflow-x: clip; overflow-y: visible; height: 40px; width: 300px; margin: 150px 0 0 200px"><div style="padding-top: 80px">`+string(tip)+`</div></div>`, 900, 700)
+	focusID(t, ctx, "trigger")
+	waitOpen(t, ctx, "tip", "focus did not open the pop")
+	var visible bool
+	evalJS(t, ctx, `getComputedStyle(document.getElementById('tip')).visibility === 'visible'`, &visible)
+	if !visible {
+		t.Fatal("the pop was hidden for a trigger below a box that clips only horizontally")
+	}
+}
+
+// Entering an inner tooltip's trigger straight from outside hovers the
+// outer tooltip too: focus leaving the outer trigger then leaves the outer
+// pop open while the pointer is still inside its wrapper.
+func TestTooltipNestedHoverReachesTheOuter(t *testing.T) {
+	inner := ui.Tooltip(ui.TooltipConfig{Text: "Inner help", ID: "inner", Placement: ui.TooltipBottom},
+		render.HTML(`<button id="inner-trigger" type="button">Inner</button>`))
+	outer := ui.Tooltip(ui.TooltipConfig{Text: "Outer help", ID: "outer"},
+		render.HTML(`<span id="outer-trigger" tabindex="0" style="display: inline-block; padding: 20px; background: #eee">Outer `+string(inner)+`</span>`))
+	ctx := tooltipBodyPage(t, anchoredKit, `<div style="padding: 150px 200px">`+string(outer)+`</div><button id="elsewhere" type="button" style="margin: 200px">Elsewhere</button>`, 1000, 700)
+	movePointer(t, ctx, 990, 690)
+	hoverID(t, ctx, "inner-trigger")
+	waitOpen(t, ctx, "inner", "hover did not open the inner pop")
+	focusID(t, ctx, "outer-trigger")
+	waitOpen(t, ctx, "outer", "focus did not open the outer pop")
+	focusID(t, ctx, "elsewhere")
+	settle()
+	if !tipOpen(ctx, "outer") {
+		t.Fatal("the outer pop closed when focus left while the pointer stayed inside its wrapper")
+	}
+}

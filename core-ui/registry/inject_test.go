@@ -390,6 +390,7 @@ func TestAttribute(t *testing.T) {
 		{"spaces around the equals sign", `<div data-cui-scope = "board"></div>`, "data-cui-scope", "board", true, ""},
 		{"form feeds around the equals sign", "<div data-cui-scope\f=\f\"board\"></div>", "data-cui-scope", "board", true, ""},
 		{"upper-case name", `<div DATA-CUI-SCOPE="board"></div>`, "data-cui-scope", "board", true, ""},
+		{"a long s does not fold to s", `<div data-cui-ſcope="board"></div>`, "data-cui-scope", "", false, ""},
 		{"mixed-case name", `<div Data-Cui-Scope=board></div>`, "data-cui-scope", "board", true, ""},
 		{"a name after title= is title's value", `<button title= aria-describedby=x></button>`, "aria-describedby", "", false, ""},
 		{"after a slash", `<div/data-cui-scope="b"></div>`, "data-cui-scope", "b", true, ""},
@@ -474,6 +475,8 @@ func TestAddAttributeToken(t *testing.T) {
 			want: `<button" aria-describedby="tip">">Save</button>`},
 		{name: "a token with a form feed", html: "<button>x</button>", token: "a\fb", wantErr: "single token"},
 		{name: "a token with a NUL, which a browser reads as U+FFFD", html: "<button>x</button>", token: "a\x00b", wantErr: "single token"},
+		{name: "a long s does not fold to s", html: `<button aria-deſcribedby="help">Save</button>`, token: "tip",
+			want: `<button aria-deſcribedby="help" aria-describedby="tip">Save</button>`},
 		{name: "an upper-case name", html: `<button ARIA-DESCRIBEDBY="help">Save</button>`, token: "tip",
 			want: `<button ARIA-DESCRIBEDBY="help tip">Save</button>`},
 		{name: "a mixed-case name", html: `<button Aria-DescribedBy='help'>Save</button>`, token: "tip",
@@ -581,6 +584,8 @@ var spliceSeeds = []string{
 	`<button aria-describedby='a"b'>Save</button>`,
 	`<button">">Save</button>`,
 	`<a =x b>y</a>`,
+	`<button aria-deſcribedby="help">Save</button>`,
+	`<button ARIA-DESCRIBEDBY="help" aria-describedby="x">Save</button>`,
 }
 
 // checkSpliceMatchesABrowser: whatever the root tag, Attribute reads what
