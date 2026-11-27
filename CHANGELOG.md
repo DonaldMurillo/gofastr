@@ -92,6 +92,15 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **`primitives hook` reads the event it is given** rather than the
+  process's stdin, so a caller that passes its own reader gets that event
+  ([#918](https://github.com/DonaldMurillo/gofastr/pull/918)).
+- **`bench-resources` reports peak build memory in bytes on FreeBSD and
+  the other BSDs**, whose `Maxrss` is in kilobytes; only Darwin's was
+  bytes already ([#918](https://github.com/DonaldMurillo/gofastr/pull/918)).
+- **`repolint` flags a `go build ./cmd/vettool/` written with a trailing
+  slash** that lacks `-buildvcs=false`, as it already did without the
+  slash ([#924](https://github.com/DonaldMurillo/gofastr/pull/924)).
 - **Tooltip meets WCAG 1.4.13** (#706). With the `headless-tooltip`
   module, `ui.Tooltip` opens in the top layer, so a scrolling or
   clipping container no longer cuts it off. It stays open while the
