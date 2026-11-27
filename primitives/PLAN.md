@@ -284,11 +284,12 @@ reported one; both reruns fixed all of it
 (`2026-11-26-replay-cmd-tools-sweep.md`).
 
 Review bots skipped the PR for their usage limits, so four agents that did
-not write it reviewed it adversarially: no blocker and no behaviour change, but about 35 rules whose named tests pass
-with the code broken, among them kiln's Host and Origin guard wiring and
-affected's `-tags`. The follow-up (#923, with the three items a post-merge review of #918 added)
-gave each a test watched failing, or narrowed the rule to what the code does
-(#924, its proofs in the PR).
+not write it reviewed it adversarially: no blocker and no behaviour
+change, but about 35 rules whose named tests pass with the code broken,
+among them kiln's Host and Origin guard wiring and affected's `-tags`. The
+follow-up (#923, with the three items a post-merge review of #918 added)
+gave each a test watched failing, or narrowed the rule to what the code
+does (#924, its proofs in the PR).
 
 Next: `cmd/gofastr`, then `internal/`. The repository as a whole is at
 10.1%.
