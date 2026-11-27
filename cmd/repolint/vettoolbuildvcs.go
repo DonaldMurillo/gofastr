@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-var vettoolBuild = regexp.MustCompile(`(\bgo build\b|"build").*cmd/vettool("|\s|$)`)
+var vettoolBuild = regexp.MustCompile(`(\bgo build\b|"build").*cmd/vettool/?("|\s|$)`)
 
 func lintVettoolBuildVCS(root string) ([]finding, error) {
 	var findings []finding

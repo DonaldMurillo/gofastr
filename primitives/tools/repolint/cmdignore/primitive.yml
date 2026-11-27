@@ -10,7 +10,7 @@ invariants:
   - id: unreadable-is-an-error
     rule: An unreadable cmd/ or .gitignore is an error, not a clean result.
     enforced_by:
-      - test: cmd/repolint.TestLintCommandBinariesIgnored
+      - test: cmd/repolint.TestUnreadableCommandInputsAreErrors
 decisions:
   - id: enumerate-cmd
     date: 2026-11-26

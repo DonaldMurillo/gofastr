@@ -11,11 +11,12 @@ invariants:
       - test: cmd/repolint.TestSelectorStatusOtherSpellings
       - test: cmd/repolint.TestSelectorStatusOneFindingPerLine
   - id: substitution-span-follows-shell-quoting
-    rule: The substitution ends at the ")" that closes it, past nested $(…), a subshell, quoted parentheses and comments, and may cross lines; a test begun on a backslash-continued line is joined unless the backslash sits in a comment.
+    rule: The substitution ends at the ")" that closes it, past nested $(…), a subshell, a backslash-escaped ")", quoted parentheses and comments, and may cross lines; a "#" inside quotes before it opens no comment; a test begun on a backslash-continued line is joined unless the backslash sits in a comment.
     enforced_by:
       - test: cmd/repolint.TestSelectorStatusOtherSpellings
       - test: cmd/repolint.TestSelectorStatusSubshellInsideSubstitution
       - test: cmd/repolint.TestSelectorStatusCommentBackslash
+      - test: cmd/repolint.TestSelectorSpanFollowsEscapesAndQuotes
   - id: assigned-or-commented-passes
     rule: A substitution assigned on its own line, one of another command, test used as an argument, and a test in a shell comment are not findings.
     enforced_by:
