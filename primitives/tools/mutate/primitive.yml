@@ -21,9 +21,11 @@ invariants:
     rule: Every go test run, baseline and mutant, passes -count=1 and -timeout, runs from the module root, and sets a WaitDelay so a grandchild holding the output pipe cannot wedge the run past its deadline.
     enforced_by:
       - test: cmd/mutate.TestEveryGoTestRunIsBounded
+      - test: cmd/mutate.TestBaselineAndMutantRunsGoThroughTheBoundedSeam
   - id: wall-clock-deadline-on-every-run
     rule: Every go test run is started under a context deadline of -timeout plus baselineBuildGrace, because -timeout bounds the test binary and not the build before it.
-    judge: Does this change start a go test run without a context deadline, or with one that does not add the build grace to -timeout?
+    enforced_by:
+      - test: cmd/mutate.TestBaselineAndMutantRunsGoThroughTheBoundedSeam
   - id: expired-run-needs-the-test-timeout
     rule: A run killed at its wall-clock deadline is caught only when the output holds the test binary's own timeout panic; otherwise it is a harness error, not a verdict.
     enforced_by:
@@ -68,6 +70,8 @@ invariants:
     rule: On SIGINT or SIGTERM the run marks itself stopping, restores every file holding a mutant, releases the lock and exits 130; addAndWrite refuses once stopping and writes under the same mutex, so no mutant lands after the restore.
     enforced_by:
       - test: cmd/mutate.TestInterruptRestoresAndRefusesFurtherMutants
+      - test: cmd/mutate.TestInterruptMidRunRestoresTheSourceAndExits130
+      - test: cmd/mutate.TestInterruptStopsBeforeItRestores
       - test: cmd/mutate.TestRestoreSetRefusesNewMutantsOnceStopping
       - test: cmd/mutate.TestRestoreSetIsSafeUnderConcurrentUse
   - id: one-package-per-run

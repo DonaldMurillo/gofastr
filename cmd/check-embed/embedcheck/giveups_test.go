@@ -17,6 +17,8 @@ func TestEachGiveUpIsOneNote(t *testing.T) {
 		"xpkg-twice":         "from another package",
 		"xpkg-iface-render":  "interface-typed",
 		"mixed-options":      "not a string literal",
+		"no-concrete":        "no concrete type visible",
+		"self-ref":           "interface-typed",
 	}
 	got := map[string]int{}
 	for _, n := range notes {

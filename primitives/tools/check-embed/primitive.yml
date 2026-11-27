@@ -3,6 +3,9 @@ summary: The build-time check that fails when an embeddable surface's screen ren
 code:
   - cmd/check-embed/main.go
   - cmd/check-embed/embedcheck/check.go
+  - cmd/check-embed/main_test.go
+  - cmd/check-embed/embedcheck/check_test.go
+  - cmd/check-embed/embedcheck/driver_test.go
 docs:
   - framework/docs/content/embed.md
 on_change:

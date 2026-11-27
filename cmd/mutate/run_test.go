@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/cmd/mutate/guardmut"
 )
 
 func TestRunRefusesBeforeAnyMutant(t *testing.T) {
@@ -76,6 +78,49 @@ func TestEveryGoTestRunIsBounded(t *testing.T) {
 	}
 	if cmd.WaitDelay <= 0 {
 		t.Error("no WaitDelay: a grandchild holding the output pipe would wedge the run after its deadline")
+	}
+}
+
+func TestBaselineAndMutantRunsGoThroughTheBoundedSeam(t *testing.T) {
+	type call struct {
+		args     []string
+		deadline bool
+		left     time.Duration
+	}
+	var calls []call
+	saved := newGoTest
+	newGoTest = func(ctx context.Context, moduleRoot string, args []string) *exec.Cmd {
+		d, ok := ctx.Deadline()
+		calls = append(calls, call{args: args, deadline: ok, left: time.Until(d)})
+		return goTest(ctx, moduleRoot, []string{"version"})
+	}
+	defer func() { newGoTest = saved }()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "guard.go")
+	original := []byte("package guards\n\nfunc choose(v int) int {\n\tif v > 0 {\n\t\treturn 1\n\t}\n\treturn 0\n}\n")
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	guards, err := guardmut.Find("guard.go", original, guardmut.Options{})
+	if err != nil || len(guards) == 0 {
+		t.Fatalf("no guard in the fixture: %v", err)
+	}
+	_ = checkBaseline("./guards/", "TestX", dir, time.Minute)
+	_, _ = runMutant(path, original, guards[0], "./guards/", "TestX", dir, time.Minute, newRestoreSet())
+	if len(calls) != 2 {
+		t.Fatalf("%d go test runs went through newGoTest, want 2 (the baseline and the mutant): a call site builds its own command", len(calls))
+	}
+	for i, c := range calls {
+		if !c.deadline || !slices.Contains(c.args, "-timeout=1m0s") || !slices.Contains(c.args, "-count=1") {
+			t.Errorf("run %d: args %v, deadline %v; want -count=1, -timeout and a context deadline", i, c.args, c.deadline)
+		}
+		if c.left <= baselineBuildGrace {
+			t.Errorf("run %d: %s left on its deadline, want -timeout plus the %s build grace", i, c.left, baselineBuildGrace)
+		}
+	}
+	if back, _ := os.ReadFile(path); string(back) != string(original) {
+		t.Errorf("the mutant run left %q on disk", back)
 	}
 }
 
