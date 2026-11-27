@@ -32,7 +32,6 @@
 
   const ROOT = '[data-hui-tooltip]';
   const HIDE_DELAY = 120;
-  const GAP = 6;
   const EDGE = 8;
   // The kit's sheet positions an upgraded pop with anchor-scope on the
   // wrapper and position-area on the pop; a browser without them, or a
@@ -80,7 +79,13 @@
   function hideSoon() {
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
-      if (open && !open.pinned && !focusInside(open)) hideNow();
+      if (!open || open.pinned || focusInside(open)) return;
+      hideNow();
+      // A tooltip whose trigger still has focus, closed when this one
+      // opened over it, comes back.
+      const focused = document.activeElement;
+      const back = focused && focused !== document.body ? tipAt(focused) : null;
+      if (back && !back.dismissed) show(back);
     }, HIDE_DELAY);
   }
 
@@ -93,6 +98,18 @@
     const phys = { top: 'top', bottom: 'bottom', left: rtl ? 'right' : 'left', right: rtl ? 'left' : 'right' }[want] || 'top';
     const opposite = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' }[phys];
     return phys === 'top' || phys === 'bottom' ? [phys, opposite] : [phys, opposite, 'bottom', 'top'];
+  }
+  // The pop's distance from its trigger: the sheet's --fui-tooltip-gap,
+  // measured once, or 6px for a skin that does not set it.
+  function gapOf(tip) {
+    if (tip.gap === undefined) {
+      const probe = document.createElement('span');
+      probe.style.cssText = 'position:absolute;visibility:hidden;inline-size:var(--fui-tooltip-gap, 6px);block-size:0';
+      tip.root.appendChild(probe);
+      tip.gap = probe.getBoundingClientRect().width;
+      probe.remove();
+    }
+    return tip.gap;
   }
   // Whether el is scrolled out of the viewport or of a box that clips it.
   function clippedOut(el) {
@@ -111,6 +128,7 @@
     const p = tip.pop.getBoundingClientRect();
     const vw = document.documentElement.clientWidth;
     const vh = document.documentElement.clientHeight;
+    const GAP = gapOf(tip);
     const at = {
       top: { top: r.top - p.height - GAP, left: r.left + (r.width - p.width) / 2 },
       bottom: { top: r.bottom + GAP, left: r.left + (r.width - p.width) / 2 },
@@ -182,10 +200,11 @@
   }, true);
   // Escape closes the open tooltip and goes no further, so a dialog the
   // tooltip sits in stays open; with no tooltip open, or only one whose
-  // wrapper has left the page, it passes through.
+  // wrapper has left the page or whose pop other code has hidden, it
+  // passes through.
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || !open || e.isComposing || e.keyCode === 229 || e.defaultPrevented) return;
-    if (!open.root.isConnected) { hideNow(); return; }
+    if (!open.root.isConnected || !open.pop.matches(':popover-open')) { hideNow(); return; }
     open.dismissed = true;
     hideNow();
     e.stopImmediatePropagation();

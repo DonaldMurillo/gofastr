@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
@@ -437,5 +438,95 @@ func TestTooltipClickOnThePopGetsItOutOfTheWay(t *testing.T) {
 	evalJS(t, ctx, `window.__clicks1 || 0`, &clicks)
 	if clicks != 1 {
 		t.Fatalf("the first row's button got %d clicks after the pop was clicked away, want 1", clicks)
+	}
+}
+
+// With forced colours the pop keeps a visible edge: the background turns
+// to Canvas, so without a border the text would float loose.
+func TestTooltipKeepsAnEdgeInForcedColours(t *testing.T) {
+	forced := emulation.SetEmulatedMedia().WithFeatures([]*emulation.MediaFeature{{Name: "forced-colors", Value: "active"}})
+	tip := ui.Tooltip(ui.TooltipConfig{Text: "Saves the draft", ID: "tip"},
+		render.HTML(`<button id="trigger" type="button">Save</button>`))
+	ctx := tooltipBodyPage(t, anchoredKit, `<div style="padding: 200px; text-align: center">`+string(tip)+`</div>`, 900, 600, forced)
+	hoverID(t, ctx, "trigger")
+	waitOpen(t, ctx, "tip", "hover did not open the pop")
+	var edge bool
+	evalJS(t, ctx, `(() => { const s = getComputedStyle(document.getElementById('tip')); return s.borderTopStyle !== 'none' && parseFloat(s.borderTopWidth) >= 1; })()`, &edge)
+	if !edge {
+		t.Fatal("the open pop has no border under forced colours")
+	}
+}
+
+// Long text wraps inside the pop and stays on a phone's screen.
+func TestTooltipLongTextWrapsOnAPhone(t *testing.T) {
+	for _, mode := range []tipMode{anchoredKit, fallbackKit} {
+		t.Run(mode.String(), func(t *testing.T) {
+			tip := ui.Tooltip(ui.TooltipConfig{Text: "Saves the draft to your workspace without closing the editor, so you can keep writing", ID: "tip"},
+				render.HTML(`<button id="trigger" type="button">Save</button>`))
+			ctx := tooltipBodyPage(t, mode, `<div style="padding: 200px 0; text-align: center">`+string(tip)+`</div>`, 375, 600)
+			hoverID(t, ctx, "trigger")
+			waitOpen(t, ctx, "tip", "hover did not open the pop")
+			pop := rectOf(t, ctx, "tip")
+			var spill bool
+			evalJS(t, ctx, `(() => { const e = document.getElementById('tip'); return e.scrollWidth > e.clientWidth + 1; })()`, &spill)
+			if spill || pop.Left < 0 || pop.Right > 375 {
+				t.Fatalf("the pop %+v spills its text (%v) or leaves a 375px screen", pop, spill)
+			}
+		})
+	}
+}
+
+// A pop hidden by other code (hidePopover, a swap that strips popover)
+// does not swallow the next Escape.
+func TestTooltipEscapePassesWhenItsPopIsAlreadyHidden(t *testing.T) {
+	ctx := tooltipPage(t, true)
+	if !pollJS(ctx, moduleLoaded("headless-tooltip")) {
+		t.Fatal("headless-tooltip did not load")
+	}
+	hoverID(t, ctx, "trigger")
+	waitOpen(t, ctx, "tip", "hover did not open the pop")
+	evalJS(t, ctx, `window.__escSeen = 0; document.addEventListener('keydown', e => { if (e.key === 'Escape') window.__escSeen++; }); document.getElementById('tip').hidePopover()`, nil)
+	pressEscape(t, ctx)
+	var seen int
+	evalJS(t, ctx, `window.__escSeen`, &seen)
+	if seen != 1 {
+		t.Fatalf("after other code hid the pop, the page saw %d Escape presses, want 1", seen)
+	}
+}
+
+// A tooltip open by focus comes back when another, opened by hover over
+// it, closes as the pointer leaves, since focus never left its trigger.
+func TestTooltipFocusedOneComesBackAfterAHover(t *testing.T) {
+	ctx := tooltipPage(t, true)
+	evalJS(t, ctx, cloneTooltip, nil)
+	if !pollJS(ctx, moduleLoaded("headless-tooltip")) {
+		t.Fatal("headless-tooltip did not load")
+	}
+	focusID(t, ctx, "trigger")
+	waitOpen(t, ctx, "tip", "focus did not open the first pop")
+	hoverID(t, ctx, "trigger2")
+	waitOpen(t, ctx, "tip2", "hover did not open the second pop")
+	movePointer(t, ctx, 880, 580)
+	settle()
+	if tipOpen(ctx, "tip2") || !tipOpen(ctx, "tip") {
+		t.Fatalf("after the pointer left: hovered pop open %v, focused pop open %v; want closed and open", tipOpen(ctx, "tip2"), tipOpen(ctx, "tip"))
+	}
+}
+
+// The gap between pop and trigger comes from the sheet's spacing token,
+// whoever places the pop, so the module does not keep its own copy.
+func TestTooltipGapFollowsTheSpacingToken(t *testing.T) {
+	for _, mode := range []tipMode{anchoredKit, fallbackKit} {
+		t.Run(mode.String(), func(t *testing.T) {
+			tip := ui.Tooltip(ui.TooltipConfig{Text: "Saves the draft", ID: "tip", Placement: ui.TooltipBottom},
+				render.HTML(`<button id="trigger" type="button">Save</button>`))
+			ctx := tooltipBodyPage(t, mode, `<style>:root { --spacing-sm: 10px; }</style><div style="padding: 200px 0; text-align: center">`+string(tip)+`</div>`, 900, 600)
+			hoverID(t, ctx, "trigger")
+			waitOpen(t, ctx, "tip", "hover did not open the pop")
+			pop, trigger := rectOf(t, ctx, "tip"), rectOf(t, ctx, "trigger")
+			if gap := pop.Top - trigger.Bottom; math.Abs(gap-15) > 1 {
+				t.Fatalf("the pop sits %vpx below its trigger, want 15 (1.5 × a 10px --spacing-sm)", gap)
+			}
+		})
 	}
 }

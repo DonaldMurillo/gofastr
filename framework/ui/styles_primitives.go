@@ -645,6 +645,8 @@ func toggleCSS(_ style.Theme) string {
 
 func tooltipCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-tooltip"] {
+  /* The pop's distance from its trigger, by CSS and by the module. */
+  --fui-tooltip-gap: calc(var(--spacing-sm, 4px) * 1.5);
   position: relative;
   display: inline-block;
   /* Allow keyboard focus on the wrapper for :focus-within to reveal
@@ -653,7 +655,7 @@ func tooltipCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-tooltip"] .fui-tooltip__pop {
   position: absolute;
-  inset-block-end: calc(100% + calc(var(--spacing-sm, 4px) * 1.5));
+  inset-block-end: calc(100% + var(--fui-tooltip-gap));
   left: 50%;
   transform: translateX(-50%) translateY(4px);
   background: var(--color-text);
@@ -682,7 +684,7 @@ func tooltipCSS(_ style.Theme) string {
 
 [data-cui-comp="ui-tooltip"].fui-tooltip--bottom .fui-tooltip__pop {
   inset-block-end: auto;
-  inset-block-start: calc(100% + calc(var(--spacing-sm, 4px) * 1.5));
+  inset-block-start: calc(100% + var(--fui-tooltip-gap));
   transform: translateX(-50%) translateY(-4px);
 }
 [data-cui-comp="ui-tooltip"].fui-tooltip--bottom:hover .fui-tooltip__pop,
@@ -692,7 +694,7 @@ func tooltipCSS(_ style.Theme) string {
 [data-cui-comp="ui-tooltip"].fui-tooltip--left .fui-tooltip__pop {
   inset-block-end: 50%;
   left: auto;
-  inset-inline-end: calc(100% + calc(var(--spacing-sm, 4px) * 1.5));
+  inset-inline-end: calc(100% + var(--fui-tooltip-gap));
   transform: translateY(50%) translateX(4px);
 }
 [data-cui-comp="ui-tooltip"].fui-tooltip--left:hover .fui-tooltip__pop,
@@ -702,7 +704,7 @@ func tooltipCSS(_ style.Theme) string {
 [data-cui-comp="ui-tooltip"].fui-tooltip--right .fui-tooltip__pop {
   inset-block-end: 50%;
   left: auto;
-  inset-inline-start: calc(100% + calc(var(--spacing-sm, 4px) * 1.5));
+  inset-inline-start: calc(100% + var(--fui-tooltip-gap));
   transform: translateY(50%) translateX(-4px);
 }
 [data-cui-comp="ui-tooltip"].fui-tooltip--right:hover .fui-tooltip__pop,
@@ -735,6 +737,14 @@ func tooltipCSS(_ style.Theme) string {
   opacity: 1;
   visibility: visible;
 }
+/* Forced colours turn the background to Canvas: a border keeps the pop's
+   edge. */
+@media (forced-colors: active) {
+  [data-cui-comp="ui-tooltip"] .fui-tooltip__pop,
+  [data-cui-comp="ui-tooltip"][data-hui-tooltip-live] .fui-tooltip__pop[popover] {
+    border: var(--stroke-thin, 1px) solid CanvasText;
+  }
+}
 @supports (anchor-scope: --x) and (position-area: top) {
   [data-cui-comp="ui-tooltip"][data-hui-tooltip-live] {
     anchor-name: --fui-tooltip;
@@ -744,7 +754,7 @@ func tooltipCSS(_ style.Theme) string {
     position-anchor: --fui-tooltip;
     position-area: top;
     position-try-fallbacks: flip-block;
-    margin: calc(var(--spacing-sm, 4px) * 1.5);
+    margin: var(--fui-tooltip-gap);
   }
   [data-cui-comp="ui-tooltip"][data-hui-tooltip-live].fui-tooltip--bottom .fui-tooltip__pop[popover] { position-area: bottom; }
   [data-cui-comp="ui-tooltip"][data-hui-tooltip-live].fui-tooltip--left .fui-tooltip__pop[popover] { position-area: self-inline-start; position-try-fallbacks: flip-inline, bottom, top; }
