@@ -90,14 +90,21 @@
   // A stack mounted in a widget (uihost's default, preset.ToastStack)
   // rises with it: the widget root is a manual popover while the stack
   // holds a row, so a toast shows above whatever is already in the top
-  // layer. A stack a layout places itself stays put.
+  // layer, and re-raised when a new row joins, so a popover opened since
+  // does not cover it. A stack a layout places itself stays put.
+  const seen = new WeakSet();
   function syncLayer(stack) {
     const h = stack.closest('[data-cui-widget]');
     if (!h || !h.showPopover) return;
-    const rows = !!stack.querySelector(':is([data-hui-toast-id],[data-hui-toast]):not([data-hui-toast-leaving])');
-    if (rows === h.matches(':popover-open')) return;
-    if (rows) h.setAttribute('popover', 'manual');
-    try { rows ? h.showPopover() : h.hidePopover(); } catch (_) {}
+    let fresh = false;
+    const rows = stack.querySelectorAll(':is([data-hui-toast-id],[data-hui-toast]):not([data-hui-toast-leaving])');
+    for (const r of rows) if (!seen.has(r)) { seen.add(r); fresh = true; }
+    const open = h.matches(':popover-open');
+    if (rows.length ? open && !fresh : !open) return;
+    try {
+      if (open) h.hidePopover();
+      if (rows.length) { h.setAttribute('popover', 'manual'); h.showPopover(); }
+    } catch (_) {}
   }
 
   // Behind a modal, or in an inert subtree, a toast is neither seen nor
@@ -446,9 +453,12 @@
 
   // ─── the arrival pass ────────────────────────────────────────────
 
+  // A row inserted inside a stack (a signal swap) arms its stack too.
   function scan(root) {
+    const sel = '[data-hui-toast-stack],[data-cui-toast-stack]';
     const scope = root && root.querySelectorAll ? root : document;
-    for (const c of within(scope, '[data-hui-toast-stack],[data-cui-toast-stack]')) NS._initToasts(c);
+    const up = scope.parentElement?.closest(sel);
+    for (const c of up ? [up] : within(scope, sel)) NS._initToasts(c);
   }
 
   scan(document);

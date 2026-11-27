@@ -134,3 +134,51 @@ func TestToastHeldWhileAWidgetModalIsOpen(t *testing.T) {
 		t.Fatal("the held toast did not show once the widget modal closed")
 	}
 }
+
+// A toast raised after a popover opened over an already-raised stack
+// shows above that popover, and focus on the first toast stays put.
+func TestToastRisesAgainOverALaterPopover(t *testing.T) {
+	ctx := toastPage(t)
+	evalJS(t, ctx, `window.__gofastr.toast({title: 'First', ttl: 0})`, nil)
+	if !pollJS(ctx, stackHost+`.matches(':popover-open')`) {
+		t.Fatal("the stack did not rise for the first toast")
+	}
+	evalJS(t, ctx, `document.querySelector('[data-hui-toast-dismiss]').focus(); document.getElementById('cover').showPopover()`, nil)
+	var second string
+	evalJS(t, ctx, `window.__gofastr.toast({title: 'Second', ttl: 0})`, &second)
+	settle()
+	var hit string
+	evalJS(t, ctx, `(() => { const r = document.querySelector('[data-hui-toast-id="`+second+`"]').getBoundingClientRect(); const el = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2); return el && el.closest('[data-hui-toast-id]') ? 'toast' : (el ? el.id || el.tagName : ''); })()`, &hit)
+	if hit != "toast" {
+		t.Fatalf("the second toast's centre hits %q: it is under the popover opened after the stack rose", hit)
+	}
+	var focused bool
+	evalJS(t, ctx, `document.activeElement === document.querySelector('[data-hui-toast-dismiss]')`, &focused)
+	if !focused {
+		t.Fatal("raising the stack again moved focus off the first toast's dismiss button")
+	}
+	var toggles int
+	evalJS(t, ctx, `(() => { window.__toggles = 0; `+stackHost+`.addEventListener('toggle', () => window.__toggles++); window.__gofastr._initToasts(document.body); })()`, nil)
+	settle()
+	evalJS(t, ctx, `window.__toggles`, &toggles)
+	if toggles != 0 {
+		t.Fatalf("a sync that added no row toggled the stack's widget %d times, want none", toggles)
+	}
+}
+
+// A row a signal swap puts inside a closed stack opens the stack's
+// widget, as a toast() row does.
+func TestToastRowSwappedIntoAStackOpensIt(t *testing.T) {
+	ctx := toastPage(t)
+	evalJS(t, ctx, `document.querySelector('[data-cui-toast-stack="toasts"]').insertAdjacentHTML('beforeend', '<div id="slot"></div>')`, nil)
+	settle()
+	var open bool
+	evalJS(t, ctx, stackHost+`.matches(':popover-open')`, &open)
+	if open {
+		t.Fatal("the stack rose with no row in it")
+	}
+	evalJS(t, ctx, `document.getElementById('slot').innerHTML = '<div data-hui-toast role="status">Swapped</div>'`, nil)
+	if !pollJS(ctx, stackHost+`.matches(':popover-open')`) {
+		t.Fatal("a row swapped into the stack left its widget closed")
+	}
+}

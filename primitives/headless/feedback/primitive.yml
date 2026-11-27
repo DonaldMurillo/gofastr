@@ -164,8 +164,16 @@ invariants:
     enforced_by:
       - test: framework/ui.TestToastStackRisesIntoTheTopLayer
       - test: framework/ui.TestToastStackLeavesTheTopLayerWhenEmpty
+  - id: toast-stack-rises-again-for-a-new-row
+    rule: When a row the module has not seen joins a stack whose widget is already open, the widget is shown again so it sits above a popover opened since; focus inside the stack stays where it was, and a sync that adds no row changes nothing.
+    enforced_by:
+      - test: framework/ui.TestToastRisesAgainOverALaterPopover
+  - id: toast-row-swapped-into-a-stack-arms-it
+    rule: A row a signal swap or any other insertion puts inside a stack arms that stack, so a closed stack's widget opens for it; the module's scanner syncs the stack around the inserted root, not only stacks inside it.
+    enforced_by:
+      - test: framework/ui.TestToastRowSwappedIntoAStackOpensIt
   - id: toast-held-while-the-page-is-modal
-    rule: A toast raised while a modal is open (a :modal element, a widget modal on _modalStack) or while its stack sits in an inert subtree is built and its id returned, but joins its stack only once none of those holds, checked when a dialog closes, a widget closes (fui:widget-close) or an open, inert or hidden attribute or the tree changes.
+    rule: A toast raised while a modal is open (a :modal element, a widget modal on _modalStack) or while its stack sits in an inert subtree is built and its id returned, but joins its stack only once none of those holds, checked when a dialog closes, a widget closes (fui:widget-close) or an open or inert attribute or the tree changes.
     enforced_by:
       - test: framework/ui.TestToastHeldWhileAModalIsOpen
       - test: framework/ui.TestToastHeldWhileTheStackIsInert
@@ -485,7 +493,7 @@ decisions:
         why: A layout places that stack with its own CSS, which the browser's popover defaults would override.
       - option: Showing toasts behind a modal.
         why: Content behind a modal is inert, so the toast is neither announced nor reachable and is likely missed.
-    upholds: [toast-stack-rises-to-the-top-layer, toast-held-while-the-page-is-modal]
+    upholds: [toast-stack-rises-to-the-top-layer, toast-stack-rises-again-for-a-new-row, toast-row-swapped-into-a-stack-arms-it, toast-held-while-the-page-is-modal]
   - id: toast-words-travel-on-the-stack
     date: 2026-11-16
     status: accepted
