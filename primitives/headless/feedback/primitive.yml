@@ -27,7 +27,7 @@ invariants:
       - test: framework/ui.TestTooltipRisesIntoTheTopLayerOutOfAClippingBox
       - test: framework/ui.TestTooltipOpensForATriggerUsedBeforeTheModuleLoads
   - id: tooltip-is-hoverable-and-dismissable
-    rule: An upgraded Tooltip is the only one open, stays open while the pointer is over its trigger or its pop or focus is inside the wrapper, closes once both have left (leaving every tooltip they were in, nested ones included), stays open after a tap until the next pointerdown outside its wrapper, keeps a click on its open pop from reaching what it sits in, and closes on Escape, which it consumes from every later listener, staying closed until pointer and focus have both left the wrapper; a dismissed Tooltip the pointer enters does not keep another open, and Escape passes through during IME composition, when another handler has already taken it with preventDefault and when the open Tooltip's wrapper has left the page; a Tooltip hovered and then focused stays open when focus leaves while the pointer stays; a trigger focused and hovered at load stays open when focus leaves while the pointer stays, and with focus and the pointer on different tooltips at load the focused one opens and the hovered one is upgraded but stays closed.
+    rule: An upgraded Tooltip is the only one open, stays open while the pointer is over its trigger or its pop or focus is inside the wrapper, closes once both have left (leaving every tooltip they were in, nested ones included), stays open after a tap until the next pointerdown outside its wrapper, keeps a click on its open pop from reaching what it sits in and dismisses itself on that click, and closes on Escape, which it consumes from every later listener, staying closed until pointer and focus have both left the wrapper; a dismissed Tooltip the pointer enters does not keep another open, and Escape passes through during IME composition, when another handler has already taken it with preventDefault and when the open Tooltip's wrapper has left the page; a Tooltip hovered and then focused stays open when focus leaves while the pointer stays; a trigger focused and hovered at load stays open when focus leaves while the pointer stays, and with focus and the pointer on different tooltips at load the focused one opens and the hovered one is upgraded but stays closed.
     enforced_by:
       - test: framework/ui.TestTooltipCanBeHoveredAndClosesWhenThePointerLeaves
       - test: framework/ui.TestTooltipEscapeDismissesWithoutMovingThePointer
@@ -43,6 +43,7 @@ invariants:
       - test: framework/ui.TestTooltipHoverOutlastsFocus
       - test: framework/ui.TestTooltipStaysAfterATap
       - test: framework/ui.TestTooltipClickOnThePopStaysOnThePop
+      - test: framework/ui.TestTooltipClickOnThePopGetsItOutOfTheWay
       - test: framework/ui.TestTooltipNestedLetsGoOfTheOuter
       - test: framework/ui.TestTooltipLeavesAnEscapeAlreadyTaken
       - test: core-ui/check.TestLintKeyGuard_Repo

@@ -400,3 +400,42 @@ func TestHeadlessTooltipWithoutTheKitSheetSitsBesideItsTrigger(t *testing.T) {
 		t.Fatalf("the pop's centre %v is not over its trigger (%v..%v)", mid, trigger.Left, trigger.Right)
 	}
 }
+
+// A pop over a neighbouring control: a click on it dismisses the tooltip,
+// so the next click reaches the control beneath.
+func TestTooltipClickOnThePopGetsItOutOfTheWay(t *testing.T) {
+	row := func(n string) string {
+		tip := ui.Tooltip(ui.TooltipConfig{Text: "Edits this row and everything in it", ID: "tip" + n},
+			render.HTML(`<button id="edit`+n+`" type="button" onclick="window.__clicks`+n+` = (window.__clicks`+n+` || 0) + 1">Edit</button>`))
+		return `<div style="height: 32px; display: flex; align-items: center">` + string(tip) + `</div>`
+	}
+	ctx := tooltipBodyPage(t, anchoredKit, `<div style="padding: 150px 300px">`+row("1")+row("2")+`</div>`, 900, 600)
+	hoverID(t, ctx, "edit2")
+	waitOpen(t, ctx, "tip2", "hover did not open the second row's pop")
+	target, pop := rectOf(t, ctx, "edit1"), rectOf(t, ctx, "tip2")
+	x, y := (target.Left+target.Right)/2, (target.Top+target.Bottom)/2
+	if x < pop.Left || x > pop.Right || y < pop.Top || y > pop.Bottom {
+		t.Fatalf("the second row's pop %+v does not cover the first row's button %+v, so the test proves nothing", pop, target)
+	}
+	movePointer(t, ctx, x, y)
+	settle()
+	if !tipOpen(ctx, "tip2") {
+		t.Fatal("the pop closed when the pointer moved onto it")
+	}
+	if err := chromedp.Run(ctx, chromedp.MouseClickXY(x, y)); err != nil {
+		t.Fatal(err)
+	}
+	settle()
+	if tipOpen(ctx, "tip2") {
+		t.Fatal("a click on the pop left it open over the control beneath")
+	}
+	if err := chromedp.Run(ctx, chromedp.MouseClickXY(x, y)); err != nil {
+		t.Fatal(err)
+	}
+	settle()
+	var clicks int
+	evalJS(t, ctx, `window.__clicks1 || 0`, &clicks)
+	if clicks != 1 {
+		t.Fatalf("the first row's button got %d clicks after the pop was clicked away, want 1", clicks)
+	}
+}

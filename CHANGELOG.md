@@ -81,7 +81,7 @@ few lines, and link the PR or the docs page for the rest.
   that already has an `aria-describedby` keeps it, with the tooltip's id
   added to the list. A tap on a trigger that cannot take focus keeps
   it open until the next tap elsewhere, a click on the open pop stays on
-  the pop, and a left or right tooltip with no room on either side
+  the pop and dismisses it, so a control it covered takes the next click, and a left or right tooltip with no room on either side
   moves below or above its trigger. It now renders through the new
   `headless.Tooltip`, and the new `registry.AddAttributeToken` adds one
   id to such a list. `ui.Tooltip` now panics on an unknown `Placement`,

@@ -15,7 +15,8 @@
 //     another handler already took is left alone), and keeps it closed
 //     until both have left the wrapper;
 //   - keeps a click on the pop on the pop, so it does not reach a label
-//     or row the tooltip sits in;
+//     or row the tooltip sits in, and dismisses the tooltip, so a control
+//     the pop covered takes the next click;
 //   - places it beside the trigger: CSS anchor positioning where the
 //     skin's sheet does it, otherwise fixed coordinates on the preferred
 //     side, then the opposite one, then (for left and right) below and
@@ -79,7 +80,7 @@
   function hideSoon() {
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
-      if (open && !open.hovered && !open.pinned && !focusInside(open)) hideNow();
+      if (open && !open.pinned && !focusInside(open)) hideNow();
     }, HIDE_DELAY);
   }
 
@@ -191,12 +192,16 @@
     e.preventDefault();
   }, true);
   // The pop takes the pointer so it can be hovered; a click on it is a
-  // click on the pop, not on the label or row the tooltip sits in.
+  // click on the pop, not on the label or row the tooltip sits in, and it
+  // dismisses the tooltip, so a control the pop covered takes the next.
   document.addEventListener('click', (e) => {
     const pop = e.target && e.target.closest ? e.target.closest('[data-hui-tooltip-pop]') : null;
-    if (pop && pop.popover === 'manual') {
-      e.preventDefault();
-      e.stopPropagation();
+    if (!pop || pop.popover !== 'manual') return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (open && open.pop === pop) {
+      open.dismissed = true;
+      hideNow();
     }
   }, true);
   let frame = 0;
