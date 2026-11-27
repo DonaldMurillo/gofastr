@@ -49,6 +49,25 @@ func tooltipServer(t *testing.T, anchorPositioning bool, extra func(mux *http.Se
 	if testing.Short() {
 		t.Skip("browser E2E disabled in short mode")
 	}
+	tip := ui.Tooltip(ui.TooltipConfig{Text: "Saves the draft without closing it", ID: "tip"},
+		render.HTML(`<button id="trigger" type="button"><span id="trigger-label">Save</span></button>`))
+	inDialog := ui.Tooltip(ui.TooltipConfig{Text: "Inside the dialog", ID: "tip-dialog"},
+		render.HTML(`<button id="dialog-trigger" type="button">Help</button>`))
+	body := `<div id="clip" style="overflow: hidden; width: 220px; height: 36px; margin: 4px 120px">` + string(tip) + `</div>` +
+		`<button id="elsewhere" type="button" style="margin: 300px 0 0 20px">Elsewhere</button>` +
+		`<dialog id="dlg"><p>A dialog</p>` + string(inDialog) + `</dialog>`
+	var adds []func(mux *http.ServeMux)
+	if extra != nil {
+		adds = append(adds, extra)
+	}
+	return themeTestPageWithHead(t, kitHead(t, anchorPositioning), body, adds...).URL
+}
+
+// kitHead is the <style> a page carries: the theme and every registered
+// sheet, without the anchor-positioning block when anchorPositioning is
+// false, as a browser without it ignores that block.
+func kitHead(t *testing.T, anchorPositioning bool) string {
+	t.Helper()
 	th := theme.Default()
 	var css strings.Builder
 	for _, e := range registry.All() {
@@ -59,19 +78,7 @@ func tooltipServer(t *testing.T, anchorPositioning bool, extra func(mux *http.Se
 	if !anchorPositioning {
 		sheet = withoutBlock(t, sheet, "@supports (anchor-scope: --x) and (position-area: top) {")
 	}
-	head := "<style>" + th.CSSCustomProperties() + "\n" + sheet + "</style>"
-	tip := ui.Tooltip(ui.TooltipConfig{Text: "Saves the draft without closing it", ID: "tip"},
-		render.HTML(`<button id="trigger" type="button">Save</button>`))
-	inDialog := ui.Tooltip(ui.TooltipConfig{Text: "Inside the dialog", ID: "tip-dialog"},
-		render.HTML(`<button id="dialog-trigger" type="button">Help</button>`))
-	body := `<div id="clip" style="overflow: hidden; width: 220px; height: 36px; margin: 4px 120px">` + string(tip) + `</div>` +
-		`<button id="elsewhere" type="button" style="margin: 300px 0 0 20px">Elsewhere</button>` +
-		`<dialog id="dlg"><p>A dialog</p>` + string(inDialog) + `</dialog>`
-	var adds []func(mux *http.ServeMux)
-	if extra != nil {
-		adds = append(adds, extra)
-	}
-	return themeTestPageWithHead(t, head, body, adds...).URL
+	return "<style>" + th.CSSCustomProperties() + "\n" + sheet + "</style>"
 }
 
 // withoutBlock drops the brace-balanced block that opens with head from
@@ -179,10 +186,11 @@ func TestTooltipCanBeHoveredAndClosesWhenThePointerLeaves(t *testing.T) {
 	if !pollJS(ctx, `document.getElementById('tip').matches(':popover-open')`) {
 		t.Fatal("hover did not open the pop")
 	}
-	// Across the gap and onto the pop: it stays.
+	// Across the gap and onto the pop: it stays. Both boxes are read
+	// first, so the two moves follow each other inside the hide delay.
 	trigger, pop := rectOf(t, ctx, "trigger"), rectOf(t, ctx, "tip")
 	movePointer(t, ctx, (trigger.Left+trigger.Right)/2, (trigger.Bottom+pop.Top)/2)
-	hoverID(t, ctx, "tip")
+	movePointer(t, ctx, (pop.Left+pop.Right)/2, (pop.Top+pop.Bottom)/2)
 	settle()
 	if !tipOpen(ctx, "tip") {
 		t.Fatal("the pop closed while the pointer was over it")
@@ -208,9 +216,15 @@ func TestTooltipEscapeDismissesWithoutMovingThePointer(t *testing.T) {
 	if tipOpen(ctx, "tip") {
 		t.Fatal("Escape did not close the pop")
 	}
-	// The pointer moving within the trigger does not bring it back.
-	r := rectOf(t, ctx, "trigger")
-	movePointer(t, ctx, (r.Left+r.Right)/2+3, (r.Top+r.Bottom)/2+1)
+	// The pointer moving within the trigger, off its label onto the
+	// button's padding and back, fires pointerover and still does not
+	// bring it back.
+	r, label := rectOf(t, ctx, "trigger"), rectOf(t, ctx, "trigger-label")
+	if label.Left-r.Left < 2 {
+		t.Fatalf("the trigger (%v..%v) has no padding beside its label (%v..%v) to move onto", r.Left, r.Right, label.Left, label.Right)
+	}
+	movePointer(t, ctx, r.Left+1, (r.Top+r.Bottom)/2)
+	movePointer(t, ctx, (label.Left+label.Right)/2, (label.Top+label.Bottom)/2)
 	settle()
 	if tipOpen(ctx, "tip") {
 		t.Fatal("the dismissed pop came back while the pointer stayed on the trigger")
@@ -394,7 +408,7 @@ const cloneTooltip = `(() => {
 
 // gateModule holds the headless-tooltip module back until release is
 // closed, and closes requested when the browser asks for it.
-func gateModule(t *testing.T, requested, release chan struct{}) func(mux *http.ServeMux) {
+func gateModule(requested, release chan struct{}) func(mux *http.ServeMux) {
 	return func(mux *http.ServeMux) {
 		mux.HandleFunc("/__gofastr/runtime/headless-tooltip.js", func(w http.ResponseWriter, r *http.Request) {
 			close(requested)
@@ -423,7 +437,7 @@ func TestTooltipOpensForATriggerUsedBeforeTheModuleLoads(t *testing.T) {
 	for _, how := range []string{"focus", "hover", "focus and hover", "focus here, hover there"} {
 		t.Run(how, func(t *testing.T) {
 			requested, release := make(chan struct{}), make(chan struct{})
-			url := tooltipServer(t, true, gateModule(t, requested, release))
+			url := tooltipServer(t, true, gateModule(requested, release))
 			// The held module holds back the load event, so navigate
 			// without waiting for it.
 			ctx := chromedptest.Context(t)

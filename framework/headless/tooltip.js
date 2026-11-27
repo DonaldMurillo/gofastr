@@ -9,12 +9,18 @@
 //     focus is inside the wrapper (one tooltip open at a time);
 //   - keeps it open while the pointer crosses from the trigger onto the
 //     pop, so the pop can be hovered (WCAG 1.4.13);
-//   - closes it on Escape without moving the pointer or focus, and keeps
-//     it closed until both have left the wrapper;
+//   - keeps it open after a tap on a trigger that cannot take focus,
+//     until the next tap elsewhere, as the browser's sticky :hover does;
+//   - closes it on Escape without moving the pointer or focus (an Escape
+//     another handler already took is left alone), and keeps it closed
+//     until both have left the wrapper;
+//   - keeps a click on the pop on the pop, so it does not reach a label
+//     or row the tooltip sits in;
 //   - places it beside the trigger: CSS anchor positioning where the
-//     browser has it, otherwise fixed coordinates on the preferred side,
-//     flipped when that side has no room and clamped into the viewport,
-//     kept in step on scroll and resize.
+//     skin's sheet does it, otherwise fixed coordinates on the preferred
+//     side, then the opposite one, then (for left and right) below and
+//     above, clamped into the viewport, kept in step on scroll and
+//     resize and hidden while the trigger is clipped out of view.
 (() => {
   'use strict';
   const NAME = 'headless-tooltip';
@@ -27,9 +33,10 @@
   const HIDE_DELAY = 120;
   const GAP = 6;
   const EDGE = 8;
-  // The sheet positions an upgraded pop with anchor-scope on the wrapper
-  // and position-area on the pop; a browser with neither is placed here.
-  const anchored = !!(window.CSS && CSS.supports && CSS.supports('anchor-scope: --x') && CSS.supports('position-area: top'));
+  // The kit's sheet positions an upgraded pop with anchor-scope on the
+  // wrapper and position-area on the pop; a browser without them, or a
+  // skin that does not set them, is placed here.
+  const anchorCSS = !!(window.CSS && CSS.supports && CSS.supports('anchor-scope: --x') && CSS.supports('position-area: top'));
 
   let open = null;
   let hideTimer = 0;
@@ -44,7 +51,8 @@
     if (!pop || typeof pop.showPopover !== 'function') return null;
     pop.popover = 'manual';
     root.setAttribute('data-hui-tooltip-live', '');
-    root.__huiTip = { root, pop, hovered: false, dismissed: false };
+    const area = anchorCSS ? getComputedStyle(pop).getPropertyValue('position-area').trim() : '';
+    root.__huiTip = { root, pop, hovered: false, dismissed: false, pinned: false, anchored: area !== '' && area !== 'none' };
     return root.__huiTip;
   }
   function focusInside(tip) {
@@ -56,6 +64,7 @@
     if (!open) return;
     const tip = open;
     open = null;
+    tip.pinned = false;
     try { tip.pop.hidePopover(); } catch (_) {}
   }
   function show(tip) {
@@ -70,21 +79,33 @@
   function hideSoon() {
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
-      if (open && !open.hovered && !focusInside(open)) hideNow();
+      if (open && !open.hovered && !open.pinned && !focusInside(open)) hideNow();
     }, HIDE_DELAY);
   }
 
-  // The preferred side, then its opposite; left and right follow the
-  // reading direction.
+  // The preferred side, then its opposite, then for left and right below
+  // and above, as the sheet's position-try-fallbacks; left and right
+  // follow the reading direction.
   function sides(tip) {
     const want = tip.root.getAttribute('data-hui-tooltip-placement') || 'top';
     const rtl = getComputedStyle(tip.root).direction === 'rtl';
     const phys = { top: 'top', bottom: 'bottom', left: rtl ? 'right' : 'left', right: rtl ? 'left' : 'right' }[want] || 'top';
     const opposite = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' }[phys];
-    return [phys, opposite];
+    return phys === 'top' || phys === 'bottom' ? [phys, opposite] : [phys, opposite, 'bottom', 'top'];
+  }
+  // Whether el is scrolled out of the viewport or of a box that clips it.
+  function clippedOut(el) {
+    const r = el.getBoundingClientRect();
+    const out = (c) => r.bottom <= c.top || r.top >= c.bottom || r.right <= c.left || r.left >= c.right;
+    if (out({ top: 0, left: 0, bottom: window.innerHeight, right: window.innerWidth })) return true;
+    for (let a = el.parentElement; a && a !== document.body && a !== document.documentElement; a = a.parentElement) {
+      const s = getComputedStyle(a);
+      if ((s.overflowX !== 'visible' || s.overflowY !== 'visible') && out(a.getBoundingClientRect())) return true;
+    }
+    return false;
   }
   function place(tip) {
-    if (anchored || open !== tip) return;
+    if (tip.anchored || open !== tip) return;
     const r = tip.root.getBoundingClientRect();
     const p = tip.pop.getBoundingClientRect();
     const vw = document.documentElement.clientWidth;
@@ -99,16 +120,33 @@
       : s === 'bottom' ? at.bottom.top + p.height <= vh - EDGE
       : s === 'left' ? at.left.left >= EDGE
       : at.right.left + p.width <= vw - EDGE;
-    const [want, other] = sides(tip);
-    const side = fits(want) || !fits(other) ? want : other;
+    const order = sides(tip);
+    const side = order.find(fits) || order[0];
     const clamp = (v, size, max) => Math.min(Math.max(v, EDGE), Math.max(EDGE, max - size - EDGE));
+    // Placed on its own: a skin without the kit's sheet leaves the
+    // browser's popover insets and margin, which would centre it.
+    tip.pop.style.inset = 'auto';
+    tip.pop.style.margin = '0';
     tip.pop.style.top = clamp(at[side].top, p.height, vh) + 'px';
     tip.pop.style.left = clamp(at[side].left, p.width, vw) + 'px';
+    tip.pop.style.visibility = clippedOut(tip.root) ? 'hidden' : '';
   }
 
+  function rootOf(node) {
+    return node && node.closest ? node.closest(ROOT) : null;
+  }
   function tipAt(node) {
-    const root = node && node.closest ? node.closest(ROOT) : null;
+    const root = rootOf(node);
     return root ? upgrade(root) : null;
+  }
+  // Each upgraded tooltip from node's outward that the move to `to` leaves.
+  function leftTips(node, to) {
+    const left = [];
+    for (let root = rootOf(node); root; root = rootOf(root.parentElement)) {
+      if (to && root.contains(to)) break;
+      if (root.__huiTip) left.push(root.__huiTip);
+    }
+    return left;
   }
 
   document.addEventListener('pointerover', (e) => {
@@ -117,39 +155,53 @@
     tip.hovered = true;
     show(tip);
   }, true);
+  // A touch pointer goes out as the finger lifts: the tap pins the pop
+  // until the next pointerdown outside its wrapper.
   document.addEventListener('pointerout', (e) => {
-    const root = e.target && e.target.closest ? e.target.closest(ROOT) : null;
-    const tip = root && root.__huiTip;
-    if (!tip || (e.relatedTarget && root.contains(e.relatedTarget))) return;
-    tip.hovered = false;
-    if (!focusInside(tip)) tip.dismissed = false;
-    if (open === tip) hideSoon();
+    for (const tip of leftTips(e.target, e.relatedTarget)) {
+      tip.hovered = false;
+      if (!focusInside(tip)) tip.dismissed = false;
+      if (open !== tip) continue;
+      if (e.pointerType === 'touch') tip.pinned = true;
+      else hideSoon();
+    }
+  }, true);
+  document.addEventListener('pointerdown', (e) => {
+    if (open && open.pinned && !open.root.contains(e.target)) hideNow();
   }, true);
   document.addEventListener('focusin', (e) => {
     const tip = tipAt(e.target);
     if (tip) show(tip);
   }, true);
   document.addEventListener('focusout', (e) => {
-    const root = e.target && e.target.closest ? e.target.closest(ROOT) : null;
-    const tip = root && root.__huiTip;
-    if (!tip || (e.relatedTarget && root.contains(e.relatedTarget))) return;
-    if (!tip.hovered) tip.dismissed = false;
-    if (open === tip && !tip.hovered) hideNow();
+    for (const tip of leftTips(e.target, e.relatedTarget)) {
+      if (!tip.hovered) tip.dismissed = false;
+      if (open === tip && !tip.hovered && !tip.pinned) hideNow();
+    }
   }, true);
   // Escape closes the open tooltip and goes no further, so a dialog the
   // tooltip sits in stays open; with no tooltip open, or only one whose
   // wrapper has left the page, it passes through.
   document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || !open || e.isComposing || e.keyCode === 229) return;
+    if (e.key !== 'Escape' || !open || e.isComposing || e.keyCode === 229 || e.defaultPrevented) return;
     if (!open.root.isConnected) { hideNow(); return; }
     open.dismissed = true;
     hideNow();
     e.stopImmediatePropagation();
     e.preventDefault();
   }, true);
+  // The pop takes the pointer so it can be hovered; a click on it is a
+  // click on the pop, not on the label or row the tooltip sits in.
+  document.addEventListener('click', (e) => {
+    const pop = e.target && e.target.closest ? e.target.closest('[data-hui-tooltip-pop]') : null;
+    if (pop && pop.popover === 'manual') {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
   let frame = 0;
   const follow = () => {
-    if (!open || anchored || frame) return;
+    if (!open || open.anchored || frame) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
       if (open && !open.root.isConnected) { hideNow(); return; }

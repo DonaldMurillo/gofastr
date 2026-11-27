@@ -25,15 +25,15 @@ type TooltipConfig struct {
 	// Text is the tooltip message. Required.
 	Text string
 
-	// Placement selects the side. Default top.
+	// Placement selects the preferred side: TooltipTop (or empty), TooltipBottom, TooltipLeft or TooltipRight; any other value panics.
 	Placement TooltipPlacement
 
-	// ID is the pop's id, named by the trigger's aria-describedby; empty derives it from Text.
+	// ID is the pop's id, added to the trigger's aria-describedby list; empty derives it from Text. An ID that is not a fragment identifier (whitespace, #, quotes, < or >) panics.
 	ID string
 
 	Class string
 
-	// ExtraAttrs forwards attributes to the wrapper span; class, id and data-cui-* are dropped.
+	// ExtraAttrs forwards attributes to the wrapper span; class, id, role, style, on* and the framework's own data-* hooks are dropped.
 	ExtraAttrs html.Attrs
 
 	// Ctx is the page's render context; without an id scope a derived id takes a counter suffix.

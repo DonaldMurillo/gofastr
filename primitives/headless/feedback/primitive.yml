@@ -27,7 +27,7 @@ invariants:
       - test: framework/ui.TestTooltipRisesIntoTheTopLayerOutOfAClippingBox
       - test: framework/ui.TestTooltipOpensForATriggerUsedBeforeTheModuleLoads
   - id: tooltip-is-hoverable-and-dismissable
-    rule: An upgraded Tooltip stays open while the pointer is over its trigger or its pop or focus is inside the wrapper, closes once both have left, and closes on Escape, which it consumes from every later listener, staying closed until pointer and focus have both left the wrapper; a dismissed Tooltip the pointer enters does not keep another open, and Escape passes through during IME composition and when the open Tooltip's wrapper has left the page; a trigger focused and hovered at load stays open when focus leaves while the pointer stays, and with focus and the pointer on different tooltips at load the focused one opens and the hovered one is upgraded but stays closed.
+    rule: An upgraded Tooltip is the only one open, stays open while the pointer is over its trigger or its pop or focus is inside the wrapper, closes once both have left (leaving every tooltip they were in, nested ones included), stays open after a tap until the next pointerdown outside its wrapper, keeps a click on its open pop from reaching what it sits in, and closes on Escape, which it consumes from every later listener, staying closed until pointer and focus have both left the wrapper; a dismissed Tooltip the pointer enters does not keep another open, and Escape passes through during IME composition, when another handler has already taken it with preventDefault and when the open Tooltip's wrapper has left the page; a Tooltip hovered and then focused stays open when focus leaves while the pointer stays; a trigger focused and hovered at load stays open when focus leaves while the pointer stays, and with focus and the pointer on different tooltips at load the focused one opens and the hovered one is upgraded but stays closed.
     enforced_by:
       - test: framework/ui.TestTooltipCanBeHoveredAndClosesWhenThePointerLeaves
       - test: framework/ui.TestTooltipEscapeDismissesWithoutMovingThePointer
@@ -38,12 +38,24 @@ invariants:
       - test: framework/ui.TestTooltipDismissedOneLetsTheOpenOneClose
       - test: framework/ui.TestTooltipEscapePassesWhenItsTooltipIsGone
       - test: framework/ui.TestTooltipOpensForATriggerUsedBeforeTheModuleLoads
+      - test: framework/ui.TestTooltipDismissalHoldsWhileEitherStays
+      - test: framework/ui.TestTooltipOneOpenAtATime
+      - test: framework/ui.TestTooltipHoverOutlastsFocus
+      - test: framework/ui.TestTooltipStaysAfterATap
+      - test: framework/ui.TestTooltipClickOnThePopStaysOnThePop
+      - test: framework/ui.TestTooltipNestedLetsGoOfTheOuter
+      - test: framework/ui.TestTooltipLeavesAnEscapeAlreadyTaken
       - test: core-ui/check.TestLintKeyGuard_Repo
   - id: tooltip-sits-beside-its-trigger
-    rule: An open Tooltip's pop is centred on its trigger on the preferred side, or the opposite one when the preferred side has no room, by anchor positioning where the browser has it and by the module's fixed coordinates where it does not.
+    rule: An open Tooltip's pop is centred on its trigger on the preferred side (left and right following the reading direction of the tooltip's own subtree), else the opposite one, else for left and right below then above - by framework/ui's sheet with anchor positioning where the browser has it, and otherwise (no anchor positioning, or a skin whose pop has no position-area) by the module's fixed coordinates, clamped into the viewport, kept in step on scroll and resize and hidden while the trigger is scrolled out of view or out of a box that clips it.
     enforced_by:
       - test: framework/ui.TestTooltipRisesIntoTheTopLayerOutOfAClippingBox
       - test: framework/ui.TestTooltipPlacesItselfWithoutAnchorPositioning
+      - test: framework/ui.TestTooltipOpensOnItsPreferredSide
+      - test: framework/ui.TestTooltipLeavesItsTriggerUncoveredOnANarrowScreen
+      - test: framework/ui.TestTooltipFallbackFollowsScrollAndStaysOnScreen
+      - test: framework/ui.TestTooltipFallbackHidesWithItsClippedTrigger
+      - test: framework/ui.TestHeadlessTooltipWithoutTheKitSheetSitsBesideItsTrigger
   - id: action-endpoint-same-origin
     rule: OptimisticAction and ToggleAction panic at render on an empty Endpoint and on an Endpoint or UntoggleEndpoint that is not same-origin.
     enforced_by:

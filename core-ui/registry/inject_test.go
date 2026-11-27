@@ -1,8 +1,12 @@
 package registry
 
 import (
+	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
+
+	xhtml "golang.org/x/net/html"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -319,6 +323,27 @@ func TestInjectAttribute(t *testing.T) {
 			wantErr: "unterminated open tag",
 		},
 		{
+			name:  "a name after title= is title's value",
+			html:  `<div title= data-cui-scope>x</div>`,
+			attr:  "data-cui-scope",
+			value: "b",
+			want:  `<div title= data-cui-scope data-cui-scope="b">x</div>`,
+		},
+		{
+			name:  "an empty comment before the root",
+			html:  `<!--><div>x</div>`,
+			attr:  "data-cui-scope",
+			value: "b",
+			want:  `<!--><div data-cui-scope="b">x</div>`,
+		},
+		{
+			name:  "a dash-only comment before the root",
+			html:  `<!---><div>x</div>`,
+			attr:  "data-cui-scope",
+			value: "b",
+			want:  `<!---><div data-cui-scope="b">x</div>`,
+		},
+		{
 			name:    "bad attribute name",
 			html:    `<div></div>`,
 			attr:    `a"b`,
@@ -366,6 +391,10 @@ func TestAttribute(t *testing.T) {
 		{"form feeds around the equals sign", "<div data-cui-scope\f=\f\"board\"></div>", "data-cui-scope", "board", true, ""},
 		{"upper-case name", `<div DATA-CUI-SCOPE="board"></div>`, "data-cui-scope", "board", true, ""},
 		{"mixed-case name", `<div Data-Cui-Scope=board></div>`, "data-cui-scope", "board", true, ""},
+		{"a name after title= is title's value", `<button title= aria-describedby=x></button>`, "aria-describedby", "", false, ""},
+		{"after a slash", `<div/data-cui-scope="b"></div>`, "data-cui-scope", "b", true, ""},
+		{"straight after a closing quote", `<div class="y"data-cui-scope="b"></div>`, "data-cui-scope", "b", true, ""},
+		{"quotes inside an unquoted value", `<div data-cui-scope=a"b"></div>`, "data-cui-scope", `a"b"`, true, ""},
 		{"valueless before another attribute", `<div data-cui-scope class="x"></div>`, "data-cui-scope", "", true, ""},
 		{"after leading comment", `<!-- c --><div data-cui-scope="b"></div>`, "data-cui-scope", "b", true, ""},
 		{"fragment", `hello`, "data-cui-scope", "", false, "must begin with an element open tag"},
@@ -421,6 +450,30 @@ func TestAddAttributeToken(t *testing.T) {
 			want: "<button aria-describedby=\"help&copy=x help\u00a9=x\">Save</button>"},
 		{name: "already listed as character references", html: `<button aria-describedby="help t&#105;p">Save</button>`, token: "tip",
 			want: `<button aria-describedby="help t&#105;p">Save</button>`},
+		{name: "quotes inside an unquoted value stay inside it", html: `<button aria-describedby=a"onfocus=alert(1)//"x>Save</button>`, token: "tip",
+			want: `<button aria-describedby="a&quot;onfocus=alert(1)//&quot;x tip">Save</button>`},
+		{name: "an unquoted value ending in a quote", html: `<button aria-describedby=a"b">Save</button>`, token: "tip",
+			want: `<button aria-describedby="a&quot;b&quot; tip">Save</button>`},
+		{name: "a name after title= is title's value", html: `<button title= aria-describedby>Save</button>`, token: "tip",
+			want: `<button title= aria-describedby aria-describedby="tip">Save</button>`},
+		{name: "an attribute after a slash", html: `<button/aria-describedby="x">Save</button>`, token: "tip",
+			want: `<button/aria-describedby="x tip">Save</button>`},
+		{name: "an attribute straight after a closing quote", html: `<button class="y"aria-describedby="x">Save</button>`, token: "tip",
+			want: `<button class="y"aria-describedby="x tip">Save</button>`},
+		{name: "a slash ending an unquoted value is not a self-close", html: `<input class=x/>`, token: "tip",
+			want: `<input class=x/ aria-describedby="tip">`},
+		{name: "a dangling equals sign keeps its empty value", html: `<button title=>Save</button>`, token: "tip",
+			want: `<button title="" aria-describedby="tip">Save</button>`},
+		{name: "a double quote inside a single-quoted value", html: `<button aria-describedby='a"b'>Save</button>`, token: "a",
+			want: `<button aria-describedby='a"b a'>Save</button>`},
+		{name: "a non-breaking space does not split an id", html: `<button aria-describedby="help&#160;details">Save</button>`, token: "help",
+			want: `<button aria-describedby="help&#160;details help">Save</button>`},
+		{name: "a token that needs escaping, unquoted", html: `<button aria-describedby=help>Save</button>`, token: `a&b`,
+			want: `<button aria-describedby="help a&amp;b">Save</button>`},
+		{name: "a tag name holding a quote", html: `<button">">Save</button>`, token: "tip",
+			want: `<button" aria-describedby="tip">">Save</button>`},
+		{name: "a token with a form feed", html: "<button>x</button>", token: "a\fb", wantErr: "single token"},
+		{name: "a token with a NUL, which a browser reads as U+FFFD", html: "<button>x</button>", token: "a\x00b", wantErr: "single token"},
 		{name: "an upper-case name", html: `<button ARIA-DESCRIBEDBY="help">Save</button>`, token: "tip",
 			want: `<button ARIA-DESCRIBEDBY="help tip">Save</button>`},
 		{name: "a mixed-case name", html: `<button Aria-DescribedBy='help'>Save</button>`, token: "tip",
@@ -464,4 +517,131 @@ func TestAddAttributeToken(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAddAttributeTokenRefusesABadName(t *testing.T) {
+	src := render.HTML(`<button>x</button>`)
+	got, err := AddAttributeToken(src, `a"b`, "tip")
+	if err == nil || !strings.Contains(err.Error(), "not a valid attribute name") || got != src {
+		t.Fatalf("got (%s, %v), want the input back and a refusal of the name", got, err)
+	}
+}
+
+// browserAttrs reads the first start tag of s, past leading whitespace
+// and comments, as golang.org/x/net/html's tokenizer (a browser's rules)
+// does: its attributes in order, the first of a repeated name winning.
+func browserAttrs(s string) (map[string]string, []string, bool) {
+	z := xhtml.NewTokenizer(strings.NewReader(s))
+	for {
+		switch z.Next() {
+		case xhtml.CommentToken:
+			continue
+		case xhtml.TextToken:
+			if strings.TrimLeft(string(z.Raw()), " \t\n\r\f") == "" {
+				continue
+			}
+			return nil, nil, false
+		case xhtml.StartTagToken, xhtml.SelfClosingTagToken:
+			tok := z.Token()
+			m := map[string]string{}
+			var order []string
+			for _, a := range tok.Attr {
+				if _, seen := m[a.Key]; !seen {
+					m[a.Key] = a.Val
+					order = append(order, a.Key)
+				}
+			}
+			return m, order, true
+		default:
+			return nil, nil, false
+		}
+	}
+}
+
+func htmlFields(v string) []string { return strings.FieldsFunc(v, isHTMLSpaceRune) }
+
+// spliceSeeds are root tags whose attributes the splice once misread.
+var spliceSeeds = []string{
+	`<button>Save</button>`,
+	`<button aria-describedby="help">Save</button>`,
+	`<button aria-describedby=a"onfocus=alert(1)//"x>Save</button>`,
+	`<button aria-describedby=a"b">Save</button>`,
+	`<button title= aria-describedby>Save</button>`,
+	`<button title= aria-describedby=x>Save</button>`,
+	`<button/aria-describedby="x">Save</button>`,
+	`<button class="y"aria-describedby="x">Save</button>`,
+	`<input class=x/>`,
+	`<button title=>Save</button>`,
+	`<button title= >Save</button>`,
+	`<br />`,
+	`<br/>`,
+	`<!--><div title="a>b" ARIA-DESCRIBEDBY='t&#105;p'>x</div>`,
+	"<button aria-describedby\f=\f\"help\">Save</button>",
+	`<button aria-describedby="help&copy=x">Save</button>`,
+	`<button aria-describedby='a"b'>Save</button>`,
+	`<button">">Save</button>`,
+	`<a =x b>y</a>`,
+}
+
+// checkSpliceMatchesABrowser: whatever the root tag, Attribute reads what
+// a browser reads, and AddAttributeToken leaves every other attribute as
+// a browser reads it and adds the token to the list once.
+func checkSpliceMatchesABrowser(t *testing.T, src, token string) {
+	t.Helper()
+	const name = "aria-describedby"
+	if !utf8.ValidString(src) || !utf8.ValidString(token) {
+		return // a browser decodes bytes first; ids and markup here are UTF-8
+	}
+	before, order, ok := browserAttrs(src)
+	if !ok {
+		return
+	}
+	if v, has, err := Attribute(render.HTML(src), name); err == nil {
+		want, wantHas := before[name]
+		if has != wantHas || (has && attrDecode(v) != want) {
+			t.Fatalf("Attribute(%q) = (%q, %v), a browser reads (%q, %v)", src, v, has, want, wantHas)
+		}
+	}
+	out, err := AddAttributeToken(render.HTML(src), name, token)
+	if err != nil {
+		return
+	}
+	after, _, ok := browserAttrs(string(out))
+	if !ok {
+		t.Fatalf("AddAttributeToken(%q) = %q, which a browser does not read as a start tag", src, out)
+	}
+	for _, k := range order {
+		if k != name && after[k] != before[k] {
+			t.Fatalf("AddAttributeToken(%q) = %q changed %s from %q to %q", src, out, k, before[k], after[k])
+		}
+	}
+	for k := range after {
+		if _, had := before[k]; !had && k != name {
+			t.Fatalf("AddAttributeToken(%q) = %q added attribute %q", src, out, k)
+		}
+	}
+	want := htmlFields(before[name])
+	if !slices.Contains(want, token) {
+		want = append(want, token)
+	}
+	if got := htmlFields(after[name]); !slices.Equal(got, want) {
+		t.Fatalf("AddAttributeToken(%q, %q) = %q: a browser reads %s as %q, want %q", src, token, out, name, got, want)
+	}
+}
+
+func TestAttributeSpliceMatchesABrowser(t *testing.T) {
+	for _, src := range spliceSeeds {
+		for _, token := range []string{"tip", `a&b"<`} {
+			checkSpliceMatchesABrowser(t, src, token)
+		}
+	}
+}
+
+func FuzzAttributeSpliceMatchesABrowser(f *testing.F) {
+	for _, seed := range spliceSeeds {
+		f.Add(seed, "tip")
+		f.Add(seed, `a&b"<`)
+	}
+	f.Add("<A>", "\x00")
+	f.Fuzz(checkSpliceMatchesABrowser)
 }

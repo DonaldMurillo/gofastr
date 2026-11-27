@@ -79,10 +79,21 @@ few lines, and link the PR or the docs page for the rest.
   module where the browser lacks it, and flips when its side has no
   room. Without script it still shows on hover and focus. A trigger
   that already has an `aria-describedby` keeps it, with the tooltip's id
-  added to the list. It now renders through the new `headless.Tooltip`,
-  and the new `registry.AddAttributeToken` adds one id to such a list.
-  See
+  added to the list. A tap on a trigger that cannot take focus keeps
+  it open until the next tap elsewhere, a click on the open pop stays on
+  the pop, and a left or right tooltip with no room on either side
+  moves below or above its trigger. It now renders through the new
+  `headless.Tooltip`, and the new `registry.AddAttributeToken` adds one
+  id to such a list. `ui.Tooltip` now panics on an unknown `Placement`,
+  on an `ID` that is not a fragment identifier and on a blank trigger,
+  where it used to render them. See
   [New components](framework/docs/content/ui-new-components.md).
+- **Registry attribute reads follow the browser:** `registry.Attribute`,
+  `InjectAttribute`, the component marker and the template scan now read
+  a start tag as the HTML tokenizer does, so an attribute after `/` or a
+  closing quote, a word after `title= ` and quotes inside an unquoted
+  value are read as a browser reads them, and `<!-->` counts as a whole
+  comment.
 - **Static export:** under `--base`, the Markdown index and every
   root-relative link in exported page docs carry the base path, and the
   HTML rewrite matches URL attributes in any case (`HREF="/up"`). A page

@@ -665,7 +665,7 @@ func tooltipCSS(_ style.Theme) string {
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
-  white-space: nowrap;
+  inline-size: max-content;
   max-inline-size: var(--ui-tooltip-pop-max-width, 240px);
   z-index: var(--z-popover);
   transition: opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease),
@@ -729,12 +729,11 @@ func tooltipCSS(_ style.Theme) string {
   pointer-events: auto;
   opacity: 0;
   visibility: hidden;
-  transition: opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
+  transition: none;
 }
 [data-cui-comp="ui-tooltip"][data-hui-tooltip-live] .fui-tooltip__pop[popover]:popover-open {
   opacity: 1;
   visibility: visible;
-  transition-delay: 0s;
 }
 @supports (anchor-scope: --x) and (position-area: top) {
   [data-cui-comp="ui-tooltip"][data-hui-tooltip-live] {
@@ -748,8 +747,8 @@ func tooltipCSS(_ style.Theme) string {
     margin: calc(var(--spacing-sm, 4px) * 1.5);
   }
   [data-cui-comp="ui-tooltip"][data-hui-tooltip-live].fui-tooltip--bottom .fui-tooltip__pop[popover] { position-area: bottom; }
-  [data-cui-comp="ui-tooltip"][data-hui-tooltip-live].fui-tooltip--left .fui-tooltip__pop[popover] { position-area: inline-start; position-try-fallbacks: flip-inline; }
-  [data-cui-comp="ui-tooltip"][data-hui-tooltip-live].fui-tooltip--right .fui-tooltip__pop[popover] { position-area: inline-end; position-try-fallbacks: flip-inline; }
+  [data-cui-comp="ui-tooltip"][data-hui-tooltip-live].fui-tooltip--left .fui-tooltip__pop[popover] { position-area: self-inline-start; position-try-fallbacks: flip-inline, bottom, top; }
+  [data-cui-comp="ui-tooltip"][data-hui-tooltip-live].fui-tooltip--right .fui-tooltip__pop[popover] { position-area: self-inline-end; position-try-fallbacks: flip-inline, bottom, top; }
 }`
 }
 

@@ -889,10 +889,6 @@ var kitComponents = []kitComponent{
 	{name: "headless.PaneHost", fn: headless.PaneHost, required: []string{"Primary"}},
 	{name: "headless.Password", fn: headless.Password},
 	{name: "headless.Progress", fn: headless.Progress},
-	{name: "headless.Tooltip", fn: headless.Tooltip, required: []string{"Trigger"}, prep: func(args []reflect.Value) {
-		setAll(args, "ID", "tip-kit")
-		setAll(args, "Placement", "")
-	}},
 	{name: "headless.Rail", fn: headless.Rail},
 	{name: "headless.RangeSlider", fn: headless.RangeSlider},
 	{name: "headless.Rating", fn: headless.Rating},
@@ -930,6 +926,10 @@ var kitComponents = []kitComponent{
 	{name: "headless.ToolbarGroup", fn: headless.ToolbarGroup},
 	{name: "headless.ToolbarSearch", fn: headless.ToolbarSearch},
 	{name: "headless.ToolbarSpacer", fn: headless.ToolbarSpacer},
+	{name: "headless.Tooltip", fn: headless.Tooltip, required: []string{"Trigger"}, prep: func(args []reflect.Value) {
+		setAll(args, "ID", "tip-kit")
+		setAll(args, "Placement", "")
+	}},
 	{name: "headless.Tree", fn: headless.Tree},
 	{name: "headless.ValidationSummary", fn: headless.ValidationSummary},
 }
