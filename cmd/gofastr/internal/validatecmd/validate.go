@@ -11,11 +11,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 )
 
-// RunValidate implements `gofastr validate <gofastr.yml|dir>`: parse the
-// app spec, run every generate-time validation (including the app.module /
-// go.mod consistency check and a full render pass). Errors are
-// written for agents iterating on an app spec: each names the file (and line
-// where the parser provides one), what is wrong, and the remedy.
+// RunValidate implements `gofastr validate <gofastr.yml|dir>`: it runs every
+// generate-time check and a full render without writing a file.
 func RunValidate(args []string) {
 	if cli.HasHelpFlag(args) {
 		printValidateHelp()
@@ -27,16 +24,12 @@ func RunValidate(args []string) {
 		cli.OsExit(2)
 		return
 	}
-	// One app spec per run. A second path was never read, so
-	// `validate a.yml b.yml` reported a.yml valid and said nothing of b.yml.
 	if extra := positionalArgs(args[1:]); len(extra) > 0 {
 		cli.Fail("validate takes one app spec, got extra %q", extra)
 		cli.Info("Usage: gofastr validate <gofastr.yml|dir>  (run it once per app spec)")
 		cli.OsExit(2)
 		return
 	}
-	// validate reads no flags: `validate gofastr.yml --json` printed text
-	// as if --json meant something.
 	if extra := flagArgs(args[1:]); len(extra) > 0 {
 		cli.Fail("validate takes no flags, got %q", extra)
 		cli.Info("Usage: gofastr validate <gofastr.yml|dir>")
@@ -50,8 +43,6 @@ func RunValidate(args []string) {
 		cli.OsExit(1)
 		return
 	}
-	// Module consistency is anchored at the app spec's own directory: the
-	// app spec conventionally sits at the project root next to go.mod.
 	anchor := path
 	if info, statErr := os.Stat(path); statErr == nil && !info.IsDir() {
 		anchor = filepath.Dir(path)
@@ -61,15 +52,11 @@ func RunValidate(args []string) {
 		cli.OsExit(1)
 		return
 	}
-	// Render without writing: catches codegen-only failures (bad field
-	// literals, unsupported defaults) that pure validation does not reach.
 	if _, err := appgen.RenderAppSpecCode(bp); err != nil {
 		failAppSpecValidation(path, err)
 		cli.OsExit(1)
 		return
 	}
-	// Hard rule: per-user (PII-shaped) data must be scoped before auto-CRUD
-	// exposure. An error here, a warning from `gofastr generate`.
 	if findings := appspec.LintUnscopedPII(bp); len(findings) > 0 {
 		for _, f := range findings {
 			cli.Fail("%s: %s", path, f.Message())
@@ -77,8 +64,6 @@ func RunValidate(args []string) {
 		cli.OsExit(1)
 		return
 	}
-	// Seven warnings `gofastr generate` also prints; each lint's own doc
-	// says why it warns rather than fails.
 	for _, msg := range appgen.CommonLintFindings(bp, anchor, appgen.ModuleCollisionsFirst) {
 		cli.Warn("%s: %s", path, msg)
 	}
@@ -86,8 +71,6 @@ func RunValidate(args []string) {
 		path, len(bp.Entities), len(bp.Screens), len(bp.Endpoints), len(bp.Hooks))
 }
 
-// positionalArgs returns the arguments that are not flags.
-// flagArgs returns the arguments that start with "-".
 func flagArgs(args []string) []string {
 	var out []string
 	for _, a := range args {
@@ -125,10 +108,6 @@ position. A failed check exits 1. Exit status 2 indicates a missing app
 spec path, a first argument starting with --, or an extra path or flag.`)
 }
 
-// failAppSpecValidation prints a validation failure prefixed with the
-// app spec path. Parser/decoder errors already carry "at line N"; semantic
-// errors name the entity/field/screen, since the decoded declarations do not
-// retain source positions.
 func failAppSpecValidation(path string, err error) {
 	msg := strings.TrimPrefix(err.Error(), "app spec: ")
 	cli.Fail("%s: %s", path, msg)
