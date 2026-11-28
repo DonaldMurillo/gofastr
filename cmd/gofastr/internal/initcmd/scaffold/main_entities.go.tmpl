@@ -1,0 +1,142 @@
+package main
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+
+	"github.com/DonaldMurillo/gofastr/battery/auth"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/dotenv"
+	"github.com/DonaldMurillo/gofastr/core/migrate"
+	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/dev"
+	"github.com/DonaldMurillo/gofastr/framework/docs/mcptools"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
+	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	%[3]s
+
+	"%[1]s/entities"
+)
+
+func main() {
+	// Load .env BEFORE any getEnv read. framework.NewApp also loads it, but
+	// DATABASE_URL is consumed here, above NewApp, so without this the
+	// scaffolded .env was half-live: PORT applied, DATABASE_URL silently did
+	// not, and the app opened a different database than the file said.
+	//
+	// framework.DefaultDotEnvPaths(), not a hardcoded list: dotenv.Apply never
+	// overwrites an existing variable, so loading a SHORTER list here would pin
+	// .env's value and NewApp's higher-precedence .env.<APP_ENV> could no
+	// longer win.
+	_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)
+
+	runtimeIsolation, err := isolation.Resolve(".")
+	if err != nil {
+		log.Fatal(err)
+	}
+	dsn := getEnv("DATABASE_URL", "%[5]s")
+	if dsn == "" {
+		log.Fatal("DATABASE_URL is not set: the scaffolded .env (0600, gitignored) carries it; copy it next to the binary or export the variable")
+	}
+	driver, resolvedDSN, err := runtimeIsolation.Database("%[4]s", dsn)
+	if err != nil {
+		log.Fatal(err)
+	}
+	db, err := sql.Open(driver, resolvedDSN)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	fwApp := framework.NewApp(
+		// WithConfig replaces the whole AppConfig, so it goes FIRST: a
+		// granular option (framework.WithPublicOpenAPI(), WithAPIPrefix, …)
+		// added below this line takes effect; above it, WithConfig would
+		// discard it (the framework warns at boot if that happens).
+		framework.WithConfig(framework.AppConfig{Name: "%[2]s"}),
+		framework.WithDB(db),
+		// Entity CRUD lives under /api (/api/posts), so a screen can own
+		// /posts without colliding with the JSON route.
+		framework.WithAPIPrefix("/api"),
+		// Mounts /mcp (POST JSON-RPC + GET SSE). Every entity with
+		// Exposure.MCP gets list/get/create/update/delete tools, and each tool
+		// call runs through this app's router, so an agent gets exactly the
+		// permissions the calling session has, and an anonymous call answers
+		// with the same error the REST route would. That parity is the point:
+		// there is no second authorization path to keep in sync.
+		//
+		// Turn this off before exposing the app to untrusted callers if you
+		// have not reviewed which entities set Exposure.MCP.
+		framework.WithMCP(),
+		// The framework's own docs as MCP tools (framework_docs_list /
+		// _get / _search), so the coding agent on /mcp reads them from the
+		// running app. Drop this line to keep the docs corpus (about 2 MB)
+		// out of the binary.
+		framework.WithMCPTools(mcptools.Register),
+	)
+
+	// Register entities from the entities package.
+	entities.RegisterAll(fwApp)
+
+	// Sign-in: POST /auth/register, /auth/login and /auth/logout, with
+	// users and sessions in this database. SessionMiddleware resolves the
+	// session cookie on every request, so /api/posts sees the signed-in
+	// user. Dev mode (plain session cookie, relaxed login limiter) follows
+	// the dev loop's own signal: GOFASTR_DEV, which `gofastr dev` sets and
+	// GOFASTR_ENV=production overrides. It is never read from .env, so a
+	// copied .env cannot downgrade a deployment; outside the dev loop auth
+	// issues Secure cookies and refuses to boot without JWT_SECRET.
+	authMgr := auth.New(auth.AuthConfig{
+		DevMode:      dev.Enabled(),
+		JWTSecret:    os.Getenv("JWT_SECRET"),
+		UserStore:    auth.NewEntityUserStore(db, "auth_users"),
+		SessionStore: auth.NewEntitySessionStore(db, "auth_sessions"),
+	})
+	authMgr.Use(auth.NewCorePlugin())
+	if err := authMgr.Init(fwApp); err != nil {
+		log.Fatal(err)
+	}
+	// A failed form post with no usable Referer lands back on its own
+	// form with ?error= instead of a raw JSON body: sign-in on /login,
+	// sign-up on /register.
+	auth.SetDefaultLoginErrorPath("/login")
+	auth.SetDefaultRegisterErrorPath("/register")
+	fwApp.Use(auth.SessionMiddleware(authMgr))
+
+	// Wire the UI layer: site app + screens + host.
+	site := app.NewApp("%[2]s").WithTheme(uitheme.Default())
+	site.Register("/", &HomeScreen{}, nil)
+	site.Register("/login", &LoginScreen{}, nil)
+	site.Register("/register", &RegisterScreen{}, nil)
+
+	fwApp.Mount(uihost.New(site))
+
+	// Run migrations
+	migrator := migrate.New(db, migrate.WithTableName("_migrations"), migrate.WithDialect(%[6]s))
+	entities.RegisterMigrations(migrator)
+	// A migration that cannot apply is a failed deploy, not a warning: the
+	// server must not report ready over a schema the committed migrations
+	// never reached.
+	if err := migrator.Up(context.Background()); err != nil {
+		log.Fatalf("migrations: %%v", err)
+	}
+
+	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Banner fires via OnReady: only after migrations, hooks, and the
+	// port bind all succeeded.
+	fwApp.OnReady(func(boundAddr string) {
+		fmt.Printf("  %%s Server running at http://%%s\n", "✓", boundAddr)
+	})
+	if err := fwApp.Start(addr); err != nil && err != http.ErrServerClosed {
+		log.Fatal(err)
+	}
+}
+

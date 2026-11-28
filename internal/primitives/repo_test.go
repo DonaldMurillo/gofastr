@@ -297,6 +297,7 @@ var ownedPackages = []string{
 	"cmd/gofastr/internal/auditcmd",
 	"cmd/gofastr/internal/docscmd",
 	"cmd/gofastr/internal/generatecmd",
+	"cmd/gofastr/internal/initcmd",
 	"cmd/gofastr/internal/migratecmd",
 	"cmd/gofastr/internal/newcmd",
 	"cmd/gofastr/internal/semanticcmd",

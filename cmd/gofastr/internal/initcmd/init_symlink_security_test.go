@@ -303,6 +303,9 @@ func TestInitRefusesGoModLinkedOutside(t *testing.T) {
 			if !dangling && string(got) != precious {
 				t.Errorf("init . (exit %d) rewrote %s outside the project through go.mod:\n%s", code, victim, got)
 			}
+			if _, err := os.Stat(filepath.Join(dir, "main.go")); err == nil {
+				t.Error("init . wrote main.go before refusing the linked go.mod")
+			}
 		})
 	}
 }
@@ -325,6 +328,9 @@ func TestInitRefusesGitDirLinkedOutside(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(outsideRepo); len(entries) > 0 {
 		t.Errorf("init . (exit %d) put %d entries in %s through the linked .git", code, len(entries), outsideRepo)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "main.go")); err == nil {
+		t.Error("init . wrote main.go before refusing the linked .git")
 	}
 }
 
