@@ -208,7 +208,7 @@ func jsonLine(line []byte) []byte {
 		if err != nil {
 			return []byte(`""`)
 		}
-		return quoted
+		line = quoted
 	}
 	risky := func(r rune) bool { return r >= 0x20 && textsafe.IsUnsafe(r) }
 	if !bytes.ContainsFunc(line, risky) {
