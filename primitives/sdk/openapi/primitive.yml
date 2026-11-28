@@ -119,6 +119,37 @@ invariants:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKSettingsEntry
       - test: cmd/gofastr/internal/generatecmd.TestWatchHashesCLIOpenAPIDoc
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKEntryDocumentStaysInProject
+  - id: walk-reads-openapi-3-only
+    rule: A Swagger 2.0 document or any openapi version but 3.x is refused before the walk, since it would read as OpenAPI 3 and lose its basePath, body and formData parameters and parameter types.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPINotVersion3Fails
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKRefusals
+  - id: refs-resolve-without-false-cycles
+    rule: A $ref chain or an allOf through itself is a $ref cycle error, while two allOf members sharing a base resolve.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPICLI_AllOfDiamondResolves
+  - id: operation-parameters-override-the-path
+    rule: An operation parameter replaces the path-level one of the same name and location, and two at one level collide.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPIOpParamOverridesPath
+  - id: walk-output-is-deterministic
+    rule: Two operations deriving one Go name are refused, and a binary body picks application/octet-stream first and then the media types in name order, so two runs over one document emit the same code.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPICLI_DuplicateGoNameFails
+      - test: cmd/gofastr/internal/appgen.TestOpenAPIBinaryMediaDeterministic
+  - id: document-text-cannot-drive-the-terminal
+    rule: An operation summary carrying a C0 control other than newline and tab, DEL or a C1 code point is refused for the CLI, which prints summaries verbatim in its help.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOASummaryRefusesC1Controls
+      - test: cmd/gofastr/internal/appgen.TestGenerateCLI_OpenAPIHostileStringsStayQuoted
+  - id: every-placeholder-is-filled
+    rule: Each path parameter fills every occurrence of its placeholder, path-escaped, and a declared path parameter with no placeholder is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPIPathPlaceholderTwice
+  - id: js-client-is-not-thenable
+    rule: An operation may not bind a client.js method named after a Client member, then included, since a thenable Client would be called by await.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKRefusals
 decisions:
   - id: lossless-mixed-object-extras
     date: 2026-11-20

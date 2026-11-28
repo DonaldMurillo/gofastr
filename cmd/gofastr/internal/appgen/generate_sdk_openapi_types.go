@@ -8,18 +8,15 @@ import (
 	"strings"
 )
 
-// oaType is one schema as the OpenAPI SDK types it, the model both the Go
-// and the TypeScript renderers read, so the two SDKs type a value alike.
 type oaType struct {
 	// Kind is string, integer, number, boolean, array, map, struct or raw
 	// (any JSON value, kept as written).
 	Kind         string
-	Elem         *oaType // array items, map values
+	Elem         *oaType
 	ElemNullable bool
-	Name         string // struct
+	Name         string
 }
 
-// oaField is one property of a struct type.
 type oaField struct {
 	Wire, Go           string
 	Type               *oaType
@@ -33,23 +30,14 @@ type oaStruct struct {
 	Additional bool
 }
 
-// oaTypeSet names and collects the struct types a document needs: a
-// component schema keeps its own name, an inline object takes the name
-// its position gives it (GenerateBarcodeRequest, PetOwner). A name taken
-// twice is an error, never a renamed type.
 type oaTypeSet struct {
-	root    map[string]any
-	structs map[string]*oaStruct
-	order   []string
-	byRef   map[string]string
-	// refNullable holds whether each named component admits null, for
-	// every use after the first.
+	root        map[string]any
+	structs     map[string]*oaStruct
+	order       []string
+	byRef       map[string]string
 	refNullable map[string]bool
 	owner       map[string]string
-	// inline holds the refs being typed in place (a component that is
-	// not a named struct): one met again inside itself is raw JSON.
-	inline map[string]bool
-	// inlineTypes holds each component already typed in place.
+	inline      map[string]bool
 	inlineTypes map[string]oaInlineType
 }
 
@@ -58,15 +46,8 @@ type oaInlineType struct {
 	nullable bool
 }
 
-// oaMaxStructs caps the struct types one document may derive: a document
-// past it is refused rather than generated into a package nobody can
-// build, or a process out of memory.
 var oaMaxStructs = 5000
 
-// singleAllOf types {allOf: [one member]} as that member, the nullable
-// reference Swashbuckle and NSwag write ({allOf: [{$ref: X}], nullable:
-// true}), keeping the wrapper's nullability. ok is false for any other
-// schema, and for an allOf whose wrapper adds properties.
 func (ts *oaTypeSet) singleAllOf(schema map[string]any, hint string) (t *oaType, nullable, ok bool, err error) {
 	raw, present := schema["allOf"]
 	if !present {
@@ -92,8 +73,6 @@ func (ts *oaTypeSet) singleAllOf(schema map[string]any, hint string) (t *oaType,
 	return t, n || oaNullable(schema), true, err
 }
 
-// oaReservedTypes are the package-level names the generated SDKs declare
-// themselves, or that client.d.ts reads from the global scope.
 var oaReservedTypes = []string{
 	"APIError", "APIPrefix", "ApiError", "Array", "ArrayBuffer", "ArrayBufferView",
 	"Blob", "Client", "NewClient", "Promise", "Record",
@@ -107,7 +86,6 @@ func newOATypeSet(root map[string]any) *oaTypeSet {
 	return ts
 }
 
-// claim takes a package-level type name for owner.
 func (ts *oaTypeSet) claim(name, owner string) error {
 	if !token.IsIdentifier(name) {
 		return fmt.Errorf("%s derives the type name %q, which is not a Go identifier", owner, name)
@@ -121,8 +99,6 @@ func (ts *oaTypeSet) claim(name, owner string) error {
 
 var oaRaw = &oaType{Kind: "raw"}
 
-// typeOf types schema, naming an inline object hint. nullable reports a
-// schema that also admits null.
 func (ts *oaTypeSet) typeOf(schema map[string]any, hint string) (t *oaType, nullable bool, err error) {
 	if schema == nil {
 		return oaRaw, false, nil
@@ -158,9 +134,6 @@ func (ts *oaTypeSet) typeOf(schema map[string]any, hint string) (t *oaType, null
 		if ts.inline[ref] {
 			return oaRaw, false, nil
 		}
-		// A component typed in place is typed once, its inline objects
-		// named after it, so every use shares one type and a document
-		// whose components fan out does not mint a type per path.
 		if comp, ok := strings.CutPrefix(ref, "#/components/schemas/"); ok && oaValidIdent(oaGoName(comp)) {
 			hint = oaGoName(comp)
 		}
@@ -257,13 +230,11 @@ func (ts *oaTypeSet) typeOf(schema map[string]any, hint string) (t *oaType, null
 	return oaRaw, nullable, nil
 }
 
-// oaStructShaped reports an object schema that declares properties.
 func oaStructShaped(s map[string]any) bool {
 	props, _ := s["properties"].(map[string]any)
 	return len(props) > 0
 }
 
-// oaNullable reports nullable: true (OpenAPI 3.0) or "null" in a type list.
 func oaNullable(s map[string]any) bool {
 	if s["nullable"] == true {
 		return true
@@ -272,11 +243,6 @@ func oaNullable(s map[string]any) bool {
 	return slices.Contains(list, any("null"))
 }
 
-// oaFieldsNameable reports whether every property becomes a Go field: its
-// derived name is an identifier no other property derives. Such a wire
-// name holds only letters, digits and the -_. and space oaGoName drops,
-// all of which a json tag carries. An object failing it is typed raw, so
-// no property is dropped or renamed.
 func oaFieldsNameable(s map[string]any) bool {
 	props, _ := s["properties"].(map[string]any)
 	seen := map[string]bool{}
@@ -324,7 +290,6 @@ func (ts *oaTypeSet) addStruct(name string, s map[string]any) error {
 	return nil
 }
 
-// goExpr is the Go type of t.
 func (t *oaType) goExpr() string {
 	switch t.Kind {
 	case "string":
@@ -350,9 +315,6 @@ func (t *oaType) goExpr() string {
 	return "json.RawMessage"
 }
 
-// goPointer reports whether a value of t that may be absent or null goes
-// behind a pointer: a scalar, so the zero value stays sendable, and a
-// struct, so a type may refer to itself.
 func (t *oaType) goPointer() bool {
 	switch t.Kind {
 	case "string", "integer", "number", "boolean", "struct":
@@ -361,7 +323,6 @@ func (t *oaType) goPointer() bool {
 	return false
 }
 
-// usesRaw reports whether t's Go spelling names json.RawMessage.
 func (t *oaType) usesRaw() bool {
 	switch t.Kind {
 	case "array", "map":
@@ -372,8 +333,6 @@ func (t *oaType) usesRaw() bool {
 	return true
 }
 
-// tsExpr is the TypeScript type of t. An integer is number | string:
-// parseJSON hands one past 2^53 back as its decimal string.
 func (t *oaType) tsExpr() string {
 	switch t.Kind {
 	case "string":
@@ -433,7 +392,6 @@ func (ts *oaTypeSet) goRecursiveCodecs() map[string]bool {
 	return recursive
 }
 
-// renderGo emits every struct type, in the order they were named.
 func (ts *oaTypeSet) renderGo(sb *strings.Builder, recursive map[string]bool) {
 	hasExtras := false
 	for _, name := range ts.order {
@@ -600,7 +558,6 @@ func openAPIJSONHasCycle(v reflect.Value, path map[openAPIJSONVisit]bool) bool {
 
 `
 
-// renderTS emits every struct type as an interface.
 func (ts *oaTypeSet) renderTS(sb *strings.Builder) {
 	for _, name := range ts.order {
 		st := ts.structs[name]
@@ -626,9 +583,6 @@ func (ts *oaTypeSet) renderTS(sb *strings.Builder) {
 	}
 }
 
-// oaCommentText folds document text onto one comment line: whitespace
-// runs, line breaks among them, become one space and other control
-// characters are dropped.
 func oaCommentText(s string) string {
 	s = strings.Map(func(r rune) rune {
 		if r < 0x20 && r != '\n' && r != '\t' || r == 0x7f || r >= 0x80 && r <= 0x9f {

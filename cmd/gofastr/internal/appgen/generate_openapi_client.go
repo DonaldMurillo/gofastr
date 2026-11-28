@@ -5,9 +5,6 @@ import (
 	"strings"
 )
 
-// oaClientFile configures renderOpenAPIClient, the one renderer of the
-// client package both --from-openapi generators emit: the CLI's
-// internal/client and the Go SDK's client.go.
 type oaClientFile struct {
 	// PackageDoc is the package comment, "// " lines ending in a newline.
 	PackageDoc               string
@@ -19,9 +16,6 @@ type oaClientFile struct {
 	Stream bool
 }
 
-// renderOpenAPIClient emits a self-contained HTTP client mirroring the
-// entity SDK's surface (NewClient, Client.Token, APIError) plus Do for
-// JSON and DoRaw for any body or response.
 func renderOpenAPIClient(f oaClientFile) string {
 	var sb strings.Builder
 	sb.WriteString(f.PackageDoc + `package client
@@ -243,24 +237,11 @@ func statusError(resp *http.Response) error {
 	return sb.String()
 }
 
-// oaParamRef is how a renderer reads one parameter: list is the []string
-// expression of a repeated one; value is the wire string of a scalar,
-// sent when cond holds ("" sends it always).
 type oaParamRef func(in string, i int, p cliOpParam) (list, value, cond string)
 
-// writeOARequestParts emits the path, query and header assembly of one
-// operation into the variables path, q and hdr. Both --from-openapi
-// generators call it, so a parameter goes on the wire one way: path
-// values through url.PathEscape, repeated query values as repeated keys
-// or, in form style with explode false, one comma-joined value, and a
-// repeated header as one comma-joined line.
 func writeOARequestParts(sb *strings.Builder, op cliOp, ref oaParamRef) {
 	fmt.Fprintf(sb, "\tpath := %q\n", op.PathTemplate)
 	for i, p := range op.PathParams {
-		// The placeholder literal goes through %q so a hostile spec's
-		// param name cannot break out of the generated string. Every
-		// occurrence: /users/{id}/files/{id} names one value twice, and
-		// PathEscape leaves no brace in it for a later pass to match.
 		_, value, _ := ref("path", i, p)
 		fmt.Fprintf(sb, "\tpath = strings.ReplaceAll(path, %q, url.PathEscape(%s))\n", "{"+p.Name+"}", value)
 	}
@@ -280,8 +261,6 @@ func writeOARequestParts(sb *strings.Builder, op cliOp, ref oaParamRef) {
 		writeOACond(sb, cond, fmt.Sprintf("q.Set(%q, %s)", p.Name, value))
 	}
 	if len(joined) > 0 {
-		// url.Values would escape the delimiting commas, so the query
-		// rides on the path and the transport gets none.
 		sb.WriteString("\trawQ := q.Encode()\n")
 		for _, j := range joined {
 			sb.WriteString(j)
@@ -293,8 +272,6 @@ func writeOARequestParts(sb *strings.Builder, op cliOp, ref oaParamRef) {
 	for i, p := range op.HeaderParams {
 		list, value, cond := ref("header", i, p)
 		if p.Repeated {
-			// simple style, a header's only one: one line, a,b. Two lines
-			// read as the first item to a server taking the value.
 			fmt.Fprintf(sb, "\tif len(%s) > 0 {\n\t\thdr.Set(%q, strings.Join(%s, \",\"))\n\t}\n", list, p.Name, list)
 			continue
 		}
@@ -310,8 +287,6 @@ func writeOACond(sb *strings.Builder, cond, stmt string) {
 	fmt.Fprintf(sb, "\tif %s {\n\t\t%s\n\t}\n", cond, stmt)
 }
 
-// oaHasJoined reports whether any operation sends a comma-joined query
-// array, which needs oaJoinHelpers.
 func oaHasJoined(ops []cliOp) bool {
 	for _, op := range ops {
 		for _, p := range op.QueryParams {
@@ -323,8 +298,6 @@ func oaHasJoined(ops []cliOp) bool {
 	return false
 }
 
-// oaJoinHelpers are the generated helpers writeOARequestParts calls for a
-// comma-joined query array.
 const oaJoinHelpers = `// formJoined renders an array query parameter in OpenAPI's form style
 // with explode false: name=a,b, each item escaped and the commas between
 // them literal, as the spec's own example sends them.
