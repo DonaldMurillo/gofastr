@@ -211,13 +211,20 @@ func jsonLine(line []byte) []byte {
 		line = quoted
 	}
 	risky := func(r rune) bool { return r >= 0x20 && textsafe.IsUnsafe(r) }
-	if !bytes.ContainsFunc(line, risky) {
+	if utf8.Valid(line) && !bytes.ContainsFunc(line, risky) {
 		return line
 	}
 	out := make([]byte, 0, len(line)+16)
-	for _, r := range string(line) {
+	for rest := line; len(rest) > 0; {
+		r, size := utf8.DecodeRune(rest)
+		raw := rest[:size]
+		rest = rest[size:]
+		if r == utf8.RuneError && size == 1 {
+			out = append(out, `\ufffd`...)
+			continue
+		}
 		if !risky(r) {
-			out = utf8.AppendRune(out, r)
+			out = append(out, raw...)
 			continue
 		}
 		if r1, r2 := utf16.EncodeRune(r); r1 != utf8.RuneError {

@@ -107,7 +107,8 @@ few lines, and link the PR or the docs page for the rest.
 
 - **`gofastr telemetry … --json` escapes C1, bidi and zero-width runes**
   in every subcommand, so a stored route or error cannot reach the terminal
-  raw. A program reading the JSON decodes the same values.
+  raw. A byte that is not UTF-8 inside a stored line's string prints as the
+  escape for U+FFFD. A program reading the JSON decodes the same values.
 - **Toasts show on the top layer and wait out a modal** (#706). The
   toast stack's widget is a manual popover while it holds a toast, so a
   toast shows above menus, popovers and tooltips already open, including
