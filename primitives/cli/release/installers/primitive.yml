@@ -1,0 +1,34 @@
+primitive: cli.release.installers
+summary: The install.sh and install.ps1 a release with --url writes, templates that download the archive for the machine they run on, check its SHA-256 against the value baked in, and install the binary for the current user.
+code:
+  - cmd/gofastr/internal/releasecmd/scripts.go
+  - cmd/gofastr/internal/releasecmd/install.sh.tmpl
+  - cmd/gofastr/internal/releasecmd/install.ps1.tmpl
+  - cmd/gofastr/internal/releasecmd/scripts_test.go
+docs:
+  - framework/docs/content/release.md
+on_change:
+  - A new template value is a string checkScriptValues holds to a quote-free character set, because every value lands inside a single-quoted sh or PowerShell literal.
+invariants:
+  - id: emitter-checks-every-value
+    rule: writeScripts refuses to render when the name, version, base URL, environment prefix or any archive's file, hash, arch or platform is outside its safe character set, whatever parseOptions accepted.
+    enforced_by:
+      - test: cmd/gofastr/internal/releasecmd.TestEmitterRefusesQuoteInURL
+  - id: script-per-platform
+    rule: install.sh is written only when the release has a macOS or Linux build, and install.ps1, with CRLF line endings, only when it has a Windows build.
+    enforced_by:
+      - test: cmd/gofastr/internal/releasecmd.TestEachScriptOnlyForItsPlatforms
+      - test: cmd/gofastr/internal/releasecmd.TestReleaseWritesArchivesAndSums
+  - id: rosetta-gets-arm64
+    rule: install.sh sends a Rosetta shell on Apple silicon to the darwin/arm64 archive only when the release has one.
+    enforced_by:
+      - test: cmd/gofastr/internal/releasecmd.TestRosettaShellGetsTheArm64Build
+  - id: installers-verify-the-download
+    rule: The install scripts install nothing when the downloaded archive's SHA-256 differs from the one baked into the script.
+    enforced_by:
+      - test: cmd/gofastr/internal/releasecmd.TestInstallShInstallsVerifiedBuild
+      - test: cmd/gofastr/internal/releasecmd.TestInstallPs1InstallsVerifiedBuild
+  - id: env-prefix-is-the-cli-one
+    rule: The scripts' environment-variable prefix is appgen.CLIEnvPrefix of the binary name, the prefix a generated CLI reads <BINARY>_URL under.
+    enforced_by:
+      - test: cmd/gofastr/internal/releasecmd.TestEnvPrefixFromName

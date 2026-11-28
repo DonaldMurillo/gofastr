@@ -1,0 +1,37 @@
+primitive: cli.desktop.update
+summary: gofastr desktop keygen and feed, the release side of the auto-updater - the ed25519 signing pair and the signed manifest.json written through desktop.SignUpdateFeed.
+code:
+  - cmd/gofastr/internal/desktopcmd/desktop_keygen.go
+  - cmd/gofastr/internal/desktopcmd/desktop_feed.go
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - What a feed may hold is decided by desktop.SignUpdateFeed (desktop.update's feed-writer rules); the verb only gathers flags and the lifetime.
+invariants:
+  - id: keygen-writes-a-new-pair
+    rule: keygen writes <path> with hex(seed)+hex(public) and <path>.pub with hex(public), both created new at 0600, and refuses before writing when either path exists, a symlink included.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestDesktopKeygenWritesPair
+      - test: cmd/gofastr/internal/desktopcmd.TestDesktopKeygenRefusesOverwrite
+      - test: cmd/gofastr/internal/desktopcmd.TestDesktopKeygenRefusesSymlinks
+  - id: keygen-no-half-pair
+    rule: When writing the .pub file fails, keygen removes the private key it just wrote.
+    judge: Does this change let keygen exit leaving a private key file without its .pub?
+  - id: feed-lifetime
+    rule: --valid-days is a whole number from 1 to MaxFeedLifetime in days, and without it the manifest gets desktop.DefaultFeedLifetime.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestFeedLifetimeFlag
+      - test: cmd/gofastr/internal/desktopcmd.TestDesktopFeedStampsExpiry
+  - id: feed-needs-every-release-value
+    rule: feed exits 2 naming every missing one of --key, --version, --platform, --archive and --url.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestDesktopFeedRefusesBadInputs
+decisions:
+  - id: no-feed-defaults
+    date: 2026-11-28
+    status: accepted
+    decision: Only --valid-days has a default; every other feed value is required.
+    rejected:
+      - option: Default the version or URL from the build.
+        why: Each is a release decision, and a guessed one publishes a feed the apps install from.
+    upholds: [feed-needs-every-release-value]

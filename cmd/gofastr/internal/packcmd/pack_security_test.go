@@ -99,19 +99,24 @@ func TestPackOutOwnerOnlyOnOverwrite(t *testing.T) {
 // nothing gitignores.
 func TestPackDetectsKeywordDSNSecret(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		dsn  string
-		want bool
+		name           string
+		dsn, jwt, seed string
+		want           bool
 	}{
-		{"keyword/value DSN with password", "host=db user=app password=hunter2 dbname=app", true},
-		{"URL DSN with password", "postgres://user:pw@db:5432/app", true},
-		{"sqlite file DSN", "file:app.db", false},
-		{"unparseable URL DSN with userinfo", "postgres://user:pw%zz@db:5432/app", true},
+		{name: "keyword/value DSN with password", dsn: "host=db user=app password=hunter2 dbname=app", want: true},
+		{name: "URL DSN with password", dsn: "postgres://user:pw@db:5432/app", want: true},
+		{name: "sqlite file DSN", dsn: "file:app.db", want: false},
+		{name: "unparseable URL DSN with userinfo", dsn: "postgres://user:pw%zz@db:5432/app", want: true},
+		{name: "JWT secret only", jwt: "s3cr3t", want: true},
+		{name: "seed password only", seed: "hunter2", want: true},
+		{name: "nothing secret", want: false},
 	} {
 		bp := appspec.AppSpec{App: appspec.AppSpecApp{DBURL: tc.dsn}}
+		bp.App.Auth.JWTSecret = tc.jwt
+		bp.App.Admin.SeedPassword = tc.seed
 		got := secretsInAppSpec(bp)
 		if got != tc.want {
-			t.Errorf("%s: secretsInAppSpec(%q) = %v, want %v", tc.name, tc.dsn, got, tc.want)
+			t.Errorf("%s: secretsInAppSpec = %v, want %v", tc.name, got, tc.want)
 		}
 		// Parity with the generator's detector: any DSN generate hides
 		// from committed source, pack must warn on.

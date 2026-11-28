@@ -105,6 +105,11 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **`gofastr release --url` no longer prints the credentials in a URL it
+  refuses.** The error shows `https://REDACTED@host/...`, so a token in
+  the URL stays out of the terminal and CI logs
+  ([#934](https://github.com/DonaldMurillo/gofastr/pull/934)).
+
 - **`gofastr dev`'s hold page answers `/__livereload` only to its own host
   names** on a loopback bind, as the page already did for the build output.
   A page on a name rebound to 127.0.0.1 gets 403
