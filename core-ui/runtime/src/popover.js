@@ -95,6 +95,14 @@
         NS.closeWidget(name);
         return false;
       }
+      // The popover renders in the top layer, above dialogs, menus and
+      // toasts already open; a root a move took out of it (a swap's
+      // re-attach, a closing dialog handing it back to <body>) rises
+      // again on its next placement.
+      if (root.showPopover && !root.matches(':popover-open')) {
+        root.setAttribute('popover', 'manual');
+        try { root.showPopover(); } catch (_) { root.removeAttribute('popover'); }
+      }
       // Set the anchored marker BEFORE measuring so the chrome's
       // border + shadow + max-inline-size are reflected in the
       // bounding rect, without this the measurement is from the
@@ -169,7 +177,7 @@
     // without listing them explicitly. passive:true preserves
     // smooth scrolling.
     let rafPending = false;
-    const schedulePlace = () => {
+    const schedulePlace = widget.anchorPlace = () => {
       if (rafPending) return;
       rafPending = true;
       requestAnimationFrame(() => {
@@ -205,11 +213,30 @@
     if (!at) return;
     const w = st.root;
     const ae = document.activeElement;
-    if (ae === document.body || (w && w.contains && w.contains(ae)) ||
-        (ae && ae !== at && ae.getAttribute('tabindex') === '-1')) {
+    const back = ae === document.body || (w && w.contains && w.contains(ae)) ||
+        (ae && ae !== at && ae.getAttribute('tabindex') === '-1');
+    // Out of the top layer before teardown, so a hydrated root that is
+    // only re-hidden opens as a fresh popover next time.
+    if (w && w.removeAttribute) w.removeAttribute('popover');
+    if (back) {
       try { at.focus({ preventScroll: true }); } catch (_) {}
     }
   });
+
+  // A move takes an open popover out of the top layer, and a popover
+  // left out of it is not drawn: a swap's re-attach (fui:widget-open,
+  // reinserted) and a closing dialog handing its panels back to <body>
+  // (after its fui:widget-close) both place, and so raise, every open
+  // anchored popover again.
+  const raiseMoved = () => {
+    for (const n in NS._widgets || {}) {
+      const st = NS._widgets[n];
+      const r = st && st.root;
+      if (st?.anchorPlace && r && r.isConnected && r.hasAttribute('popover') && !r.matches(':popover-open')) st.anchorPlace();
+    }
+  };
+  document.addEventListener('fui:widget-open', (e) => { if ((e.detail || {}).reinserted) raiseMoved(); });
+  document.addEventListener('fui:widget-close', () => queueMicrotask(raiseMoved));
 
   (NS.loadedModules ||= {}).popover = true;
 })();
