@@ -166,6 +166,19 @@ func TestThemeEditWritebackProducesParseableGo(t *testing.T) {
 // file re-declares the dark palette key for key, so an app that saves
 // keeps its dark mode. This is the round-trip for a theme built with
 // theme.Overrides{Dark: &theme.Overrides{…}} — the typed dark config.
+func TestThemeEditWritebackIsByteStable(t *testing.T) {
+	th := uitheme.Default()
+	first, err := emitThemeGoSource(th, "theme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 8 {
+		if again, _ := emitThemeGoSource(th, "theme"); string(again) != string(first) {
+			t.Fatal("two emissions of one theme differ")
+		}
+	}
+}
+
 func TestThemeEditWritebackRoundTripsDarkPalette(t *testing.T) {
 	th := uitheme.Default(uitheme.Overrides{
 		Primary: "#0F766E",
@@ -389,6 +402,7 @@ func TestTokenControlType(t *testing.T) {
 		{"dark.color-primary", "color"},
 		{"color-text-muted", "color"},
 		{"z-modal", "number"},
+		{"font-weight-bold", "number"},
 		{"spacing-md", "number-px"},
 		{"radii-lg", "number-px"},
 		{"breakpoint-md", "number-px"},
@@ -856,6 +870,19 @@ func TestThemeEditApplyMalformedBody(t *testing.T) {
 	}
 }
 
+func TestThemeEditApplyCapsTheBody(t *testing.T) {
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	body := `{"key":"color-primary","value":"` + strings.Repeat("a", maxThemeEditBody) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/__theme/apply", strings.NewReader(body))
+	req.Host = "127.0.0.1:0"
+	req.Header.Set("Authorization", "Bearer "+srv.Token)
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("apply past the body cap: status %d, want 400", rec.Code)
+	}
+}
+
 // An apply with an invalid value surfaces the ApplyTokens error as JSON.
 func TestThemeEditApplyInvalidValueJSON(t *testing.T) {
 	srv := newTestServer(t)
@@ -1239,6 +1266,24 @@ func TestThemeSelectorsHandleQuotes(t *testing.T) {
 	}
 	if !strings.Contains(themeEditChromeJS, "getAttribute(attr) === key") {
 		t.Fatal("theme script does not match author-supplied token keys as attribute values")
+	}
+}
+
+func TestContrastFillsUseTheirOwnInk(t *testing.T) {
+	want := map[string]string{
+		"danger-fg|danger":   "var(--color-danger-fg)",
+		"success-fg|success": "var(--color-primary-fg)",
+	}
+	for _, p := range contrastPairs {
+		if ink, ok := want[p.name]; ok {
+			if p.fg != ink {
+				t.Errorf("%s measures %s, want %s", p.name, p.fg, ink)
+			}
+			delete(want, p.name)
+		}
+	}
+	if len(want) > 0 {
+		t.Errorf("pairs missing: %v", want)
 	}
 }
 

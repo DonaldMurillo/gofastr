@@ -301,6 +301,7 @@ var ownedPackages = []string{
 	"cmd/gofastr/internal/migratecmd",
 	"cmd/gofastr/internal/newcmd",
 	"cmd/gofastr/internal/semanticcmd",
+	"cmd/gofastr/internal/themecmd",
 	"cmd/gofastr/internal/unmountcmd",
 	"cmd/gofastr/internal/upgradecmd",
 	"cmd/gofastr/internal/validatecmd",
