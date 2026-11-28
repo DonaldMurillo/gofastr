@@ -84,6 +84,12 @@ func (s *Server) handleToolsCall(ctx context.Context, req Request) Response {
 	result, err := s.callTool(ctx, params.Name, args)
 	if err != nil {
 		rpcErr, ok := err.(*RPCError)
+		if ok && rpcErr.argsInvalid {
+			return newSuccessResponse(req.ID, toolsCallResult{
+				Content: []Content{TextContent(rpcErr.Message)},
+				IsError: true,
+			})
+		}
 		if ok {
 			return Response{
 				JSONRPC: "2.0",

@@ -60,7 +60,7 @@ func TestEndpointTwinKeepsGatedGate(t *testing.T) {
 			}
 
 			want := call(map[string]any{"secret": "valid"})
-			if want.Code != mcp.ErrMethodNotFound {
+			if want.Code != mcp.ErrInvalidParams {
 				t.Fatalf("valid args = {%d %q}, want the unknown-tool answer", want.Code, want.Message)
 			}
 			for _, tc := range []struct {

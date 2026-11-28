@@ -105,8 +105,8 @@ func TestCallTool_UnknownTool(t *testing.T) {
 	if resp.Error == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if resp.Error.Code != ErrMethodNotFound {
-		t.Errorf("expected code %d, got %d", ErrMethodNotFound, resp.Error.Code)
+	if resp.Error.Code != ErrInvalidParams {
+		t.Errorf("expected code %d, got %d", ErrInvalidParams, resp.Error.Code)
 	}
 }
 

@@ -19,7 +19,8 @@ func TestInitializeNegotiatesVersion(t *testing.T) {
 		params string
 		want   string
 	}{
-		{"echo newest", `{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"c","version":"1"}}`, "2025-06-18"},
+		{"echo newest", `{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1"}}`, "2025-11-25"},
+		{"echo 2025-06-18", `{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"c","version":"1"}}`, "2025-06-18"},
 		{"echo older supported", `{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"c","version":"1"}}`, "2025-03-26"},
 		{"unknown future version", `{"protocolVersion":"2099-01-01","capabilities":{}}`, LatestProtocolVersion},
 		{"unsupported old version", `{"protocolVersion":"2024-11-05","capabilities":{}}`, LatestProtocolVersion},

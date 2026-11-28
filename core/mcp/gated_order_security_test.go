@@ -39,7 +39,7 @@ func TestGatedValidationOrderAndIdentity(t *testing.T) {
 		}
 		calls = nil
 		_, err = s.CallTool(context.Background(), "denied", map[string]any{})
-		if !errors.As(err, &rpc) || rpc.Code != ErrMethodNotFound || len(calls) != 0 {
+		if !errors.As(err, &rpc) || rpc.Code != ErrInvalidParams || len(calls) != 0 {
 			t.Fatalf("refused wrapper = %v, callbacks %v; confused distinct wrappers", err, calls)
 		}
 		// Tool.Handler remains a gated callable for hosts reading ListTools.
@@ -65,7 +65,7 @@ func TestGatedToolOptionReplacement(t *testing.T) {
 	}
 	_, err = s.CallTool(context.Background(), "replaced", nil)
 	var rpc *RPCError
-	if !errors.As(err, &rpc) || rpc.Code != ErrMethodNotFound {
+	if !errors.As(err, &rpc) || rpc.Code != ErrInvalidParams {
 		t.Fatalf("replacement gate = %v, want unknown tool", err)
 	}
 }

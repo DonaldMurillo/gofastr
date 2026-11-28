@@ -49,7 +49,7 @@ func TestDecorateKeepsGatesFirst(t *testing.T) {
 	for _, args := range []map[string]any{{"secret": "valid"}, {}, {"secret": 42}, {"secret": "valid", "extra": true}} {
 		calls = nil
 		_, err := s.CallTool(context.Background(), "refused", args)
-		if !errors.As(err, &rpc) || rpc.Code != ErrMethodNotFound || rpc.Message != `tool "refused" not found` ||
+		if !errors.As(err, &rpc) || rpc.Code != ErrInvalidParams || rpc.Message != `tool "refused" not found` ||
 			!reflect.DeepEqual(calls, []string{"refuse"}) {
 			t.Fatalf("refused call %v = %v, callbacks %v; want the unknown-tool answer after one gate run", args, err, calls)
 		}

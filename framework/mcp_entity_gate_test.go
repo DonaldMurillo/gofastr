@@ -69,8 +69,8 @@ func TestEntityMCPToolsListOnlyWhatTheCallerMayDo(t *testing.T) {
 	// not be confirmed to exist by a direct call (the listing already
 	// hides it), so neither the permission name nor the gate's words
 	// cross.
-	if resp.Error.Code != mcp.ErrMethodNotFound || resp.Error.Message != `tool "notes_create" not found` {
-		t.Errorf("refused call error = %d %q, want the unknown-tool answer {%d %q}", resp.Error.Code, resp.Error.Message, mcp.ErrMethodNotFound, `tool "notes_create" not found`)
+	if resp.Error.Code != mcp.ErrInvalidParams || resp.Error.Message != `tool "notes_create" not found` {
+		t.Errorf("refused call error = %d %q, want the unknown-tool answer {%d %q}", resp.Error.Code, resp.Error.Message, mcp.ErrInvalidParams, `tool "notes_create" not found`)
 	}
 }
 

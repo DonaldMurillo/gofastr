@@ -50,7 +50,7 @@ func TestSweepPanickingGatesMaskAsUnknown(t *testing.T) {
 		t.Fatalf("a panicking WithToolGate must hide its tool from tools/list, got %+v", list.Result)
 	}
 	call := sweepCall(t, s, "tools/call", map[string]any{"name": "wrapped"})
-	if call.Error == nil || call.Error.Code != ErrMethodNotFound || call.Error.Message != `tool "wrapped" not found` {
+	if call.Error == nil || call.Error.Code != ErrInvalidParams || call.Error.Message != `tool "wrapped" not found` {
 		t.Fatalf("a panicking Gated gate must answer as an unknown tool, got %+v", call.Error)
 	}
 	inner := Gated(boom, noop)
@@ -58,7 +58,7 @@ func TestSweepPanickingGatesMaskAsUnknown(t *testing.T) {
 		t.Fatal(err)
 	}
 	call = sweepCall(t, s, "tools/call", map[string]any{"name": "closure"})
-	if call.Error == nil || call.Error.Code != ErrMethodNotFound || call.Error.Message != `tool "closure" not found` {
+	if call.Error == nil || call.Error.Code != ErrInvalidParams || call.Error.Message != `tool "closure" not found` {
 		t.Fatalf("a panicking Gated gate inside a closure must answer as an unknown tool, got %+v", call.Error)
 	}
 	var get Response
