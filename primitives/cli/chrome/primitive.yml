@@ -14,6 +14,12 @@ invariants:
     rule: FS embeds no file under a top-level name starting with "." or "_", so local state such as an ignored .gofastr/ next to the packages never ships in the binary.
     enforced_by:
       - test: cmd/gofastr/packages.TestFSShipsNoDotOrUnderscoreEntry
+  - id: root-files-are-not-packages
+    rule: "FS's root holds this package's own files (packages.go and its tests) beside the package directories, and the readers list and copy only the directories, so a root file is neither a listed package nor an error."
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestCanonicalPackageInfosSkipRootFiles
+    applies:
+      - cmd/gofastr/internal/appgen/generate_package.go
   - id: package-doc-is-the-listing
     rule: The first sentence of each package's doc comment is the summary `gofastr generate package` prints beside its name.
     enforced_by:

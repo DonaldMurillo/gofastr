@@ -2,9 +2,11 @@ package appgen
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -63,6 +65,35 @@ func TestFirstDocSentenceStopsAtTheFirstSentence(t *testing.T) {
 		if got := firstDocSentence(tc.text, "x"); got != tc.want {
 			t.Errorf("firstDocSentence(%q) = %q, want %q", tc.text, got, tc.want)
 		}
+	}
+}
+
+func TestCanonicalPackageInfosSkipRootFiles(t *testing.T) {
+	entries, err := fs.ReadDir(canonicalPackages, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dirs, files []string
+	for _, e := range entries {
+		if e.IsDir() {
+			dirs = append(dirs, e.Name())
+		} else {
+			files = append(files, e.Name())
+		}
+	}
+	if len(files) == 0 {
+		t.Fatal("the embedded root holds no file, so this test checks nothing")
+	}
+	infos, err := canonicalPackageInfos()
+	if err != nil {
+		t.Fatalf("a file at the embedded root (%v) broke the listing: %v", files, err)
+	}
+	var names []string
+	for _, p := range infos {
+		names = append(names, p.Name)
+	}
+	if !slices.Equal(names, dirs) {
+		t.Errorf("listed %v, want only the directories %v", names, dirs)
 	}
 }
 
