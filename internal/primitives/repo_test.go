@@ -296,6 +296,7 @@ var ownedPackages = []string{
 	"cmd/gofastr/internal/loopback",
 	"cmd/gofastr/internal/testcmd",
 	"cmd/gofastr/internal/telemetrycmd",
+	"cmd/gofastr/internal/projectfs",
 }
 
 //gofastr:test-reads primitives/ *.go
