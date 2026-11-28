@@ -112,11 +112,12 @@ invariants:
       - test: core-ui/runtime.TestHeldClickNeverLandsAfterALaterClick
       - test: examples/site/tracker.TestTrackerSupersedingPointerClicksKeepRingOff
   - id: anchored-popover-is-on-the-top-layer
-    rule: An anchored popover widget's root is a manual popover while open, so it shows above whatever is already in the top layer, still placed beside its trigger by the module; it leaves the top layer when the widget closes, so a hydrated root that is only re-hidden rises above later layers when it reopens, and a root a page swap re-attaches rises again on its next placement.
+    rule: An anchored popover widget's root is a manual popover while open, so it shows above whatever is already in the top layer, still placed beside its trigger by the module; it leaves the top layer when the widget closes, so a hydrated root that is only re-hidden rises above later layers when it reopens, and a root that a page swap re-attaches or a closing dialog hands back to <body> rises again, never left hidden out of the top layer; a showPopover that throws drops the popover attribute so the root still draws.
     enforced_by:
       - test: core-ui/runtime.TestAnchoredPopoverOpensAboveTheTopLayer
       - test: core-ui/runtime.TestHydratedPopoverReopensAboveALaterPopover
       - test: core-ui/runtime.TestReattachedPopoverRisesAgain
+      - test: core-ui/runtime.TestPopoverMovedByAClosingDialogRisesAgain
   - id: escape-waits-for-widgetfocus
     rule: An Escape pressed while a modal or popover is open and the demand-loaded widgetfocus module has not registered yet is handed to that module once it loads, so it closes the top layer instead of being lost, unless a layer opened or closed in between; an Escape that belongs to an IME is never forwarded.
     enforced_by:

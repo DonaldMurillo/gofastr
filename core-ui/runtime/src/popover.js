@@ -101,7 +101,7 @@
       // again on its next placement.
       if (root.showPopover && !root.matches(':popover-open')) {
         root.setAttribute('popover', 'manual');
-        try { root.showPopover(); } catch (_) {}
+        try { root.showPopover(); } catch (_) { root.removeAttribute('popover'); }
       }
       // Set the anchored marker BEFORE measuring so the chrome's
       // border + shadow + max-inline-size are reflected in the
@@ -223,13 +223,20 @@
     }
   });
 
-  // A swap's re-attach puts an open popover back on the page out of the
-  // top layer; its next placement raises it.
-  document.addEventListener('fui:widget-open', (e) => {
-    const d = e.detail || {};
-    const st = d.reinserted && NS._widgets && Object.prototype.hasOwnProperty.call(NS._widgets, d.name) ? NS._widgets[d.name] : undefined;
-    if (st && st.anchorPlace) st.anchorPlace();
-  });
+  // A move takes an open popover out of the top layer, and a popover
+  // left out of it is not drawn: a swap's re-attach (fui:widget-open,
+  // reinserted) and a closing dialog handing its panels back to <body>
+  // (after its fui:widget-close) both place, and so raise, every open
+  // anchored popover again.
+  const raiseMoved = () => {
+    for (const n in NS._widgets || {}) {
+      const st = NS._widgets[n];
+      const r = st && st.root;
+      if (st.anchorPlace && r && r.isConnected && r.hasAttribute('popover') && !r.matches(':popover-open')) st.anchorPlace();
+    }
+  };
+  document.addEventListener('fui:widget-open', (e) => { if ((e.detail || {}).reinserted) raiseMoved(); });
+  document.addEventListener('fui:widget-close', () => queueMicrotask(raiseMoved));
 
   (NS.loadedModules ||= {}).popover = true;
 })();
