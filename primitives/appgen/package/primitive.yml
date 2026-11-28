@@ -1,7 +1,57 @@
 primitive: appgen.package
-summary: gofastr generate package and unmount, which copy a canonical framework package into a project as owned code.
+summary: gofastr generate package and the unmount copy it shares with gofastr unmount, which copy a canonical framework package into a project as owned code.
 code:
   - cmd/gofastr/internal/appgen/generate_package.go
   - cmd/gofastr/internal/appgen/unmount.go
 docs:
   - framework/docs/content/unmount.md
+  - framework/docs/content/cli.md
+invariants:
+  - id: one-shot-copy
+    rule: generate package refuses a target directory that exists and is not empty, and takes no --force, --add or --json.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestGeneratePackageRefusesNonEmptyTarget
+  - id: target-inside-the-module
+    rule: The target resolves inside the working directory's module, one --dry-run and the real copy judge alike, and its import path comes from the go.mod enclosing the target, so a nested module owns its packages and a sibling module is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestGeneratePackageDryRunRefusesOutside
+      - test: cmd/gofastr/internal/appgen.TestGeneratePackageNestedModuleImport
+      - test: cmd/gofastr/internal/appgen.TestGeneratePackageRefusesASiblingModule
+  - id: rollback-removes-only-its-own
+    rule: A failed copy removes only files whose bytes are exactly its own output and only directories it created, deepest first, so a file a concurrent process dropped in survives.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestGeneratePackageRacerRolledBack
+      - test: cmd/gofastr/internal/appgen.TestGeneratePackageFailureCleansDirs
+      - test: cmd/gofastr/internal/appgen.TestPackageCopyRollbackRemovesSubdirs
+      - test: cmd/gofastr/internal/appgen.TestPackageCopyUndo
+  - id: canonical-sheets-are-clean
+    rule: A copy runs the ownstyle checks gofastr verify runs over the package's sheets, and any finding not waived by a gofastr:allow marker, a warning included, fails the copy.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestCanonicalSheetFindingsFailUnlessWaived
+  - id: imports-rewritten-by-the-parser
+    rule: A copy rewrites the import specs of the tree and of packages under it, found by the parser, and leaves sibling paths sharing the prefix, comments and strings alone.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestRewriteImportPrefixKeepsSiblings
+  - id: hook-names-the-package
+    rule: Every package of a copy gets a hook file registering it with core/unmounted under an alias no package name can collide with, its package clause taken from a file that is neither an external test nor build-ignored, and the root hook lists every other file with its sum.
+    enforced_by:
+      - test: cmd/gofastr/internal/unmountcmd.TestBuildUnmountCopyMarksAndHooks
+      - test: cmd/gofastr/internal/appgen.TestUnmountHookImportCannotCollide
+  - id: no-overlapping-copies
+    rule: A copy whose path overlaps another copy's is refused, and for an unmount so is a package already copied or one whose tree holds or sits inside another copy's.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestCheckUnmountOverlap
+  - id: list-mode-reads-the-package-docs
+    rule: generate package with no name lists every embedded package with the first sentence of its package doc, a period inside a file name not ending the sentence.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestGeneratePackageListsAllPackages
+      - test: cmd/gofastr/internal/appgen.TestFirstDocSentenceSkipsDotsInNames
+decisions:
+  - id: copy-from-the-embedded-tree
+    date: 2026-11-28
+    status: accepted
+    decision: generate package and the app spec's marketing chrome both copy from the embedded cmd/gofastr/packages tree as an unmount, with the same markers, hook and settings entry.
+    rejected:
+      - option: A template fork of the chrome packages inside the generator.
+        why: Two copies drift, and verify, upgrade and remount would not see the result as a copy.
+    upholds: [hook-names-the-package]
