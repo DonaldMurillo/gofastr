@@ -6,28 +6,10 @@ import (
 	"strings"
 )
 
-// DevBaseURL is the origin a generated app falls back to when its spec
-// sets no app.base_url. The generator spells that fallback as the
-// devBaseURL constant, never as a literal, so ReadGeneratedApp can tell
-// it from an explicit `base_url: http://localhost:8080`, which is a
-// literal like any other.
+// DevBaseURL is the origin a generated app falls back to when its spec sets no app.base_url.
 const DevBaseURL = "http://localhost:8080"
 
-// ReadGeneratedApp reconstructs, off a generated app's parsed app.go and
-// main.go, the app settings the generator writes into source: app.go's
-// constants (name, module, database, static dir, API prefix) and auth
-// config with its admin seed, and main.go's admin back office, PWA,
-// llm.md, locale prefixes, public OpenAPI, description and base URL.
-// mainFile may be nil.
-//
-// Two readers share it. Pack (packcmd) adds the theme, output dir and
-// the secrets kept in .env. generate app --add (appgen) hands the
-// result to validation, so a fragment's screens are judged by the
-// project's routes the way validating the whole spec judges them.
-//
-// A default the generator fills in reads back as unset: admin path
-// /admin and role admin read as "", and the devBaseURL fallback as an
-// empty BaseURL.
+// ReadGeneratedApp reads the app settings the generator writes into a generated app.go and main.go (mainFile may be nil).
 func ReadGeneratedApp(appFile, mainFile *ast.File) AppSpecApp {
 	app := AppSpecApp{APIPrefix: "api"}
 	consts := map[string]string{}
@@ -53,7 +35,6 @@ func ReadGeneratedApp(appFile, mainFile *ast.File) AppSpecApp {
 		app.APIPrefix = strings.Trim(v, "/")
 	}
 
-	// Auth and the admin seed, found anywhere in app.go.
 	ast.Inspect(appFile, func(n ast.Node) bool {
 		switch t := n.(type) {
 		case *ast.CompositeLit:
@@ -82,7 +63,6 @@ func ReadGeneratedApp(appFile, mainFile *ast.File) AppSpecApp {
 		return app
 	}
 
-	// Admin, PWA, llm.md, locale prefixes and the rest live in main.go.
 	ast.Inspect(mainFile, func(n ast.Node) bool {
 		switch t := n.(type) {
 		case *ast.CompositeLit:
@@ -94,8 +74,6 @@ func ReadGeneratedApp(appFile, mainFile *ast.File) AppSpecApp {
 				}
 			case "Config":
 				cv := FieldVals(t)
-				// print.Config and other batteries' configs carry a
-				// PathPrefix too; only admin.Config names the admin path.
 				if _, ok := cv["PathPrefix"]; !ok || AstSelPkg(t.Type) != "admin" {
 					return true
 				}
@@ -130,8 +108,6 @@ func ReadGeneratedApp(appFile, mainFile *ast.File) AppSpecApp {
 					app.Description = AstString(t.Args[0])
 				}
 			case "getEnv":
-				// An explicit base_url is a literal; the unset fallback
-				// is the devBaseURL constant, which reads as "".
 				if len(t.Args) == 2 && AstString(t.Args[0]) == "APP_BASE_URL" {
 					app.BaseURL = AstString(t.Args[1])
 				}
@@ -146,9 +122,6 @@ func ReadGeneratedApp(appFile, mainFile *ast.File) AppSpecApp {
 	return app
 }
 
-// pwaDisplayName maps a generated uihost.PWADisplay* constant name back
-// to the app spec's display string. Unknown or absent → "" (the omitted
-// default).
 func pwaDisplayName(constName string) string {
 	switch constName {
 	case "PWADisplayStandalone":
@@ -163,8 +136,7 @@ func pwaDisplayName(constName string) string {
 	return ""
 }
 
-// AstSelPkg is the package qualifier of a selector expression
-// (admin.Config → "admin"), or "" for anything else.
+// AstSelPkg is the package qualifier of a selector expression, or "".
 func AstSelPkg(e ast.Expr) string {
 	if sel, ok := e.(*ast.SelectorExpr); ok {
 		if id, ok := sel.X.(*ast.Ident); ok {
@@ -174,8 +146,7 @@ func AstSelPkg(e ast.Expr) string {
 	return ""
 }
 
-// AstSelLast is the trailing identifier of a selector or ident
-// expression (auth.AuthConfig → "AuthConfig", admin.Config → "Config").
+// AstSelLast is the trailing identifier of a selector or ident expression.
 func AstSelLast(e ast.Expr) string {
 	switch t := e.(type) {
 	case *ast.SelectorExpr:

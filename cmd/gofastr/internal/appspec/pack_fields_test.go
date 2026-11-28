@@ -5,6 +5,8 @@ import (
 	"go/parser"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 func packFieldsOf(t *testing.T, field string) error {
@@ -16,6 +18,32 @@ func packFieldsOf(t *testing.T, field string) error {
 	}
 	_, err = PackEntityDeclFromCall(call.(*ast.CallExpr))
 	return err
+}
+
+func packEntityConfig(t *testing.T, config string) framework.EntityDeclaration {
+	t.Helper()
+	call, err := parser.ParseExpr(`app.Entity("posts", framework.EntityConfig{` + config + `})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decl, err := PackEntityDeclFromCall(call.(*ast.CallExpr))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return decl
+}
+
+func TestPackReadsAnEmptyScopeAsNone(t *testing.T) {
+	if decl := packEntityConfig(t, `Scope: &framework.ScopeConfig{}`); decl.Scope != nil {
+		t.Fatalf("an empty Scope literal packed to %+v, want no scope", decl.Scope)
+	}
+}
+
+func TestPackKeepsAnIndexExpression(t *testing.T) {
+	decl := packEntityConfig(t, `Indices: []framework.Index{{Name: "lower_email", Expression: "lower(email)", Unique: true}}`)
+	if len(decl.Indices) != 1 || decl.Indices[0].Expression != "lower(email)" {
+		t.Fatalf("indices = %+v, want the expression index kept", decl.Indices)
+	}
 }
 
 // A schema.Field key the app spec cannot hold fails the pack, naming the

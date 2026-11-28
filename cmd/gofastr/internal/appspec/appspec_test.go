@@ -51,6 +51,17 @@ func TestAppSpecRejectsUnknownKeys(t *testing.T) {
 	}
 }
 
+func TestAppSpecAcceptsExtensionKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gofastr.yml")
+	body := "x_owner: team-a\nx-note: kept\napp:\n  name: app\n  module: local/app\n  x_ci: on\nentities:\n  - name: posts\n    x-source: import\n    fields:\n      - name: title\n        type: string\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadAppSpec(path); err != nil {
+		t.Fatalf("x_ and x- keys must pass the unknown-key check: %v", err)
+	}
+}
+
 func TestLoadAppSpecSupportsJSONInput(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gofastr.json")

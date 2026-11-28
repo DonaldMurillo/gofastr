@@ -34,6 +34,21 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Changed
 
+- **BREAKING: `gofastr validate` refuses an `app.static_dir` with a
+  directory whose name starts with a dot**, such as `.git`, `.env.d` or
+  `public/.git`. The app would have served the repository's history or
+  config to anyone. Serve a directory of its own, such as `static`
+  ([#938](https://github.com/DonaldMurillo/gofastr/issues/938)).
+
+- **BREAKING: a `.json` app spec refuses `{}` where an access or database
+  setting takes a single value** (`read`, `create`, `update`, `delete`,
+  `role`, `owner_field`, `tenant_field`, `read_scope.unrestricted`,
+  `app.db.driver` and the rest). `{}` used to load as blank, the weakest
+  setting: `"read": {}` opened reads to everyone, and
+  `"unrestricted": {}` let every signed-in user past the read scope. Write
+  the value, or leave the key out
+  ([#937](https://github.com/DonaldMurillo/gofastr/issues/937)).
+
 - **BREAKING: `gofastr harness` and `gofastr harness mcp` read their
   config directory (repository-key approvals, `permissions.json`, user
   `skills/`, the credential salt and `creds.enc`) from
@@ -104,6 +119,11 @@ few lines, and link the PR or the docs page for the rest.
   v5 leaves dotfiles out.
 
 ### Fixed
+
+- **The app-spec PII lint no longer suggests `multi_tenant: true`**, which
+  `gofastr validate` refuses for a generated app. It names `owner_field` and
+  an `access.read` permission
+  ([#939](https://github.com/DonaldMurillo/gofastr/issues/939)).
 
 - **`gofastr release --url` no longer prints the credentials in a URL it
   refuses.** The error shows `https://REDACTED@host/...`, so a token in

@@ -12,8 +12,6 @@ import (
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// ----- AST scalar helpers ----------------------------------------------------
-
 func AstString(e ast.Expr) string {
 	if lit, ok := e.(*ast.BasicLit); ok && lit.Kind == token.STRING {
 		if s, err := strconv.Unquote(lit.Value); err == nil {
@@ -23,10 +21,6 @@ func AstString(e ast.Expr) string {
 	return ""
 }
 
-// astAccessPerm reads one AccessControl operation: a permission string,
-// or framework.Anyone, which the generator spells as the constant rather
-// than its value. Reading literals alone dropped an open create (a
-// contact form) from the packed spec.
 func astAccessPerm(e ast.Expr) string {
 	if sel, ok := e.(*ast.SelectorExpr); ok && sel.Sel.Name == "Anyone" {
 		if pkg, ok := sel.X.(*ast.Ident); ok && (pkg.Name == "framework" || pkg.Name == "entity") {
@@ -41,8 +35,7 @@ func AstBool(e ast.Expr) bool {
 	return ok && id.Name == "true"
 }
 
-// AstSelName returns the trailing identifier of `pkg.Name` (e.g. schema.String
-// → "String", framework.RelManyToOne → "RelManyToOne"), or a bare ident's name.
+// AstSelName returns the trailing identifier of pkg.Name, or a bare ident's name.
 func AstSelName(e ast.Expr) string {
 	switch t := e.(type) {
 	case *ast.SelectorExpr:
@@ -53,7 +46,6 @@ func AstSelName(e ast.Expr) string {
 	return ""
 }
 
-// astPtrCallFloat unwraps floatPtr(123) → 123.
 func astPtrCallFloat(e ast.Expr) (float64, bool) {
 	if call, ok := e.(*ast.CallExpr); ok && len(call.Args) == 1 {
 		return astFloat(call.Args[0])
@@ -61,7 +53,6 @@ func astPtrCallFloat(e ast.Expr) (float64, bool) {
 	return 0, false
 }
 
-// astPtrCallBool unwraps boolPtr(true) → true.
 func astPtrCallBool(e ast.Expr) (bool, bool) {
 	if call, ok := e.(*ast.CallExpr); ok && len(call.Args) == 1 {
 		return AstBool(call.Args[0]), true
@@ -77,10 +68,6 @@ func astFloat(e ast.Expr) (float64, bool) {
 	return 0, false
 }
 
-// numberLit returns the text of a number literal with its sign. The
-// generator writes a negative value as -1, which Go parses as a unary
-// minus over the literal 1, not as one literal. The sign is joined to
-// the digits before parsing so math.MinInt64 still fits.
 func numberLit(e ast.Expr) (string, token.Token, bool) {
 	sign := ""
 	if u, ok := e.(*ast.UnaryExpr); ok && u.Op == token.SUB {
@@ -105,8 +92,7 @@ func AstStringSlice(e ast.Expr) []string {
 	return out
 }
 
-// AstAny mirrors the YAML parser's native types: string, int64, float64, bool,
-// nil, map[string]any, []any. Used for field Default, Properties, and seed rows.
+// AstAny reads a literal as the YAML parser's types: string, int64, float64, bool, nil, map[string]any, []any.
 func AstAny(e ast.Expr) any {
 	if text, kind, ok := numberLit(e); ok {
 		if kind == token.INT {
@@ -137,9 +123,6 @@ func AstAny(e ast.Expr) any {
 		}
 		return t.Name
 	case *ast.CompositeLit:
-		// Detect a map by element shape: nested literals inside
-		// []map[string]any{...} have an elided (nil) Type, so KeyValueExpr
-		// elements are the reliable signal.
 		isMap := false
 		if _, ok := t.Type.(*ast.MapType); ok {
 			isMap = true
@@ -155,7 +138,6 @@ func AstAny(e ast.Expr) any {
 			}
 			return m
 		}
-		// array/slice literal
 		out := make([]any, 0, len(t.Elts))
 		for _, el := range t.Elts {
 			out = append(out, AstAny(el))
@@ -165,12 +147,6 @@ func AstAny(e ast.Expr) any {
 	return nil
 }
 
-// unwrapBuilderCalls peels trailing fluent builder method calls off a config
-// expression such as EntityConfig{...}.WithTimestamps(true), returning the
-// underlying value and a map of methodName→args for each builder peeled. The
-// generator emits some EntityConfig settings (Timestamps) as method calls
-// rather than struct fields, so pack recovers them from here rather than from
-// the composite literal's fields.
 func unwrapBuilderCalls(e ast.Expr) (ast.Expr, map[string][]ast.Expr) {
 	builders := map[string][]ast.Expr{}
 	for {
@@ -187,8 +163,7 @@ func unwrapBuilderCalls(e ast.Expr) (ast.Expr, map[string][]ast.Expr) {
 	}
 }
 
-// FieldVals returns the key→value expressions of a struct composite literal.
-// A value wrapped in fluent builder calls is unwrapped to the literal first.
+// FieldVals returns the key to value expressions of a struct literal, builder calls unwrapped.
 func FieldVals(e ast.Expr) map[string]ast.Expr {
 	out := map[string]ast.Expr{}
 	e, _ = unwrapBuilderCalls(e)
@@ -216,10 +191,6 @@ var schemaTypeToYAML = map[string]string{
 	"Relation": "relation", "Image": "image", "File": "file",
 }
 
-// relationTypeFromConstName reverses relationTypeConst: the const name pack
-// reads out of generated Go (`framework.RelHasOne`) back to the relation
-// kind, via the shared relationKinds table. Unknown names read as
-// belongs_to, matching the table default.
 func relationTypeFromConstName(name string) framework.RelationType {
 	for _, k := range RelationKinds {
 		if k.ConstName == name {
@@ -229,9 +200,6 @@ func relationTypeFromConstName(name string) framework.RelationType {
 	return framework.RelManyToOne
 }
 
-// packDisplayFromExpr reverses the Display literal the entity emitter
-// writes (renderDisplayLiteral): &framework.DisplayConfig{...} with the
-// form's three item shapes. Returns nil for a value that holds nothing.
 func packDisplayFromExpr(e ast.Expr) *fwentity.DisplayConfig {
 	d := FieldVals(e)
 	out := &fwentity.DisplayConfig{
@@ -313,8 +281,6 @@ func packDisplayFromExpr(e ast.Expr) *fwentity.DisplayConfig {
 	return out
 }
 
-// packFormItems reverses a []framework.FormItem literal: {Field: "x"},
-// {Row: [...]}, {Section: ..., Items: ...}.
 func packFormItems(e ast.Expr) []fwentity.FormItem {
 	cl, ok := unwrapPtr(e).(*ast.CompositeLit)
 	if !ok {
@@ -336,7 +302,6 @@ func packFormItems(e ast.Expr) []fwentity.FormItem {
 	return out
 }
 
-// packStatesFromExpr reverses the States literal (renderStatesLiteral).
 func packStatesFromExpr(e ast.Expr) *fwentity.StatesConfig {
 	s := FieldVals(e)
 	out := &fwentity.StatesConfig{
@@ -363,9 +328,6 @@ func packStatesFromExpr(e ast.Expr) *fwentity.StatesConfig {
 	return out
 }
 
-// unwrapPtr returns the expression inside a &T{...} unary composite (or the
-// expression itself when it is not one), so the readers can walk a pointer
-// literal's elements.
 func unwrapPtr(e ast.Expr) ast.Expr {
 	if u, ok := e.(*ast.UnaryExpr); ok && u.Op == token.AND {
 		return u.X
@@ -373,9 +335,6 @@ func unwrapPtr(e ast.Expr) ast.Expr {
 	return e
 }
 
-// displayIsEmpty reports whether a decoded DisplayConfig holds nothing, the
-// same rule the emitter's only-non-zero-fields output implies: a literal
-// that decodes to all-zero packed as no display block at all.
 func displayIsEmpty(d *fwentity.DisplayConfig) bool {
 	return d.Singular == "" && d.Plural == "" && len(d.TitleFields) == 0 && d.Description == "" &&
 		len(d.Columns) == 0 && len(d.Views) == 0 && len(d.Facets) == 0 && len(d.Fields) == 0 &&
@@ -383,8 +342,7 @@ func displayIsEmpty(d *fwentity.DisplayConfig) bool {
 		d.Nav == nil && d.Form == nil && d.Card == nil
 }
 
-// PackEntityDeclFromCall rebuilds an EntityDeclaration from an
-// app.Entity(name, config) call expression.
+// PackEntityDeclFromCall rebuilds an EntityDeclaration from an app.Entity(name, config) call.
 func PackEntityDeclFromCall(call *ast.CallExpr) (framework.EntityDeclaration, error) {
 	decl := framework.EntityDeclaration{Name: AstString(call.Args[0])}
 	_, builders := unwrapBuilderCalls(call.Args[1])
@@ -395,9 +353,6 @@ func PackEntityDeclFromCall(call *ast.CallExpr) (framework.EntityDeclaration, er
 	if v, ok := cfg["PrimaryKey"]; ok {
 		decl.PrimaryKey = AstStringSlice(v)
 	}
-	// An all-zero group normalizes to nil: a hand-written (or legacy
-	// generator's) empty `Scope: &framework.ScopeConfig{}` literal must
-	// pack back to the same declaration as writing nothing at all.
 	if v, ok := cfg["Scope"]; ok {
 		s := FieldVals(v)
 		scope := &framework.ScopeDeclaration{
@@ -434,9 +389,6 @@ func PackEntityDeclFromCall(call *ast.CallExpr) (framework.EntityDeclaration, er
 			decl.States = st
 		}
 	}
-	// Timestamps is emitted as a .WithTimestamps(bool) builder call, not a
-	// struct field — recover it from the unwrapped builder args. (Fall back
-	// to a struct field for forward-compat if a future generator inlines it.)
 	if args, ok := builders["WithTimestamps"]; ok && len(args) == 1 {
 		b := AstBool(args[0])
 		decl.Timestamps = &b
@@ -505,19 +457,12 @@ func PackEntityDeclFromCall(call *ast.CallExpr) (framework.EntityDeclaration, er
 	return decl, nil
 }
 
-// packHeldFieldKeys are the schema.Field keys a spec field declaration
-// holds. Any other key set to a non-zero value fails the pack: WireName
-// was read past, so a packed spec's client named the JSON key from Name
-// ("bodyText") while CRUD served the override ("content"), and every
-// read came back empty.
 var packHeldFieldKeys = map[string]bool{
 	"Name": true, "Type": true, "Required": true, "Unique": true, "Default": true,
 	"AutoGenerate": true, "ReadOnly": true, "Hidden": true, "NoQuery": true,
 	"Max": true, "Min": true, "Pattern": true, "Values": true, "To": true, "Many": true,
 }
 
-// packZeroLiteral reports whether e spells a zero value: "", false, nil,
-// or 0. Setting an unheld key to its zero value changes nothing.
 func packZeroLiteral(e ast.Expr) bool {
 	switch t := e.(type) {
 	case *ast.BasicLit:
@@ -528,11 +473,6 @@ func packZeroLiteral(e ast.Expr) bool {
 	return false
 }
 
-// packReadFields reads a []schema.Field literal back to declarations. It
-// refuses what a declaration cannot hold rather than drop it: a key
-// outside packHeldFieldKeys, a Type with no spec name, and a Max, Min, or
-// AutoGenerate it cannot read as a literal. The fields read before the
-// refusal come back with the error.
 func packReadFields(e ast.Expr) ([]framework.FieldDeclaration, error) {
 	cl, ok := e.(*ast.CompositeLit)
 	if !ok {
@@ -547,7 +487,7 @@ func packReadFields(e ast.Expr) ([]framework.FieldDeclaration, error) {
 				return out, fmt.Errorf("field %q: schema.Field key %s has no app spec equivalent; pack would drop it", name, key)
 			}
 		}
-		typeName := "String" // schema.Field's zero Type
+		typeName := "String"
 		if v, set := fv["Type"]; set {
 			typeName = AstSelName(v)
 		}
@@ -623,14 +563,9 @@ func packReadIndices(e ast.Expr) []framework.Index {
 	for _, el := range cl.Elts {
 		iv := FieldVals(el)
 		out = append(out, framework.Index{
-			Name:    AstString(iv["Name"]),
-			Columns: AstStringSlice(iv["Columns"]),
-			Unique:  AstBool(iv["Unique"]),
-			// Expression is the key for function/constant indices. Reading it
-			// back matters because `gofastr generate` re-emits what this
-			// returns: without it a declared unique expression index came out
-			// the far side with no key at all, silently dropping the
-			// constraint. See renderIndexLiteral.
+			Name:       AstString(iv["Name"]),
+			Columns:    AstStringSlice(iv["Columns"]),
+			Unique:     AstBool(iv["Unique"]),
 			Expression: AstString(iv["Expression"]),
 		})
 	}

@@ -1,0 +1,37 @@
+primitive: cli.appspec.load
+summary: Reads an app spec off disk, one .yml, .yaml or .json file or a directory of them merged into one spec, and validates it unless asked not to.
+code:
+  - cmd/gofastr/internal/appspec/load.go
+docs:
+  - framework/docs/content/app-spec.md
+invariants:
+  - id: directory-app-merges-as-yaml
+    rule: A directory spec merges its files' app blocks key by key as YAML and decodes the result once, so a key one file leaves unset never takes its default over the value another file set.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestDirMergeKeepsAppKeysAndHooks
+  - id: app-key-in-two-files-is-refused
+    rule: An app key that two files of a directory spec both set is an error naming the key and both files.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestDirMergeRefusesAppKeyInTwoFiles
+  - id: directory-errors-name-the-file
+    rule: A parse or decode error in one file of a directory spec names that file.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestDirSpecErrorNamesTheFragment
+  - id: json-is-as-strict-as-yaml
+    rule: A .json app spec with a repeated object key at any depth, or with data after its first value, is refused, as the YAML parser refuses a repeated key.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestJSONAppSpecRejectsDuplicateKeys
+      - test: cmd/gofastr/internal/appspec.TestJSONAppSpecRejectsTrailingData
+  - id: merge-appends-every-section
+    rule: MergeAppSpecs appends every list section of the second spec to the first and keeps the first spec's App unless it is zero.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestMergeAppSpecsAppendsEverySlice
+decisions:
+  - id: merge-app-blocks-before-decoding
+    date: 2026-11-28
+    status: accepted
+    decision: A directory spec's app blocks are merged as YAML nodes before one decode.
+    rejected:
+      - option: Decode each file's app block and merge the AppSpecApp structs.
+        why: A decoded AppSpecApp cannot tell an unset key from its default (api_prefix api, auth.dev_mode true), so a file that sets only the theme would put those defaults back over another file's choice.
+    upholds: [directory-app-merges-as-yaml]

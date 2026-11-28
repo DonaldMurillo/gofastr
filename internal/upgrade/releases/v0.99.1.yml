@@ -55,3 +55,11 @@ notes:
     breaking: true
     guidance: "If you set XDG_CONFIG_HOME and kept harness files under ~/.config/gofastr/harness, move them to $XDG_CONFIG_HOME/gofastr/harness. If you set a relative XDG_CONFIG_HOME, set an absolute path or move the files gofastr harness creds wrote there to ~/.config/gofastr/harness."
     nodetect: "the directory depends on the developer's environment, not on a spelling in the app's source"
+  - change: "BREAKING - a .json app spec refuses {} where an access or database setting takes a single value (read, create, update, delete, role, owner_field, tenant_field, read_scope.unrestricted, app.db.driver); {} used to load as blank, which opened reads or lifted the read scope"
+    breaking: true
+    guidance: "gofastr validate now names the key. Write the permission or value the key should hold, or leave the key out if blank was what you meant."
+    nodetect: "the value is in a .json app spec, not in Go source"
+  - change: "BREAKING - gofastr validate refuses an app.static_dir with a directory whose name starts with a dot (.git, .env.d, public/.git), which the app would have served to anyone"
+    breaking: true
+    guidance: "Move the files the app should serve into a directory of their own, such as static, and point app.static_dir at it."
+    nodetect: "the value is in the app spec, not in Go source"
