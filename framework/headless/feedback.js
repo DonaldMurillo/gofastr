@@ -80,7 +80,7 @@
     clearTimeout(NS._toastTimers.get(id)?.timer);
     NS._toastTimers.delete(id);
     restoreToastFocus(item);
-    const stack = item.parentElement;
+    const stack = item.closest('[data-hui-toast-stack],[data-cui-toast-stack]');
     item.remove();
     if (stack) syncLayer(stack);
   }

@@ -182,3 +182,24 @@ func TestToastRowSwappedIntoAStackOpensIt(t *testing.T) {
 		t.Fatal("a row swapped into the stack left its widget closed")
 	}
 }
+
+// Dismissing a row a signal swap put in a slot inside the stack keeps
+// the widget up while another row remains.
+func TestToastDismissInASlotKeepsTheStackUp(t *testing.T) {
+	ctx := toastPage(t)
+	evalJS(t, ctx, `window.__gofastr.toast({title: 'Kept', ttl: 0})`, nil)
+	evalJS(t, ctx, `document.querySelector('[data-cui-toast-stack="toasts"]').insertAdjacentHTML('beforeend', '<div id="slot"><div data-hui-toast data-hui-toast-id="swapped" role="status">Swapped</div></div>')`, nil)
+	if !pollJS(ctx, `!!document.querySelector('#slot [data-hui-toast-id]') && `+stackHost+`.matches(':popover-open')`) {
+		t.Fatal("the swapped row was not armed in a raised stack")
+	}
+	evalJS(t, ctx, `(() => { const row = document.querySelector('#slot [data-hui-toast-id]'); window.__gofastr._dismissToast(row, row.getAttribute('data-hui-toast-id')); })()`, nil)
+	if !pollJS(ctx, `!document.querySelector('#slot [data-hui-toast-id]')`) {
+		t.Fatal("the swapped row was not dismissed")
+	}
+	settle()
+	var open bool
+	evalJS(t, ctx, stackHost+`.matches(':popover-open')`, &open)
+	if !open {
+		t.Fatal("dismissing the row in the slot closed the stack while another row remains")
+	}
+}

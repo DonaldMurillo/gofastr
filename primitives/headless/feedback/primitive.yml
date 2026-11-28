@@ -164,6 +164,7 @@ invariants:
     enforced_by:
       - test: framework/ui.TestToastStackRisesIntoTheTopLayer
       - test: framework/ui.TestToastStackLeavesTheTopLayerWhenEmpty
+      - test: framework/ui.TestToastDismissInASlotKeepsTheStackUp
   - id: toast-stack-rises-again-for-a-new-row
     rule: When a row the module has not seen joins a stack whose widget is already open, the widget is shown again so it sits above a popover opened since; focus inside the stack stays where it was, and a sync that adds no row changes nothing.
     enforced_by:
