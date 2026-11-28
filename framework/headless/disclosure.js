@@ -524,6 +524,8 @@
       // A trap open on arrival (rendered open, or tapped before this
       // module loaded) fired no toggle this module heard: arm it here.
       if (d.open && d.hasAttribute('data-hui-disclosure-trap')) applyTrap(d, true);
+      // A popup open on arrival is raised or kept in view the same way.
+      if (d.open && d.hasAttribute('data-hui-disclosure-dismiss') && !lift(d)) keepInView(d);
     }
   }
 

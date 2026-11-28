@@ -221,3 +221,27 @@ func TestBareDismissDisclosureStaysInPlace(t *testing.T) {
 		t.Fatal("a disclosure the kit does not anchor was made a popover")
 	}
 }
+
+// A dropdown rendered open is raised when the module arrives, with no
+// toggle for it to hear, and stays raised when the module scans again.
+func TestDropdownRenderedOpenIsRaisedOnArrival(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser E2E disabled in short mode")
+	}
+	dd := ui.Dropdown(ui.DropdownConfig{ID: "dd", Label: "Filters", Open: true,
+		Content: render.HTML(`<div style="height: 160px">Filter fields</div>`)})
+	srv := themeTestPageWithHead(t, kitHead(t, true), `<div style="overflow: hidden; height: 60px; width: 300px; margin: 20px">`+string(dd)+`</div>`)
+	ctx := moduleTestCtxURL(t, srv.URL, chromedp.EmulateViewport(900, 600))
+	if !pollJS(ctx, moduleLoaded("headless-disclosure")) {
+		t.Fatal("headless-disclosure did not load")
+	}
+	const panel = `#dd > .fui-dropmenu__panel`
+	if !pollJS(ctx, `document.querySelector('`+panel+`').matches(':popover-open')`) {
+		t.Fatal("a dropdown rendered open was not raised when the module arrived")
+	}
+	evalJS(t, ctx, `window.__gofastr._moduleScanners['headless-disclosure'](document)`, nil)
+	settle()
+	if !lifted(t, ctx, panel) {
+		t.Fatal("a second scan took the open panel out of the top layer")
+	}
+}

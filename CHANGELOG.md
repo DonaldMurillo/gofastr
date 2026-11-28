@@ -113,8 +113,9 @@ few lines, and link the PR or the docs page for the rest.
   browser has CSS anchor positioning, an open `ui.Menu` or
   `ui.Dropdown` panel is a manual popover anchored to its trigger, so a
   box that clips or scrolls its content no longer cuts it off. It sits
-  4px from the trigger on the side its `Position` or `Align` names and
-  flips when that side has no room. Elsewhere the panel is placed as
+  4px from the trigger: a menu on the side and edge its `Position`
+  names, a dropdown under the trigger lined up with the edge its `Align`
+  names. It flips when that side or edge has no room. Elsewhere the panel is placed as
   before. A `headless.Disclosure` the kit does not style stays in its
   flow.
 - **Tooltip meets WCAG 1.4.13** (#706). With the `headless-tooltip`
