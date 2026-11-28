@@ -565,6 +565,11 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 
 func callerFacingError(ctx context.Context, err error) (*RPCError, bool) {
 	if rpcErr, ok := errors.AsType[*RPCError](err); ok {
+		if rpcErr.argsInvalid {
+			out := *rpcErr
+			out.argsInvalid = false
+			return &out, true
+		}
 		return rpcErr, true
 	}
 	refusal, ok := errors.AsType[*handler.Error](err)

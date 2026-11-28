@@ -157,3 +157,23 @@ func TestIconSizesAreCopied(t *testing.T) {
 		t.Errorf("initialize = %s, want the registered 16x16", got)
 	}
 }
+
+// A handler that returns the argument refusal of a nested CallTool answers tools/call as that RPCError, not as an
+// isError result: only the call's own inputSchema check may tell the model its arguments were wrong.
+func TestNestedArgsRefusalIsNotTheCallersToolError(t *testing.T) {
+	s := NewServer()
+	inner := map[string]any{"type": "object", "properties": map[string]any{"n": map[string]any{"type": "integer"}}, "required": []string{"n"}}
+	if err := s.RegisterTool("inner", "d", inner, func(context.Context, map[string]any) (any, error) { return "ok", nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RegisterTool("outer", "d", map[string]any{"type": "object"}, func(ctx context.Context, _ map[string]any) (any, error) {
+		return s.CallTool(ctx, "inner", map[string]any{"n": "x"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	resp := s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "tools/call", Params: json.RawMessage(`{"name":"outer","arguments":{}}`)})
+	b, _ := json.Marshal(resp)
+	if resp.Error == nil || resp.Error.Code != ErrInvalidParams || strings.Contains(string(b), `"isError"`) {
+		t.Fatalf("outer tools/call = %s, want the nested -32602 as a JSON-RPC error, not an isError result", b)
+	}
+}
