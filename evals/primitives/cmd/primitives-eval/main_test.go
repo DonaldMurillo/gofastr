@@ -102,6 +102,45 @@ func TestStripRegistryInAgentsMD(t *testing.T) {
 	}
 }
 
+//gofastr:test-reads /AGENTS.md /CLAUDE.md /docs/contributing.md /primitives/README.md
+func TestPrepareBareCellFromRepositoryGuides(t *testing.T) {
+	checkout, err := gitOutput(".", "rev-parse", "--show-toplevel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := t.TempDir()
+	for _, name := range []string{"AGENTS.md", "CLAUDE.md", "docs/contributing.md", "primitives/README.md"} {
+		body, err := os.ReadFile(filepath.Join(checkout, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(repo, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"add", "-A"},
+		{"-c", "user.name=eval", "-c", "user.email=eval@example.invalid", "commit", "-q", "-m", "guides"},
+	} {
+		if _, err := gitOutput(repo, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cellDir := t.TempDir()
+	if _, err := prepare(config{repo: repo, head: "HEAD"}, task{}, conditionBare, cellDir); err != nil {
+		t.Fatalf("prepare bare cell from repository guides: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cellDir, "primitives")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("bare cell still has registry documentation: %v", err)
+	}
+}
+
 func TestIsolateDropsHarnessAndProjectSettings(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{".claude/settings.json", ".claude/skills/x/SKILL.md", "evals/primitives/README.md", "evals/other/README.md"} {
