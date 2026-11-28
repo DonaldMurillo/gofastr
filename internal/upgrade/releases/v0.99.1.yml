@@ -59,3 +59,7 @@ notes:
     breaking: true
     guidance: "gofastr validate now names the key. Write the permission or value the key should hold, or leave the key out if blank was what you meant."
     nodetect: "the value is in a .json app spec, not in Go source"
+  - change: "BREAKING - gofastr validate refuses an app.static_dir with a directory whose name starts with a dot (.git, .env.d, public/.git), which the app would have served to anyone"
+    breaking: true
+    guidance: "Move the files the app should serve into a directory of their own, such as static, and point app.static_dir at it."
+    nodetect: "the value is in the app spec, not in Go source"

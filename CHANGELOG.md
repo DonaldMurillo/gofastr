@@ -34,6 +34,12 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Changed
 
+- **BREAKING: `gofastr validate` refuses an `app.static_dir` with a
+  directory whose name starts with a dot**, such as `.git`, `.env.d` or
+  `public/.git`. The app would have served the repository's history or
+  config to anyone. Serve a directory of its own, such as `static`
+  ([#938](https://github.com/DonaldMurillo/gofastr/issues/938)).
+
 - **BREAKING: a `.json` app spec refuses `{}` where an access or database
   setting takes a single value** (`read`, `create`, `update`, `delete`,
   `role`, `owner_field`, `tenant_field`, `read_scope.unrestricted`,
