@@ -98,3 +98,29 @@ func TestHarnessAndMCPReadTheXDGConfigDirectory(t *testing.T) {
 		})
 	}
 }
+
+// A relative XDG_CONFIG_HOME is ignored, as the XDG spec says: read inside
+// a cloned repository it would name files the repository's author wrote.
+func TestRelativeXDGConfigHomeIsIgnored(t *testing.T) {
+	home, repo := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "cfg")
+	t.Setenv("GOFASTR_HARNESS_PASSPHRASE", "relative-pass")
+	t.Setenv("GOFASTR_HARNESS_MACHINE_KEY", "")
+	t.Chdir(repo)
+	want := filepath.Join(home, ".config", "gofastr", "harness")
+	if got, err := resolveHarnessXDGConfig(); err != nil || got != want {
+		t.Fatalf("resolveHarnessXDGConfig = %q, %v; want %q", got, err, want)
+	}
+	if code := clitest.CovT_capExit(t, func() {
+		clitest.CovT_capOutput(t, func() { runHarnessCreds([]string{"add", "zai", "default", "z-relative-key"}) })
+	}); code != -1 {
+		t.Fatalf("creds add exited %d", code)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "cfg")); !os.IsNotExist(err) {
+		t.Errorf("creds add wrote under the relative XDG_CONFIG_HOME in the working directory (stat err %v)", err)
+	}
+	if _, err := os.Stat(filepath.Join(want, "creds.enc")); err != nil {
+		t.Errorf("creds add did not write ~/.config/gofastr/harness/creds.enc: %v", err)
+	}
+}
