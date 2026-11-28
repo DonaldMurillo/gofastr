@@ -324,6 +324,22 @@
     }
   };
 
+  // ─── the top layer ───────────────────────────────────────────────
+  //
+  // A panel the kit's sheet anchors to its trigger (position-anchor:
+  // --hui-disclosure, set only where the browser has anchor
+  // positioning) opens as a manual popover, so no ancestor's overflow
+  // clips it and the browser keeps it beside the trigger and flips it.
+  // Any other panel keeps the measured shift and float above.
+  function lift(d) {
+    const p = d.querySelector(':scope > :not(summary)');
+    if (!p || !p.showPopover) return;
+    if (!d.open) return p.removeAttribute('popover');
+    if (getComputedStyle(p).positionAnchor !== '--hui-disclosure') return;
+    p.setAttribute('popover', 'manual');
+    try { p.showPopover(); return true; } catch (_) { p.removeAttribute('popover'); }
+  }
+
   // ─── listeners, installed once ───────────────────────────────────
 
   document.addEventListener('toggle', (e) => {
@@ -332,7 +348,7 @@
     mirror(d);
     record(d);
     if (d.hasAttribute('data-hui-disclosure-trap')) applyTrap(d, d.open);
-    if (d.hasAttribute('data-hui-disclosure-dismiss')) keepInView(d);
+    if (d.hasAttribute('data-hui-disclosure-dismiss') && !lift(d)) keepInView(d);
   }, true);
 
   document.addEventListener('click', (e) => {

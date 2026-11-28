@@ -101,6 +101,14 @@ few lines, and link the PR or the docs page for the rest.
 - **`repolint` flags a `go build ./cmd/vettool/` written with a trailing
   slash** that lacks `-buildvcs=false`, as it already did without the
   slash ([#924](https://github.com/DonaldMurillo/gofastr/pull/924)).
+- **Menu and dropdown panels show on the top layer** (#706). Where the
+  browser has CSS anchor positioning, an open `ui.Menu` or
+  `ui.Dropdown` panel is a manual popover anchored to its trigger, so a
+  box that clips or scrolls its content no longer cuts it off. It sits
+  4px from the trigger on the side its `Position` or `Align` names and
+  flips when that side has no room. Elsewhere the panel is placed as
+  before. A `headless.Disclosure` the kit does not style stays in its
+  flow.
 - **Tooltip meets WCAG 1.4.13** (#706). With the `headless-tooltip`
   module, `ui.Tooltip` opens in the top layer, so a scrolling or
   clipping container no longer cuts it off. It stays open while the

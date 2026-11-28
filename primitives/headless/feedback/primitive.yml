@@ -292,6 +292,13 @@ invariants:
     enforced_by:
       - test: framework/headless.TestDisclosureRefusesBrokenConfiguration
       - test: framework/headless.TestDisclosureNameMakesAnExclusiveGroup
+  - id: disclosure-panel-rises-where-the-sheet-anchors-it
+    rule: When a light-dismiss disclosure opens and its panel's computed position-anchor is --hui-disclosure, headless-disclosure makes the panel a manual popover and shows it, so no ancestor's overflow clips it, and removes the popover attribute when the disclosure closes; any other panel, or every panel in a browser without the Popover API, keeps the measured shift and float.
+    enforced_by:
+      - test: framework/ui.TestDropdownPanelEscapesAClippingBox
+      - test: framework/ui.TestMenuPanelFlipsAboveNearTheBottom
+      - test: framework/ui.TestPopupPanelFloatsWithoutAnchorPositioning
+      - test: framework/ui.TestBareDismissDisclosureStaysInPlace
   - id: feedback-module-markers
     rule: headless-feedback loads on data-hui-copy, data-hui-toast-stack, data-cui-toast-stack and data-hui-network-retry.
     enforced_by:
@@ -535,6 +542,18 @@ decisions:
       - option: A focus trap of its own.
         why: The trap is the widget runtime's Tab containment over the kernel's shared focus selector, not a second implementation.
     upholds: [disclosure-refuses-broken-props]
+  - id: disclosure-panel-lift-is-opt-in-and-manual
+    date: 2026-11-28
+    status: accepted
+    decision: headless-disclosure lifts a popup's panel into the top layer only when the sheet anchors it (position-anchor --hui-disclosure), as a manual popover, and leaves placement to the sheet's anchor positioning.
+    rejected:
+      - option: Lift every light-dismiss panel.
+        why: A host styling a headless Disclosure itself would get the browser's popover defaults, centred in the viewport with a border, padding and CanvasText.
+      - option: popover auto.
+        why: Its own light dismiss and Escape would close the panel without closing the details or returning focus, beside the module's own.
+      - option: Lift the panel and place it from script where anchor positioning is missing.
+        why: The measured shift and float already take a panel out of a clipping box there, so the fallback keeps it rather than writing a second placer.
+    upholds: [disclosure-panel-rises-where-the-sheet-anchors-it]
   - id: copy-splits-from-feedback
     date: 2026-11-16
     status: accepted
