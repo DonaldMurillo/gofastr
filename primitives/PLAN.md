@@ -290,22 +290,23 @@ follow-up (#923, with the three items a post-merge review of #918 added)
 gave each a test watched failing, or narrowed the rule to what the code
 does (#924, its proofs in the PR).
 
-`cmd/gofastr` is swept, 16.7% to 4.5%, its tests 10.8% to 10.4%, in a stack
+`cmd/gofastr` is swept, 16.7% to 4.7%, its tests 10.8% to 10.3%, in a stack
 of six PRs split by job (#931 to #936). Every one of its directories is in
 `TestCoveredPackagesHaveNoUnownedFile`. A new `cli` primitive owns `main.go`
 and has one child per subcommand or shared part; `appgen` stays top level
-with eleven children by job, and `devcmd` became `cli.dev`. Per directory
-(before, after):
+with eleven children by job, and `devcmd` became `cli.dev`. `verifycmd` and
+`plugincmd` belong to `contracts` and `cliplugin` and were not swept here.
+Per directory (before, after):
 
 | Directory | Before | After | | Directory | Before | After |
 |---|---|---|---|---|---|---|
-| agentscmd | 25.4% | 5.1% | | loopback | 26.2% | 8.2% * |
-| appgen | 17.5% | 7.0% | | migratecmd | 16.5% | 0.4% |
-| appspec | 18.3% | 1.5% | | newcmd | 13.0% | 0.9% |
-| auditcmd | 8.8% | 1.2% | | packages (tree) | 34.7% | 15.3% * |
-| buildcmd | 27.2% | 1.3% | | packcmd | 12.4% | 0.2% |
-| cli | 24.4% | 8.9% * | | project | 19.4% | 6.7% |
-| clitest | 12.9% | 4.7% | | projectfs | 28.5% | 6.3% |
+| agentscmd | 25.4% | 5.1% | | migratecmd | 16.5% | 0.4% |
+| appgen | 17.5% | 7.0% | | newcmd | 13.0% | 0.9% |
+| appspec | 18.3% | 1.5% | | packages (tree) | 34.7% | 32.8% ** |
+| auditcmd | 8.8% | 1.2% | | packcmd | 12.4% | 0.2% |
+| buildcmd | 27.2% | 1.3% | | plugincmd | 4.1% | 4.1% |
+| cli | 24.4% | 9.2% * | | project | 19.4% | 6.7% |
+| clitest | 12.9% | 4.8% | | projectfs | 28.5% | 6.3% |
 | deploycmd | 10.5% | 0.7% | | releasecmd | 12.5% | 0.5% |
 | desktopcmd | 8.8% | 0.2% | | semanticcmd | 13.8% | 0.7% |
 | devcmd | 27.8% | 2.7% | | telemetrycmd | 7.9% | 0.7% |
@@ -314,33 +315,40 @@ with eleven children by job, and `devcmd` became `cli.dev`. Per directory
 | gates | 11.1% | 5.8% | | unmountcmd | 10.3% | 1.1% |
 | generatecmd | 10.5% | 1.5% | | upgradecmd | 14.3% | 0.7% |
 | harnesscmd | 15.8% | 0.7% | | validatecmd | 19.5% | 3.7% |
-| initcmd | 21.9% | 0.5% | | main.go | 16.7% | 0.3% |
+| initcmd | 21.9% | 0.5% | | verifycmd | 18.1% | 18.1% |
+| loopback | 26.2% | 8.2% * | | main.go | 8.7% | 0.3% |
 
 In the starred directories what remains is a doc on each exported
-identifier; the site packages are 64 to 94 lines each. In `themecmd`, double
-starred, the rest is the theme editor's script, whose JavaScript comments
+identifier. The double-starred ones are exceptions. The three site
+packages (`siteheader`, `sitefooter`, `docpage`) are copied into apps as
+the app's own code, so they keep their doc comments, which are the app
+author's documentation (`cli.chrome/copied-packages-keep-their-docs`). In
+`themecmd` the rest is the theme editor's script, whose JavaScript comments
 the counter reads as Go comments: the script stays a Go string because a
 `.js` file falls under the shipped-JS lints the runtime's page code meets.
 In `appgen` about 520 of the remaining lines are comments inside the
-templates it emits. `appgen`'s `appspec.go`, its largest file, was not swept
-line by line and is the follow-up.
+templates it emits. Two follow-ups are left: `appgen`'s `appspec.go`, its
+largest file, which was not swept line by line, and `verifycmd`.
 
-The stack added 81 primitives, 608 invariants (20 judged only) and 122
-decisions, plus about 170 tests for rules that had none. It recorded 5 twins
-and merged 4: `gates`' two walks into `auditTree`, the harness's three config
-directory lookups into `harnessDirs`, `runSingle`'s copy of the REPL loop,
-and `project.InstalledFrameworkVersion`'s copy of `CliVersion`'s lookup.
-Fixed on the way: `gofastr harness` and `harness mcp` read
-`~/.config/gofastr/harness` while `harness creds` wrote under
+The stack added 81 primitives (82 new directories, less `devcmd`, which
+became `cli.dev`), about 610 invariants (about 20 judged only) and about 150
+decisions, plus about 195 new tests, most of them for rules that had none.
+It recorded 5 twins and merged 4: `gates`' two walks into `auditTree`, the
+harness's three config directory lookups into `harnessDirs`, `runSingle`'s
+copy of the REPL loop, and `project.InstalledFrameworkVersion`'s copy of
+`CliVersion`'s lookup. Fixed on the way: `gofastr harness` and `harness
+mcp` read `~/.config/gofastr/harness` while `harness creds` wrote under
 `$XDG_CONFIG_HOME` (breaking for anyone who set it); `gofastr telemetry
 --json` printed C1, bidi and zero-width runes raw, in a torn line too (the
-second found by Bugbot). The stack itself tripped on three things a later
-sweep should check first: `.gitignore`'s bare `screens/` hid a registry
-directory (now exempt), a mutation run left two files in a package
-directory, and moving an embedded script to a `.js` file put it under the
-repo's JS lints. A review of #931 found eight rules whose named tests pass
-with the code broken and six reasons recorded nowhere; each got a test
-watched failing, a narrower rule or a decision.
+second found by Bugbot); and `gofastr generate app` followed a font
+download's redirect to any host (found in review of #936). The stack itself
+tripped on three things a later sweep should check first: `.gitignore`'s
+bare `screens/` hid a registry directory (now exempt), a mutation run left
+two files in a package directory, and moving an embedded script to a `.js`
+file put it under the repo's JS lints. Reviews found rules whose named
+tests pass with the code broken (eight in #931, six in #936) and
+reasons recorded nowhere; each got a test watched failing, a narrower rule
+or a decision.
 
 Left judged only or unproven: the harness MCP server's never-prompt and
 stderr-only rules and the `RunDev` loop's signal and order rules, which need
