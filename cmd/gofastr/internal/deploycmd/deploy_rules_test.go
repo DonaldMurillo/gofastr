@@ -88,7 +88,11 @@ func TestExecRunnerDoesNotWaitForAChildHoldingThePipe(t *testing.T) {
 	fakeSSH(t, "sleep 60 &\nexit 0\n")
 	start := time.Now()
 	_, _, _, _ = execRunner{}.ssh(context.Background(), &options{target: "prod"}, "uptime", nil)
-	if waited := time.Since(start); waited > 30*time.Second {
+	waited := time.Since(start)
+	if waited > 20*time.Second {
 		t.Fatalf("ssh waited %s for a child that kept its output open", waited)
+	}
+	if waited < 10*time.Second {
+		t.Fatalf("ssh gave up on its output after %s, before the 10 seconds it gets", waited)
 	}
 }

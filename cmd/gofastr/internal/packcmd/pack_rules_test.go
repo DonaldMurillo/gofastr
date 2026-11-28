@@ -1,6 +1,7 @@
 package packcmd
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -70,5 +71,39 @@ func TestReverseEntityUIStopsOnARecursiveHelper(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("reverseEntityUI followed a self-referential helper for ever")
+	}
+}
+
+func TestHelperHopsStopAfter32(t *testing.T) {
+	chain := func(t *testing.T, n int, last string) map[string]ast.Expr {
+		t.Helper()
+		var src strings.Builder
+		src.WriteString("package screens\n")
+		for i := 1; i < n; i++ {
+			fmt.Fprintf(&src, "func h%d() interface{} { return h%d() }\n", i, i+1)
+		}
+		fmt.Fprintf(&src, "func h%d() interface{} { return %s }\n", n, last)
+		f, err := parser.ParseFile(token.NewFileSet(), "screens.go", src.String(), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return packHelperReturns(f)
+	}
+	h1 := &ast.CallExpr{Fun: &ast.Ident{Name: "h1"}}
+	for _, n := range []int{32, 33} {
+		want := n <= 32
+		if _, ok := reverseEntityUI(h1, chain(t, n, `appUI.List("note")`)); ok != want {
+			t.Errorf("appUI list behind %d helpers: reversed %v, want %v", n, ok, want)
+		}
+		if _, ok := reverseEntityUI(h1, chain(t, n-1, `appUI.List("note").Bulk()`)); ok != want {
+			t.Errorf("appUI list and one chain call behind %d helpers: reversed %v, want %v", n-1, ok, want)
+		}
+		resource := &ast.CallExpr{
+			Fun:  &ast.SelectorExpr{X: h1, Sel: &ast.Ident{Name: "List"}},
+			Args: []ast.Expr{&ast.Ident{Name: "ctx"}},
+		}
+		if _, ok := reverseEntityResource(resource, chain(t, n, `appResources["note"]`)); ok != want {
+			t.Errorf("resource list behind %d helpers: reversed %v, want %v", n, ok, want)
+		}
 	}
 }

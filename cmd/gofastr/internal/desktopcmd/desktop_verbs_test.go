@@ -281,6 +281,10 @@ func TestDesktopFeedRefusesBadInputs(t *testing.T) {
 	if code != 2 || !strings.Contains(outStr, "--version --platform --archive --url") {
 		t.Fatalf("missing-flag feedback = %q, exit %d", outStr, code)
 	}
+	outStr, code = verbOutput(t, func() { runDesktopFeed(nil) })
+	if code != 2 || !strings.Contains(outStr, "feed is missing --key --version --platform --archive --url") {
+		t.Fatalf("no-flag feedback = %q, exit %d", outStr, code)
+	}
 }
 
 func TestDesktopExtraVerbRouting(t *testing.T) {

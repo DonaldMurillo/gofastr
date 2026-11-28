@@ -12,10 +12,12 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/exportcmd.TestExportFailsWithoutReceipt
       - test: cmd/gofastr/internal/exportcmd.TestExportRefusesAReceiptForAnotherRun
+      - test: cmd/gofastr/internal/exportcmd.TestExportChecksTheRunTheReceiptNames
   - id: earlier-receipt-is-cleared
     rule: The export removes a receipt an earlier run left in the directory before it starts the app, and a missing one is not an error.
     enforced_by:
       - test: cmd/gofastr/internal/exportcmd.TestClearReceiptRemovesAnEarlierRun
+      - test: cmd/gofastr/internal/exportcmd.TestExportClearsAnEarlierReceiptBeforeTheAppRuns
   - id: receipt-does-not-ship
     rule: The receipt is removed from the directory once read, so the exported site never carries it.
     enforced_by:
