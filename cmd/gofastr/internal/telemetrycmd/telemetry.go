@@ -1,6 +1,5 @@
-// Package telemetrycmd is `gofastr telemetry`: read the log and trace
-// files battery/telemetry writes, from a shell. It opens the directory
-// itself, so it works over SSH and when the app is down.
+// Package telemetrycmd is `gofastr telemetry`, which reads the files battery/telemetry
+// writes straight from the directory, so it works when the app is down.
 package telemetrycmd
 
 import (
@@ -57,8 +56,6 @@ Flags for stats, logs, requests and issues:
       --json           print the lines as stored, one JSON object each
 `
 
-// errUsage marks a mistake in the command line: Run's caller prints the
-// usage after it.
 var errUsage = errors.New("usage")
 
 // RunTelemetry runs the command and exits non-zero when it fails.
@@ -125,7 +122,6 @@ func Run(w io.Writer, args []string, now time.Time) error {
 	default:
 		return fmt.Errorf("%w: unknown subcommand %q", errUsage, sub)
 	}
-	// A trace ID may come before or after the flags.
 	positional, err := cli.ParsePositionals(fs, rest)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -188,8 +184,6 @@ func Run(w io.Writer, args []string, now time.Time) error {
 	}
 }
 
-// directory resolves --dir, or --app's default directory, the one
-// battery/telemetry uses when its Config.Dir is empty.
 func (o options) directory() (string, error) {
 	switch {
 	case o.dir != "" && o.app != "":
@@ -270,8 +264,6 @@ func (o options) logs(w io.Writer, store *itel.Store, from time.Time) error {
 	return nil
 }
 
-// describe writes a log line as its message followed by its other
-// attributes, "key=value" in key order, the trace ID last.
 func describe(line []byte) string {
 	var m map[string]any
 	if err := jsonexact.Unmarshal(line, &m); err != nil {
@@ -386,20 +378,13 @@ func (o options) issues(w io.Writer, store *itel.Store, from time.Time) error {
 	return nil
 }
 
-// stats prints the counts of every request since o.since ago: the
-// total, then each route, busiest first.
 func (o options) stats(w io.Writer, store *itel.Store, now time.Time) error {
-	// One answer for the whole window: the fewest steps that cover it.
-	// The window starts on a step, so it may reach back a little
-	// further than asked, by less than a thousandth of its length.
 	const steps = 1000
 	step := (o.since/steps + time.Minute - 1).Truncate(time.Minute)
 	got, err := store.Stats(itel.StatsQuery{From: now.Add(-o.since), To: now, Step: max(step, time.Minute), Route: o.route})
 	if err != nil {
 		return err
 	}
-	// The machine's latest reading in the window, when there is one. A
-	// directory that cannot give it still gives the counts.
 	var latest itel.HostReading
 	if host, err := store.Host(now.Add(-o.since), now, max(step, time.Minute)); err == nil {
 		latest = host.Latest
@@ -421,8 +406,6 @@ func (o options) stats(w io.Writer, store *itel.Store, now time.Time) error {
 				return err
 			}
 		}
-		// Background work after the requests, marked: its "requests"
-		// are runs.
 		job = true
 		for _, j := range got.Jobs[:min(len(got.Jobs), o.limit)] {
 			if err := line(j.Route, false, j.StatsCount); err != nil {
@@ -469,9 +452,6 @@ func (o options) stats(w io.Writer, store *itel.Store, now time.Time) error {
 	return o.jobs(w, got.Jobs, pct)
 }
 
-// jobs prints the background work of the window under the requests:
-// queue jobs and scheduled runs by name, busiest first. With none it
-// prints nothing.
 func (o options) jobs(w io.Writer, jobs []itel.RouteStats, pct func(n, of int64) string) error {
 	if len(jobs) == 0 {
 		return nil
@@ -492,8 +472,6 @@ func (o options) jobs(w io.Writer, jobs []itel.RouteStats, pct func(n, of int64)
 	return nil
 }
 
-// size writes a byte count the way itel.ByteSize rounds it: whole
-// megabytes under a gigabyte, gigabytes to one decimal over it.
 func size(n int64) string {
 	v, unit := itel.ByteSize(n)
 	if unit == "GB" {
@@ -502,8 +480,6 @@ func size(n int64) string {
 	return strconv.FormatFloat(v, 'f', 0, 64) + " MB"
 }
 
-// machineLine says the machine's latest reading in a sentence, leaving
-// out what the platform did not give. A zero reading says nothing.
 func machineLine(r itel.HostReading) string {
 	if r.Time.IsZero() {
 		return ""
@@ -523,7 +499,6 @@ func machineLine(r itel.HostReading) string {
 	return "Machine at " + stamp(r.Time) + ": " + strings.Join(parts, ", ") + "."
 }
 
-// span writes a window the way it was asked for: "24h", not "24h0m0s".
 func span(d time.Duration) string {
 	s := d.String()
 	s = strings.TrimSuffix(s, "0s")
@@ -533,9 +508,6 @@ func span(d time.Duration) string {
 	return s
 }
 
-// within writes a percentile to two digits, which is as much as the
-// duration buckets it is read from can say, and marks one at the
-// ceiling: the request took that long or longer.
 func within(d time.Duration) string {
 	d = itel.RoundDuration(d)
 	var s string
@@ -553,7 +525,6 @@ func within(d time.Duration) string {
 	return s
 }
 
-// took writes a duration to three significant places with its unit.
 func took(d time.Duration) string {
 	switch {
 	case d < time.Millisecond:
@@ -621,8 +592,6 @@ func (o options) request(w io.Writer, store *itel.Store, id string) error {
 		return err
 	}
 	if tr.Stack != "" {
-		// Each line cleaned on its own: the stack's line breaks are its
-		// shape, and nothing else in it may move the cursor.
 		fmt.Fprintln(w, "\nWhere it failed")
 		for line := range strings.SplitSeq(strings.TrimRight(tr.Stack, "\n"), "\n") {
 			fmt.Fprintf(w, "  %s\n", clean(strings.ReplaceAll(line, "\t", "    ")))
@@ -645,8 +614,6 @@ type step struct {
 	failed     bool
 }
 
-// steps orders a trace's spans as a tree (itel.Steps) and names each
-// by its detail: what was run, or what was called.
 func steps(tr itel.Trace) []step {
 	sts := itel.Steps(tr)
 	out := make([]step, 0, len(sts))
