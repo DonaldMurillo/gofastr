@@ -30,6 +30,17 @@ func TestBuildHeartbeatSaysStillBuilding(t *testing.T) {
 	}
 }
 
+// The tests above and below shorten these; the shipped values are the ones
+// cli.dev.process states.
+func TestDevTimingDefaults(t *testing.T) {
+	if killGrace != 5*time.Second {
+		t.Errorf("killGrace = %v, want 5s", killGrace)
+	}
+	if heartbeatEvery != 10*time.Second {
+		t.Errorf("heartbeatEvery = %v, want 10s", heartbeatEvery)
+	}
+}
+
 // The binary's directory is os.MkdirTemp's: owner-only, with a random suffix.
 func TestDevServerBinDirIsPrivate(t *testing.T) {
 	dir := DevServerBinDir()

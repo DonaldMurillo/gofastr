@@ -19,6 +19,7 @@ invariants:
     rule: RunBuildWithHeartbeat prints a line naming the build every heartbeatEvery (10s) while go build runs.
     enforced_by:
       - test: cmd/gofastr/internal/devcmd.TestBuildHeartbeatSaysStillBuilding
+      - test: cmd/gofastr/internal/devcmd.TestDevTimingDefaults
   - id: interrupt-ends-the-build
     rule: With a non-nil interrupt the build runs in a process group of its own; an interrupt closed before the build starts nothing, and one closed during it kills the whole group, compiler, linker and cgo toolchain included, and returns ErrBuildInterrupted.
     enforced_by:
@@ -29,6 +30,7 @@ invariants:
     rule: KillServer sends SIGTERM, returns as soon as the app has exited, sends SIGKILL after killGrace (5s), and clears *cmd; where there is no SIGTERM it kills at once and still waits up to killGrace for the exit.
     enforced_by:
       - test: cmd/gofastr/internal/devcmd.TestKillServerLetsAppDrain
+      - test: cmd/gofastr/internal/devcmd.TestDevTimingDefaults
       - test: cmd/gofastr/internal/devcmd.TestKillServerReturnsOnExit
       - test: cmd/gofastr/internal/devcmd.TestKillServerKillsAfterGrace
       - test: cmd/gofastr/internal/devcmd.TestKillAtOnceWaitsForExit

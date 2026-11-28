@@ -23,6 +23,7 @@ invariants:
     rule: Resolve follows at most maxLinkHops (40) links and then errors with too many levels of symbolic links.
     enforced_by:
       - test: cmd/gofastr/internal/projectfs.TestResolve
+      - test: cmd/gofastr/internal/projectfs.TestResolveFollowsFortyLinks
   - id: refusal-quotes-the-names
     rule: The out-of-project error quotes the link's path and its target with %q, so a control byte in a checkout's names never reaches the terminal raw.
     enforced_by:
