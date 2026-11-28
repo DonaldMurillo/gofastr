@@ -425,13 +425,6 @@ func runPluginTrust(args []string) {
 		return
 	}
 
-	resolvedCmd, _, err := cliplugin.ResolveExecutable(pp.Command, projCfg.ProjectDir, true)
-	if err != nil {
-		cli.Fail("Invalid project plugin command: %v", err)
-		cli.OsExit(1)
-		return
-	}
-
 	// Verify that every capability requested in gofastr.settings.yml was
 	// explicitly passed on the command line BEFORE executing the manifest probe.
 	if missingFlags := missingExplicitTrustFlags(*pp, grants); len(missingFlags) > 0 {
@@ -441,9 +434,30 @@ func runPluginTrust(args []string) {
 		return
 	}
 
+	var resolvedCmd []string
+	var source string
+	cleanBuild := func() {}
+	if pp.GoPackage != "" {
+		source, cleanBuild, err = buildProjectPlugin(context.Background(), projCfg.ProjectDir, pp.GoPackage)
+		if err != nil {
+			cli.Fail("%v", err)
+			cli.OsExit(1)
+			return
+		}
+	} else {
+		resolvedCmd, _, err = cliplugin.ResolveExecutable(pp.Command, projCfg.ProjectDir, true)
+		if err != nil {
+			cli.Fail("Invalid project plugin command: %v", err)
+			cli.OsExit(1)
+			return
+		}
+		source = resolvedCmd[0]
+	}
+
 	// Snapshot and hash the executable in one pass and probe the private
 	// snapshot so the probed binary and recorded SHA-256 are identical.
-	snapPath, sha, cleanup, err := cliplugin.SnapshotExecutable(resolvedCmd[0])
+	snapPath, sha, cleanup, err := cliplugin.SnapshotExecutable(source)
+	cleanBuild()
 	if err != nil {
 		cli.Fail("Snapshot project plugin binary: %v", err)
 		cli.OsExit(1)
@@ -514,6 +528,16 @@ func runPluginTrust(args []string) {
 					}
 				}
 			}
+		}
+		if pp.GoPackage != "" {
+			if err := installProjectPlugin(canonProj, pp.Command[0], snapPath); err != nil {
+				return fmt.Errorf("install project plugin: %w", err)
+			}
+			resolvedCmd, _, err = cliplugin.ResolveExecutable(pp.Command, canonProj, true)
+			if err != nil {
+				return err
+			}
+			record.Command = resolvedCmd
 		}
 		replaced := false
 		for i, existing := range cfg.TrustedProjects {

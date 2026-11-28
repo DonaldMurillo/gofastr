@@ -76,6 +76,7 @@ type ProjectPlugin struct {
 	Description   string   `json:"description,omitempty"`
 	Install       string   `json:"install,omitempty"`
 	Command       []string `json:"command,omitempty"`
+	GoPackage     string   `json:"go_package,omitempty"`
 	AllowEnv      []string `json:"allow_env,omitempty"`
 	AllowEnvFlags []string `json:"allow_env_flags,omitempty"`
 	Hooks         []string `json:"hooks,omitempty"`
@@ -453,6 +454,8 @@ func DecodeProjectPlugins(node *coreyaml.Node) ([]ProjectPlugin, error) {
 			"description":     true,
 			"install":         true,
 			"command":         true,
+			"go_package":      true,
+			"config":          true,
 			"allow_env":       true,
 			"allow_env_flags": true,
 			"hooks":           true,
@@ -484,6 +487,21 @@ func DecodeProjectPlugins(node *coreyaml.Node) ([]ProjectPlugin, error) {
 		cmd, err := optionalYAMLStringList(m["command"], label+".command")
 		if err != nil {
 			return nil, err
+		}
+		goPackage, err := optionalYAMLString(m["go_package"], label+".go_package")
+		if err != nil {
+			return nil, err
+		}
+		if m["go_package"] != nil {
+			if m["command"] != nil || !validGoPackage(goPackage) {
+				return nil, fmt.Errorf("%s.go_package requires one concrete Go import path and cannot be combined with command", label)
+			}
+			cmd = []string{"./" + filepath.ToSlash(projectGoBinary(name))}
+		}
+		if m["config"] != nil {
+			if _, err := coreyaml.ExpectMap(m["config"], label+".config"); err != nil {
+				return nil, err
+			}
 		}
 		allowEnv, err := optionalYAMLStringList(m["allow_env"], label+".allow_env")
 		if err != nil {
@@ -530,6 +548,7 @@ func DecodeProjectPlugins(node *coreyaml.Node) ([]ProjectPlugin, error) {
 			Description:   desc,
 			Install:       install,
 			Command:       cmd,
+			GoPackage:     goPackage,
 			AllowEnv:      allowEnv,
 			AllowEnvFlags: allowEnvFlags,
 			Hooks:         hooks,
