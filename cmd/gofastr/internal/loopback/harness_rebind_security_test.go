@@ -89,6 +89,14 @@ func TestLoopbackGuardsWildcardBindsKeepStandardAliases(t *testing.T) {
 	}
 }
 
+// Host names are case-insensitive, so a browser's LocalHost is the bound authority.
+func TestHostAllowedIgnoresCase(t *testing.T) {
+	hosts, _ := LoopbackGuards("127.0.0.1:41234")
+	if !HostAllowed("LocalHost:41234", hosts) {
+		t.Fatalf("a Host differing only in case was refused: %v", hosts)
+	}
+}
+
 // hostAllowed fails closed: an unpinned (empty) list rejects everything
 // rather than degrading to allow-all.
 func TestHostAllowedFailsClosed(t *testing.T) {

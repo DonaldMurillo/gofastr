@@ -1,0 +1,42 @@
+primitive: cli.loopback
+summary: The Host and Origin allow-lists of the CLI's local-only servers (the harness chat page, the dev hold, theme edit), computed from the address the listener bound.
+code:
+  - cmd/gofastr/internal/loopback/
+docs:
+  - framework/docs/content/security.md
+on_change:
+  - The harness web sidecar in framework/experimental/harness/client/web guards the same way with its own code (the twins entry on harness.client.web); a fix here is checked against it.
+invariants:
+  - id: loopback-and-wildcard-binds-admit-loopback-names
+    rule: For a loopback or wildcard bind, LoopbackGuards allows 127.0.0.1, localhost and [::1] at the bound port, each once, as Host authorities and as http:// Origins.
+    enforced_by:
+      - test: cmd/gofastr/internal/loopback.TestLoopbackGuardsWildcardBindsKeepStandardAliases
+      - test: cmd/gofastr/internal/loopback.TestLoopbackGuardsAcceptAWildcardBind
+      - test: cmd/gofastr/internal/loopback.TestLoopbackGuardsPinHost
+  - id: loopback-bind-keeps-its-own-authority
+    rule: A bind to another loopback address (127.0.0.2) also allows that exact authority, and no other loopback IP or port.
+    enforced_by:
+      - test: cmd/gofastr/internal/loopback.TestLoopbackGuardsKeepTheBoundLoopbackAuthority
+  - id: other-bind-allows-only-itself
+    rule: A bind that is neither loopback nor wildcard allows only its own authority, never a loopback name.
+    enforced_by:
+      - test: cmd/gofastr/internal/loopback.TestLoopbackGuardsExplicitBind
+  - id: host-match-ignores-case
+    rule: HostAllowed compares Host with each allowed authority case-insensitively.
+    enforced_by:
+      - test: cmd/gofastr/internal/loopback.TestHostAllowedIgnoresCase
+  - id: empty-allow-list-allows-nothing
+    rule: HostAllowed with an empty list refuses every Host.
+    enforced_by:
+      - test: cmd/gofastr/internal/loopback.TestHostAllowedFailsClosed
+decisions:
+  - id: pin-host-to-the-bound-authority
+    date: 2026-11-28
+    status: accepted
+    decision: The CLI's local servers compare Host against the authorities of the address they bound, which is the DNS-rebinding defence.
+    rejected:
+      - option: Accept any request that reaches the loopback listener.
+        why: A page on a domain the attacker points at 127.0.0.1 is same-origin to the browser and can read responses, such as the harness chat page with its bearer token; the rebound request still names the attacker's host, so the pin refuses it.
+      - option: Accept any loopback host name, as the harness web sidecar does.
+        why: Pinning the exact authority also refuses a request for another loopback port or IP.
+    upholds: [loopback-and-wildcard-binds-admit-loopback-names, other-bind-allows-only-itself, empty-allow-list-allows-nothing]

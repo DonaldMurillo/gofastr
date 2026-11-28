@@ -2128,7 +2128,9 @@ remembered or `--allow-repo-secrets` is passed (§ Threat model,
 
 ### Config
 
-XDG layout:
+XDG layout. `gofastr harness`, `gofastr harness mcp` and
+`gofastr harness creds` read one config directory: `XDG_CONFIG_HOME`,
+when set, replaces `~/.config` in every `~/.config` path below.
 
 - `~/.config/gofastr/harness/config.toml`: global defaults
 - `~/.config/gofastr/harness/approved.lock`: TOFU file hashes

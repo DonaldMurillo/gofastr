@@ -16,7 +16,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	xharness "github.com/DonaldMurillo/gofastr/framework/experimental/harness"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/client/tui"
-	xcontext "github.com/DonaldMurillo/gofastr/framework/experimental/harness/context"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/inproc"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/engine"
@@ -32,14 +31,10 @@ func RunHarness(args []string) {
 		printHarnessUsage()
 		return
 	}
-	// `gofastr harness mcp` launches the stdio MCP server, the path
-	// other MCP clients (Claude Code, Codex, Cursor) use to spawn
-	// the harness as a subprocess.
 	if len(args) > 0 && args[0] == "mcp" {
 		runHarnessMCP(args[1:])
 		return
 	}
-	// `gofastr harness creds` manages the encrypted credential store.
 	if len(args) > 0 && args[0] == "creds" {
 		runHarnessCreds(args[1:])
 		return
@@ -61,41 +56,23 @@ func RunHarness(args []string) {
 	_ = fs.Parse(args)
 
 	_ = noListen
-	_ = autoApprove // wiring lands with task 24 + 6 (multiplex auto-approve)
+	_ = autoApprove
 
-	// Resolve XDG paths.
-	home, err := os.UserHomeDir()
+	xdgConfig, xdgState, err := harnessDirs()
 	if err != nil {
 		cli.Fprintf(os.Stderr, "gofastr harness: %v\n", err)
 		cli.OsExit(1)
-	}
-	xdgConfig := filepath.Join(home, ".config", "gofastr", "harness")
-	xdgState := filepath.Join(home, ".local", "share", "gofastr", "harness")
-	if err := os.MkdirAll(xdgConfig, 0o700); err != nil {
-		cli.Fprintln(os.Stderr, err)
-		cli.OsExit(1)
-	}
-	if err := os.MkdirAll(xdgState, 0o700); err != nil {
-		cli.Fprintln(os.Stderr, err)
-		cli.OsExit(1)
+		return
 	}
 
-	// Load repo-local secrets (gitignored) so .harness-secrets/env
-	// provides API keys without needing every invocation to export
-	// them. Shell env wins on conflict. A cloned repo's file can carry
-	// its author's keys, so the keys are used only with consent: asked
-	// once per repository and key set on a terminal, or allowed for one
-	// run by --allow-repo-secrets.
 	loadRepoSecrets(xdgConfig, *allowRepoSecrets, isTTY(os.Stdin) && isTTY(os.Stderr), os.Stdin, os.Stderr)
 
-	// Pick profile.
 	prof, err := loadProfile(*useFramework, *profilePath)
 	if err != nil {
 		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 
-	// Logger.
 	logger := buildLogger(xdgState, *logToStderr, *logLevel)
 	logger.Info("boot", "profile", prof.Name, "model", prof.DefaultModel)
 
@@ -105,7 +82,6 @@ func RunHarness(args []string) {
 		cli.OsExit(1)
 	}
 
-	// Compose the harness.
 	cfg := xharness.Config{
 		Profile:           prof,
 		WorkingDir:        mustGetwd(),
@@ -117,10 +93,6 @@ func RunHarness(args []string) {
 		MachineKey:        machineKey,
 	}
 	if cfg.CredstorePass == "" && len(cfg.MachineKey) == 0 {
-		// Fail closed: no default passphrase. A constant shipped in
-		// the public repo is not encryption (2026-09-04 red-probe
-		// round); the store refuses to open until the operator
-		// provides a key one of the two documented ways.
 		fmt.Fprintf(os.Stderr, "gofastr harness: %s\n", noCredstoreKeyHelp)
 		cli.OsExit(1)
 		return
@@ -132,26 +104,22 @@ func RunHarness(args []string) {
 	}
 	defer h.Shutdown()
 
-	// Apply --strict-permissions to the permission engine.
 	if *strictPerms {
 		h.Perms.StrictPermissions = true
 	}
 
-	// Resolve provider from the profile's default_model "provider:id".
 	prov, modelID := resolveDefaultModel(h, prof)
 	if prov == nil {
 		cli.Fprintf(os.Stderr, "harness: no provider matches %q\n", prof.DefaultModel)
 		cli.OsExit(1)
 	}
 
-	// Spawn one engine for the session.
 	sess, err := h.CreateSession(prov, modelID)
 	if err != nil {
 		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 
-	// Bundled inproc client.
 	c := inproc.New(ids.NewClientID(), control.IdentityHuman, h.Mux.EngineFor(sess).Bus, h.Mux)
 	if err := h.Mux.Attach(sess, c); err != nil {
 		cli.Fprintln(os.Stderr, err)
@@ -159,20 +127,12 @@ func RunHarness(args []string) {
 	}
 	defer c.Close()
 
-	// HTTP control plane: REST at /v1/*, WS at /v1/ws, SSR landing
-	// page at /. Auto-enabled for interactive TTY sessions so the
-	// TUI status line always shows a URL; disabled for one-shot
-	// -prompt runs (no point binding a port for a single response)
-	// and when -no-web is set explicitly. -listen forces an explicit
-	// bind address regardless.
-	wantHTTP := *listen != "" || *web ||
-		(!*noWeb && *prompt == "" && isTTY(os.Stdin))
 	webURL := ""
 	webToken := ""
-	if wantHTTP {
+	if wantWebSidecar(*listen, *web, *noWeb, *prompt, isTTY(os.Stdin)) {
 		bind := *listen
 		if bind == "" {
-			bind = "127.0.0.1:0" // ephemeral loopback
+			bind = "127.0.0.1:0"
 		}
 		url, token, shutdown, err := startHTTPListener(h, sess, bind)
 		if err != nil {
@@ -186,12 +146,9 @@ func RunHarness(args []string) {
 	}
 
 	if *prompt != "" {
-		// Single-shot mode for smoke tests.
-		runSingle(h, c, sess, *prompt)
+		runSingle(c, sess, *prompt)
 		return
 	}
-	// Interactive mode: launch the pure-stdlib TUI if stdin is a
-	// terminal. Pipe/redirect input falls back to the bare REPL.
 	if isTTY(os.Stdin) {
 		t := tui.New(c, sess)
 		t.Profile = prof.Name
@@ -203,11 +160,14 @@ func RunHarness(args []string) {
 		}
 		return
 	}
-	runREPL(h, c, sess)
+	runREPL(c, sess)
 }
 
-// isTTY reports whether the given file is a terminal device. Used to
-// decide between the TUI and the bare REPL.
+// wantWebSidecar reports whether the harness binds its HTTP control plane.
+func wantWebSidecar(listen string, web, noWeb bool, prompt string, tty bool) bool {
+	return listen != "" || web || (!noWeb && prompt == "" && tty)
+}
+
 func isTTY(f *os.File) bool {
 	if f == nil {
 		return false
@@ -216,20 +176,12 @@ func isTTY(f *os.File) bool {
 }
 
 func loadProfile(useFramework bool, explicit string) (*profile.Profile, error) {
-	// An explicit --profile path must exist on disk; no embedded fallback.
 	if explicit != "" {
 		if _, err := os.Stat(explicit); err != nil {
 			return nil, fmt.Errorf("profile path %q: %w", explicit, err)
 		}
 		return profile.Load(explicit)
 	}
-	// The built-in profiles always come from the binary. This used to
-	// prefer a framework/experimental/harness/profile/<name>.toml found
-	// relative to the working directory, for edits inside the source
-	// tree, but the working directory is attacker-authored on a cloned
-	// repo: any repo carrying that path replaced the trusted profile, its
-	// prompt_header becoming the system prompt outside the untrusted-
-	// content tags (rule 12). To try an edited profile, pass --profile.
 	name := "default"
 	if useFramework {
 		name = "framework"
@@ -262,15 +214,6 @@ func buildLogger(xdgState string, toStderr bool, levelSpec string) *logging.Logg
 	return l
 }
 
-// machineKeyFromEnv reads GOFASTR_HARNESS_MACHINE_KEY and decodes it into
-// a 32-byte key. It accepts three encodings of a 32-byte key:
-//   - 32 raw bytes (length 32),
-//   - 64 hex characters,
-//   - base64 (standard or URL, with or without padding).
-//
-// An empty value yields (nil, nil): no machine key configured. Any other
-// value that does not decode to exactly 32 bytes returns an error so the
-// caller fails loudly instead of silently downgrading to a weaker secret.
 func machineKeyFromEnv() ([]byte, error) {
 	raw := os.Getenv("GOFASTR_HARNESS_MACHINE_KEY")
 	if raw == "" {
@@ -296,7 +239,6 @@ func machineKeyFromEnv() ([]byte, error) {
 }
 
 func resolveDefaultModel(h *xharness.Harness, prof *profile.Profile) (provider.Provider, string) {
-	// default_model format: "<provider>:<model-id>".
 	parts := strings.SplitN(prof.DefaultModel, ":", 2)
 	if len(parts) != 2 {
 		return nil, ""
@@ -310,7 +252,7 @@ func resolveDefaultModel(h *xharness.Harness, prof *profile.Profile) (provider.P
 	return nil, ""
 }
 
-func runSingle(h *xharness.Harness, c *inproc.Client, sess ids.SessionID, prompt string) {
+func runSingle(c *inproc.Client, sess ids.SessionID, prompt string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	sub := c.Subscribe(ctx)
@@ -321,31 +263,10 @@ func runSingle(h *xharness.Harness, c *inproc.Client, sess ids.SessionID, prompt
 		cli.Fprintln(os.Stderr, err)
 		return
 	}
-	for env := range sub {
-		if env.Kind == "TextDelta" {
-			td, _ := control.DecodeEvent(env)
-			if t, ok := td.(control.TextDelta); ok {
-				// Provider/tool text is attacker-influenced (model output,
-				// tool results over a hostile repo, provider error bodies):
-				// scrub before it reaches the terminal (2026-09-05
-				// red-probe round; the TUI strips the same class at ingest).
-				fmt.Print(textsafe.ScrubTerminal(t.Text))
-			}
-		}
-		if env.Kind == "TurnEnded" {
-			fmt.Println()
-			return
-		}
-		if env.Kind == "Error" {
-			e, _ := control.DecodeEvent(env)
-			cli.Fprintf(os.Stderr, "\n[error] %v\n", e)
-			return
-		}
-	}
-	_ = h
+	streamOneTurn(sub)
 }
 
-func runREPL(h *xharness.Harness, c *inproc.Client, sess ids.SessionID) {
+func runREPL(c *inproc.Client, sess ids.SessionID) {
 	fmt.Fprintln(os.Stderr, "gofastr harness: interactive REPL. Ctrl-D to exit.")
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 64*1024), 1<<20)
@@ -355,8 +276,6 @@ func runREPL(h *xharness.Harness, c *inproc.Client, sess ids.SessionID) {
 	for {
 		fmt.Fprint(os.Stderr, "> ")
 		if !scanner.Scan() {
-			// Scan reports EOF and a read failure the same way; only Err
-			// separates "user pressed ctrl-D" from "input was lost".
 			if err := scanner.Err(); err != nil {
 				cli.Fprintf(os.Stderr, "\nread input: %v\n", err)
 			}
@@ -383,8 +302,6 @@ func streamOneTurn(sub <-chan control.EventEnvelope) {
 		case "TextDelta":
 			td, _ := control.DecodeEvent(env)
 			if t, ok := td.(control.TextDelta); ok {
-				// Same scrub as runSingle: the REPL and piped-stdin paths
-				// print provider text raw otherwise.
 				fmt.Print(textsafe.ScrubTerminal(t.Text))
 			}
 		case "TurnEnded":
@@ -402,9 +319,3 @@ func mustGetwd() string {
 	wd, _ := os.Getwd()
 	return wd
 }
-
-// keep references that may otherwise be reported as unused.
-var (
-	_ = xcontext.Reader{}
-	_ = filepath.Join
-)

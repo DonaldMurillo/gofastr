@@ -313,6 +313,13 @@ var ownedPackages = []string{
 	"cmd/gofastr/packages/docpage",
 	"cmd/gofastr/packages/sitefooter",
 	"cmd/gofastr/packages/siteheader",
+	// cmd/gofastr, the dev loop.
+	"cmd/gofastr/internal/loopback",
+	"cmd/gofastr/internal/testcmd",
+	"cmd/gofastr/internal/telemetrycmd",
+	"cmd/gofastr/internal/projectfs",
+	"cmd/gofastr/internal/harnesscmd",
+	"cmd/gofastr/internal/devcmd",
 }
 
 //gofastr:test-reads primitives/ *.go
