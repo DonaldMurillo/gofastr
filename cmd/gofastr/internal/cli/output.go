@@ -8,7 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// StdoutIsTTY reports whether os.Stdout was a terminal; colour needs one.
+// StdoutIsTTY reports whether os.Stdout was a terminal at package init; colour needs one.
 var StdoutIsTTY = func() bool {
 	fi, err := os.Stdout.Stat()
 	if err != nil {

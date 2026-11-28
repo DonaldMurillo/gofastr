@@ -23,9 +23,31 @@ func TestNoStyledArgumentReachesAStatusHelper(t *testing.T) {
 	root := filepath.Join(filepath.Dir(self), "..", "..") // cmd/gofastr
 	// helpers maps each scrubbing helper to the index of its first value
 	// argument, past the writer and the format.
-	helpers := map[string]int{"Success": 1, "Fail": 1, "Info": 1, "Warn": 1, "InfoString": 1,
+	helpers := map[string]int{"Success": 1, "Fail": 1, "UsageFail": 1, "Info": 1, "Warn": 1, "InfoString": 1,
 		"Printf": 1, "Print": 0, "Println": 0, "Fprintf": 2, "Fprintln": 1}
 	styles := map[string]bool{"Bold": true, "Green": true, "Red": true, "Yellow": true, "Dim": true}
+	fset := token.NewFileSet()
+	out, err := parser.ParseFile(fset, filepath.Join(filepath.Dir(self), "output.go"), nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range out.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || !fn.Name.IsExported() || fn.Recv != nil || len(fn.Type.Params.List) == 0 {
+			continue
+		}
+		params := fn.Type.Params.List
+		if _, variadic := params[len(params)-1].Type.(*ast.Ellipsis); !variadic {
+			continue
+		}
+		first := 0
+		for _, p := range params[:len(params)-1] {
+			first += len(p.Names)
+		}
+		if got, ok := helpers[fn.Name.Name]; !ok || got != first {
+			t.Errorf("output.go's %s takes its values from argument %d; list it in helpers with that index (have %d, listed %v)", fn.Name.Name, first, got, ok)
+		}
+	}
 	cliName := func(e ast.Expr, local bool) string {
 		switch f := e.(type) {
 		case *ast.SelectorExpr:
@@ -39,9 +61,8 @@ func TestNoStyledArgumentReachesAStatusHelper(t *testing.T) {
 		}
 		return ""
 	}
-	fset := token.NewFileSet()
 	files := 0
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

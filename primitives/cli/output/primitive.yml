@@ -39,6 +39,7 @@ invariants:
     rule: No call under cmd/gofastr hands a value built with Bold, Green, Red, Yellow or Dim to a scrubbing helper as an argument, where the scrub would strip its escapes and print them as text.
     enforced_by:
       - test: cmd/gofastr/internal/cli.TestNoStyledArgumentReachesAStatusHelper
+    judge: Does this change hand a scrubbing helper an argument that holds a Bold, Green, Red, Yellow or Dim result through a variable, a field or a function's return, which the syntax-only test cannot see?
     applies:
       - cmd/gofastr/
 decisions:
