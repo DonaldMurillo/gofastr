@@ -126,6 +126,7 @@ func TestURLRefusalHidesCredentials(t *testing.T) {
 		"https://user:s3cret@example.com:port/x",
 		"https://user:s3cret@example.com/x?y=1",
 		"https://user:s3/cret@example.com/x",
+		"https://user:s3@cret@example.com/x",
 	} {
 		_, err := checkBaseURL(u)
 		if err == nil {

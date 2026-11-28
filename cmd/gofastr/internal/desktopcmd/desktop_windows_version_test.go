@@ -23,7 +23,7 @@ func TestWindowsVersionParts(t *testing.T) {
 	if want := [4]uint16{1, 27, 4, 9}; parts != want {
 		t.Fatalf("windowsVersionParts() = %v, want %v", parts, want)
 	}
-	for _, version := range []string{"bad", "1.65536", "1.2.3.4.5", strings.Repeat("1", 257)} {
+	for _, version := range []string{"bad", "1.65536", "1.2.3.4.5", strings.Repeat("1", 257), "1.2.3-" + strings.Repeat("a", 251)} {
 		if _, err := windowsVersionParts(version); err == nil {
 			t.Errorf("windowsVersionParts(%q) succeeded", version)
 		}
