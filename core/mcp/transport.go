@@ -461,6 +461,14 @@ func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	ctx = context.WithValue(ctx, contextKey{}, r)
+	ctx = context.WithValue(ctx, listenKey{}, true)
+
+	if req.Method == "subscriptions/listen" {
+		if facts, rpcErr := readRequestFacts(req); rpcErr == nil && facts.modern && slices.Contains(modernProtocolVersions, facts.version) {
+			s.serveListen(w, r, ctx, req)
+			return
+		}
+	}
 
 	if mediatype.Fold(r.Header.Get("Accept")) == "text/event-stream" {
 		resp := s.HandleRequest(ctx, req)
@@ -522,6 +530,15 @@ func (s *Server) sseStream(w http.ResponseWriter, r *http.Request, path string) 
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
+	s.pumpSSE(w, r, sub, "endpoint", path, func(n sseNotification) ([]byte, bool) {
+		data, err := json.Marshal(jsonrpcNotification{JSONRPC: "2.0", Method: n.method, Params: n.params})
+		return data, err == nil
+	})
+}
+
+// pumpSSE writes the opening event and then every notification encode accepts to sub's stream, with keep-alives, until
+// the request ends, the stream is dropped, a write fails or the caller's principal no longer holds.
+func (s *Server) pumpSSE(w http.ResponseWriter, r *http.Request, sub *sseSubscriber, openEvent, openData string, encode func(sseNotification) ([]byte, bool)) {
 	rc := http.NewResponseController(w)
 	ew := &errWriter{w: w}
 	writeSSEEvent := func(event, data string) bool {
@@ -541,7 +558,7 @@ func (s *Server) sseStream(w http.ResponseWriter, r *http.Request, path string) 
 		return true
 	}
 
-	if !writeSSEEvent("endpoint", path) {
+	if !writeSSEEvent(openEvent, openData) {
 		return
 	}
 
@@ -582,12 +599,8 @@ func (s *Server) sseStream(w http.ResponseWriter, r *http.Request, path string) 
 			if !s.subscriberMayReceive(live, n) {
 				continue
 			}
-			data, err := json.Marshal(jsonrpcNotification{
-				JSONRPC: "2.0",
-				Method:  n.method,
-				Params:  n.params,
-			})
-			if err != nil {
+			data, ok := encode(n)
+			if !ok {
 				continue
 			}
 			if !writeSSEEvent("message", string(data)) {

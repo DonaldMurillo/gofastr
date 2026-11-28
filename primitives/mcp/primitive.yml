@@ -104,9 +104,10 @@ invariants:
     enforced_by:
       - test: core/mcp.TestModernResultFields
   - id: server-discover
-    rule: server/discover answers, with or without _meta, supportedVersions (SupportedProtocolVersions), the modern capabilities (tools always, resources and prompts when registered), instructions when set, and the modern result fields.
+    rule: server/discover answers, with or without _meta, supportedVersions (SupportedProtocolVersions), the modern capabilities (tools always, resources and prompts when registered, with listChanged and resources subscribe only when the request arrived on ServeSSE's POST), instructions when set, and the modern result fields.
     enforced_by:
       - test: core/mcp.TestServerDiscover
+      - test: core/mcp.TestListenOnlyOnStreamingTransport
   - id: modern-removed-methods
     rule: A modern request for initialize, ping, resources/subscribe, resources/unsubscribe or any unknown method answers -32601, and a modern resources/read of an unknown or hidden resource answers -32602 instead of -32002.
     enforced_by:
@@ -121,6 +122,22 @@ invariants:
     enforced_by:
       - test: core/mcp.TestModernHTTPStatusMapping
       - test: core/mcp.TestModernGETRefused
+  - id: listen-delivers-only-what-was-asked
+    rule: A modern subscriptions/listen on ServeSSE answers an event stream whose first message is notifications/subscriptions/acknowledged with the honored filter, after which only the notification types the filter set and resources/updated for its listed URIs are delivered, each carrying _meta io.modelcontextprotocol/subscriptionId equal to the request id, and each still passing the server-wide gate and the resource's gate.
+    enforced_by:
+      - test: core/mcp.TestListenFiltersAndTags
+      - test: core/mcp.TestListenHonorsResourceGate
+  - id: listen-releases-on-close
+    rule: A listen stream holds one subscriber seat and one count per distinct listed URI from open to close, and closing it releases exactly those, so NotifyResourceUpdated stops reaching a URI no open stream lists.
+    enforced_by:
+      - test: core/mcp.TestListenReleasesOnClose
+  - id: listen-refusals
+    rule: subscriptions/listen answers a JSON-RPC error without opening a stream when its envelope fails the checks HandleRequest applies (refuseEnvelope), the server-wide gate refuses, the filter is malformed (a non-boolean flag, a non-array or over-256 URI list, an empty or over-2048-byte URI), or holding its URIs would pass the resources/subscribe limits (1024 distinct URIs, 4096 caller-URI pairs, 256 distinct URIs per caller across all its streams); it answers -32601 on ServeHTTP, stdio or HandleRequest, which hold no streams.
+    enforced_by:
+      - test: core/mcp.TestListenRefusals
+      - test: core/mcp.TestListenRefusesAmbiguousEnvelope
+      - test: core/mcp.TestListenCapsURIsPerCaller
+      - test: core/mcp.TestListenOnlyOnStreamingTransport
   - id: capabilities-follow-registries
     rule: initialize always advertises tools, advertises resources (with subscribe) when a resource or a resource template is registered, and prompts only when a prompt is registered.
     enforced_by:
@@ -154,6 +171,17 @@ invariants:
     enforced_by:
       - test: core/mcp.TestInitializeServesInstructions
 decisions:
+  - id: listen-on-serve-sse-only
+    date: 2026-11-28
+    status: accepted
+    decision: subscriptions/listen is served on ServeSSE's POST only, and server/discover advertises listChanged and subscribe only to requests that arrived there.
+    rejected:
+      - option: Serve listen on stdio too.
+        why: ServeStdio answers one line at a time from a single loop and writes nothing unprompted, so listen there needs a locked writer, a goroutine per subscription and notifications/cancelled handling; left for when a stdio client needs change notifications.
+      - option: Advertise listChanged everywhere.
+        why: A client would wait on a stream ServeHTTP and stdio can never open.
+    revisit_if: A stdio MCP client relies on change notifications under 2026-07-28.
+    upholds: [listen-refusals, server-discover]
   - id: dual-era-server
     date: 2026-11-28
     status: accepted

@@ -115,7 +115,9 @@ func (s *Server) handleModern(ctx context.Context, req Request, facts requestFac
 	var resp Response
 	switch {
 	case req.Method == "server/discover":
-		resp = s.handleDiscover(req)
+		resp = s.handleDiscover(ctx, req)
+	case req.Method == "subscriptions/listen":
+		resp = newErrorResponse(req.ID, ErrMethodNotFound, "subscriptions/listen needs a streaming transport: mount ServeSSE")
 	case removedInModern[req.Method]:
 		resp = newErrorResponse(req.ID, ErrMethodNotFound, fmt.Sprintf("method %q not found", req.Method))
 	default:
@@ -126,13 +128,13 @@ func (s *Server) handleModern(ctx context.Context, req Request, facts requestFac
 	return resp
 }
 
-func (s *Server) handleDiscover(req Request) Response {
+func (s *Server) handleDiscover(ctx context.Context, req Request) Response {
 	s.mu.RLock()
 	instructions := s.instructions
 	s.mu.RUnlock()
 	result := map[string]any{
 		"supportedVersions": SupportedProtocolVersions(),
-		"capabilities":      s.modernCapabilities(),
+		"capabilities":      s.modernCapabilities(ctx),
 	}
 	if instructions != "" {
 		result["instructions"] = instructions
@@ -140,13 +142,23 @@ func (s *Server) handleDiscover(req Request) Response {
 	return newSuccessResponse(req.ID, result)
 }
 
-func (s *Server) modernCapabilities() map[string]any {
-	capabilities := map[string]any{"tools": map[string]any{}}
+func (s *Server) modernCapabilities(ctx context.Context) map[string]any {
+	listen := listenAvailable(ctx)
+	feature := func(extra ...string) map[string]any {
+		m := map[string]any{}
+		if listen {
+			for _, k := range extra {
+				m[k] = true
+			}
+		}
+		return m
+	}
+	capabilities := map[string]any{"tools": feature("listChanged")}
 	if s.hasResources() || s.hasTemplates() {
-		capabilities["resources"] = map[string]any{}
+		capabilities["resources"] = feature("listChanged", "subscribe")
 	}
 	if s.hasPrompts() {
-		capabilities["prompts"] = map[string]any{}
+		capabilities["prompts"] = feature("listChanged")
 	}
 	return capabilities
 }
