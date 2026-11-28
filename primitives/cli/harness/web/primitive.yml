@@ -1,0 +1,59 @@
+primitive: cli.harness.web
+summary: The harness's loopback HTTP control plane in the CLI - the REST API, the WebSocket and the browser chat page that carries a session token for the operator.
+code:
+  - cmd/gofastr/internal/harnesscmd/harness_http.go
+docs:
+  - framework/docs/content/harness-architecture.md
+on_change:
+  - framework/experimental/harness/client/web is a second browser client of one session with its own guard (its twins entry); a fix to the guard or the page here is checked against it.
+invariants:
+  - id: loopback-bind-only
+    rule: listenLoopback refuses, and closes, any listener whose bound address is not a loopback IP, whatever spelling the caller passed, so a LAN, wildcard or off-loopback name never serves the token-carrying page.
+    enforced_by:
+      - test: cmd/gofastr/internal/harnesscmd.TestListenRefusesNonLoopback
+      - test: cmd/gofastr/internal/harnesscmd.TestHTTPListenerRefusesWildcard
+  - id: guards-pinned-to-the-bound-authority
+    rule: The chat page, the REST API and the WebSocket allow only the Host authorities loopback.LoopbackGuards gives for the address the kernel bound, and the REST API refuses a cross-site Origin.
+    enforced_by:
+      - test: cmd/gofastr/internal/harnesscmd.TestHTTPListenerPinsTheBoundAuthority
+  - id: token-before-the-socket
+    rule: startHTTPListener encodes the session token before it opens the listener, so a failure to encode leaves no socket bound.
+    judge: Does this change open the listener before the token is encoded, or return an error after Listen without closing it?
+  - id: chat-page-is-never-cached-or-framed
+    rule: The chat page and /endpoints are served with Cache-Control no-store, X-Frame-Options DENY and Content-Security-Policy frame-ancestors 'none'.
+    enforced_by:
+      - test: cmd/gofastr/internal/harnesscmd.TestChatPageRedNoStore
+      - test: cmd/gofastr/internal/harnesscmd.TestChatPageRefusesFraming
+  - id: token-in-a-meta-tag
+    rule: The chat page gets the session ID and token in meta tags, so the page's own URL carries neither into a referrer or the browser history.
+    enforced_by:
+      - test: cmd/gofastr/internal/harnesscmd.TestChatPageCarriesTheTokenInAMetaTag
+  - id: model-output-stays-inert
+    rule: The chat script escapes &, <, > and " before any markdown formatting and links only bare http(s) URLs, so model or tool text never becomes markup in the token-bearing page.
+    enforced_by:
+      - test: cmd/gofastr/internal/harnesscmd.TestChatMarkdownKeepsModelOutputInert
+  - id: escape-denies
+    rule: Escape on an open permission modal answers deny, once.
+    enforced_by:
+      - test: cmd/gofastr/internal/harnesscmd.TestChatJSEscapeDenies
+  - id: listener-secret
+    rule: DeriveListenerSecret is SHA-256 of "harness-http:" and the machine key when one is set, so tokens survive a restart, and 32 random bytes otherwise.
+    enforced_by:
+      - test: cmd/gofastr/internal/harnesscmd.TestDeriveListenerSecret
+decisions:
+  - id: inline-chat-page
+    date: 2026-11-28
+    status: accepted
+    decision: The chat page is a dev-only operator page rendered with core/render, with its CSS and script inline and the file opted out of check-csp.
+    rejected:
+      - option: Build it on the framework's strict-CSP app stack with external assets.
+        why: It would need a build step or an extra round trip for a single-user page on a random loopback port.
+    revisit_if: The harness's browser client becomes a GoFastr app, as harness.client.web's decision plans.
+  - id: pin-and-bind-loopback
+    date: 2026-11-28
+    status: accepted
+    decision: The listener binds loopback only and pins Host to the bound authority.
+    rejected:
+      - option: Pin Host and allow any bind address.
+        why: The Host pin stops a DNS-rebound page, not a peer on the network that reaches the port directly and sends Host localhost, and the page hands a 24 hour human-class token to whoever loads it.
+    upholds: [loopback-bind-only, guards-pinned-to-the-bound-authority]
