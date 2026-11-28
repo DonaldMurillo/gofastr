@@ -9,16 +9,16 @@ on_change:
   - A new or renamed data-cui-* attribute gets its row in the core-ui/ARCHITECTURE.md attribute table and a runtime test in the same change.
 twins:
   - job: Raise an element into the top layer as a manual popover, and drop the popover attribute when the browser refuses, since a [popover] out of the top layer is not drawn.
-    why: The anchored popover uses NS._raiseWidget in widgets.js, which is always loaded before it; the headless modules cannot assume the widget runtime is loaded (disclosure and tooltip run on pages with none, and a toast can show before widgets.js arrives), so they keep their own copies of the step.
+    why: Each module that raises something loads on its own, and none can count on another being there; the headless modules cannot assume the widget runtime is loaded (disclosure and tooltip run on pages with none, and a toast can show before widgets.js arrives), and the popover module is the step's only caller in the runtime.
     sites:
-      - path: core-ui/runtime/src/widgets.js
-        note: NS._raiseWidget, called by popover.js for an anchored popover.
+      - path: core-ui/runtime/src/popover.js
+        note: place(), for an anchored popover's widget root.
       - path: framework/headless/feedback.js
         note: syncLayer, for a toast stack's widget, which may rise before widgets.js loads.
       - path: framework/headless/disclosure.js
         note: lift, for a menu or dropdown panel the kit's sheet anchors.
       - path: framework/headless/tooltip.js
-        note: the upgrade and open of a Tooltip's pop; exempt from dropping the attribute, since the tip shows only while open and a refused show leaves it closed until the next hover or focus tries again.
+        note: the upgrade and open of a Tooltip's pop; exempt from dropping the attribute, since the tip shows only while open and a refused show leaves it closed until the next hover or focus tries again. A browser that always refuses never shows the tip, because the upgrade turns the sheet's hover reveal off (since pull request 919).
 invariants:
   - id: sinks-go-through-the-trusted-types-policy
     rule: The kernel creates exactly one Trusted Types policy, named middleware.TrustedTypesPolicy, and every HTML string and script URL the runtime, its modules and the shipped behaviours hand the DOM passes through it, so a page under the default CSP raises no Trusted Types violation on first load, module loads, a poll swap, an html-mode signal, a navigation inside or across shells, or Back.

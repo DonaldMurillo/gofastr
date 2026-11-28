@@ -259,7 +259,7 @@ func TestMovedToastStackRisesAgain(t *testing.T) {
 // headless-feedback does not wait on widgets.js for the step.
 func TestToastStackRisesBeforeTheWidgetRuntimeLoads(t *testing.T) {
 	ctx := toastPage(t)
-	evalJS(t, ctx, `delete window.__gofastr._raiseWidget`, nil)
+	evalJS(t, ctx, `for (const k of ['mountWidget', 'openWidget', 'closeWidget', '_widgets']) delete window.__gofastr[k]`, nil)
 	evalJS(t, ctx, `window.__gofastr.toast({title: 'Saved', ttl: 0})`, nil)
 	if !pollJS(ctx, stackHost+`.matches(':popover-open')`) {
 		t.Fatal("a toast shown before the widget runtime loaded left its stack out of the top layer")

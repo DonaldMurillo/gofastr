@@ -317,13 +317,14 @@ invariants:
       - test: framework/headless.TestDisclosureRefusesBrokenConfiguration
       - test: framework/headless.TestDisclosureNameMakesAnExclusiveGroup
   - id: disclosure-panel-rises-where-the-sheet-anchors-it
-    rule: When a light-dismiss disclosure opens, or is open when the module arrives, and its panel's computed position-anchor is --hui-disclosure, headless-disclosure makes the panel a manual popover and shows it, so no ancestor's overflow clips it, and removes the popover attribute when the disclosure closes; any other panel, or every panel in a browser without the Popover API, keeps the measured shift and float.
+    rule: When a light-dismiss disclosure opens, or is open when the module arrives, and its panel's computed position-anchor is --hui-disclosure, headless-disclosure makes the panel a manual popover and shows it, so no ancestor's overflow clips it, and removes the popover attribute when the disclosure closes; a panel the browser refuses to show drops the attribute; any other panel, or every panel in a browser without the Popover API, keeps the measured shift and float.
     enforced_by:
       - test: framework/ui.TestDropdownPanelEscapesAClippingBox
       - test: framework/ui.TestMenuPanelFlipsAboveNearTheBottom
       - test: framework/ui.TestPopupPanelFloatsWithoutAnchorPositioning
       - test: framework/ui.TestBareDismissDisclosureStaysInPlace
       - test: framework/ui.TestDropdownRenderedOpenIsRaisedOnArrival
+      - test: framework/ui.TestPopupPanelTheBrowserWillNotRaiseStillDraws
   - id: feedback-module-markers
     rule: headless-feedback loads on data-hui-copy, data-hui-toast-stack, data-cui-toast-stack and data-hui-network-retry.
     enforced_by:

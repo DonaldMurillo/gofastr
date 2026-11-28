@@ -238,15 +238,6 @@
     if (html && !left(epoch) && entry.tok === tok && layerCurrent(layer, generation)) { NS.mountWidget(cfg, html, null, ctx); stamp(name, epoch, layer); }
   };
 
-  // One way into the top layer for a widget root (an anchored popover, a
-  // toast stack): a manual popover, dropping the attribute when the
-  // browser refuses, since a [popover] out of the top layer is not drawn.
-  NS._raiseWidget = (el) => {
-    if (!el.showPopover) return;
-    el.setAttribute('popover', 'manual');
-    try { el.showPopover(); } catch (_) { el.removeAttribute('popover'); }
-  };
-
   NS.closeWidget = function (name) {
     const w = own(name);
     if (w && typeof w.dismiss === 'function') w.dismiss();
