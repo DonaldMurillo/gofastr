@@ -1,0 +1,16 @@
+primitive: cli.project.unmount
+summary: The shared reading of unmounted copies that unmount, verify, upgrade and audit report on, their provenance generator name, staleness and upstream compare link.
+code:
+  - cmd/gofastr/internal/project/unmount.go
+  - cmd/gofastr/internal/project/unmount_report.go
+docs:
+  - framework/docs/content/unmount.md
+invariants:
+  - id: behind-needs-two-releases
+    rule: UnmountedBehind is true only when both versions are release tags and the copy's version is the lower.
+    enforced_by:
+      - test: cmd/gofastr/internal/project.TestUnmountedBehindNeedsTwoReleases
+  - id: no-settings-file-names-the-root-one
+    rule: UnmountedSettings with no settings file governing root returns no copies, no error and the path of the settings file root would have.
+    enforced_by:
+      - test: cmd/gofastr/internal/project.TestUnmountedSettingsWithNoFileNamesTheRootFile
