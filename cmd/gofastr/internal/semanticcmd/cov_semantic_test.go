@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -185,6 +186,19 @@ func TestLocalSnapshotDir(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if other := localSnapshotDir(); other == dir {
 		t.Fatalf("two working directories share the snapshot dir %q", dir)
+	}
+}
+
+// Changing the name format orphans every index already on disk.
+func TestLocalSnapshotDirNameIsPinned(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the pinned cwd is the Unix root")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Chdir("/")
+	if got, want := localSnapshotDir(), filepath.Join(home, ".gofastr", "semantic", "42099b4af021"); got != want {
+		t.Fatalf("snapshot dir for / = %q, want %q (first 12 hex of sha1(\"/\"))", got, want)
 	}
 }
 
