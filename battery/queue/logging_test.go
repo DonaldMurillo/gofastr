@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 	"sync/atomic"
@@ -56,82 +55,57 @@ func newMemoryQueueWithLogger(t *testing.T, workers int) (*MemoryQueue, *bytes.B
 	return NewMemoryQueue(workers, WithLogger(logger)), &buf
 }
 
-// ─── DBQueue logging ─────────────────────────────────────────────────
+type loggingQueue interface {
+	Queue
+	RegisterHandler(string, Handler)
+}
 
-// A failing handler logs a WARN per attempt even while retries remain;
-// when attempts are exhausted the worker loop escalates to ERROR
-// dead-letter.
 func TestDBQueueLogsHandlerFailureAndDeadLetter(t *testing.T) {
+	testQueueFailureLogs(t, func(t *testing.T) (loggingQueue, *bytes.Buffer, func(context.Context)) {
+		_, q, buf := openDBQueueWithLogger(t, 1)
+		return q, buf, q.Start
+	})
+}
+
+func TestMemoryQueueLogsHandlerFailureAndDeadLetter(t *testing.T) {
+	testQueueFailureLogs(t, func(t *testing.T) (loggingQueue, *bytes.Buffer, func(context.Context)) {
+		q, buf := newMemoryQueueWithLogger(t, 1)
+		return q, buf, func(context.Context) { q.Start() }
+	})
+}
+
+func testQueueFailureLogs(t *testing.T, newQueue func(*testing.T) (loggingQueue, *bytes.Buffer, func(context.Context))) {
+	t.Helper()
 	cases := []struct {
-		name        string
-		jobType     string
-		err         error
-		maxAttempts int
-		wantLevel   string
-		wantMsg     string
+		name      string
+		job       Job
+		err       error
+		wantLevel string
+		wantMsg   string
 	}{
-		{"handler failure", "flaky", errors.New("boom"), 5, "WARN", "queue: handler failed"},
-		{"exhausted dead-letter", "doomed", errors.New("fatal"), 1, "ERROR", "queue: job dead-lettered"},
+		{"handler failure", Job{Type: "flaky", MaxAttempts: 5}, errors.New("boom"), "WARN", "queue: handler failed"},
+		{"exhausted dead-letter", Job{Type: "doomed", MaxAttempts: 1}, errors.New("fatal"), "ERROR", "queue: job dead-lettered"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, q, buf := openDBQueueWithLogger(t, 1)
+			q, buf, start := newQueue(t)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			var calls atomic.Int32
-			q.RegisterHandler(tc.jobType, func(_ context.Context, _ Job) error {
-				calls.Add(1)
-				return tc.err
-			})
-			q.Start(ctx)
-			if err := q.Enqueue(ctx, Job{Type: tc.jobType, MaxAttempts: tc.maxAttempts}); err != nil {
-				t.Fatalf("enqueue: %v", err)
-			}
-
-			waitFor(t, func() bool { return calls.Load() >= 1 }, 5*time.Second,
-				"handler was never called")
-			q.Close()
-
-			assertLogLine(t, buf, tc.wantLevel, tc.wantMsg)
-		})
-	}
-}
-
-// ─── MemoryQueue logging ─────────────────────────────────────────────
-
-// A failing handler logs a WARN per attempt while retries remain; a job
-// that exhausts MaxAttempts logs an ERROR dead-letter.
-func TestMemoryQueueLogsHandlerFailureAndDeadLetter(t *testing.T) {
-	cases := []struct {
-		name        string
-		jobType     string
-		err         error
-		maxAttempts int
-		wantLevel   string
-		wantMsg     string
-	}{
-		{"handler failure", "flaky", fmt.Errorf("boom"), 5, "WARN", "queue: handler failed"},
-		{"exhausted dead-letter", "doomed", fmt.Errorf("fatal"), 1, "ERROR", "queue: job dead-lettered"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			q, buf := newMemoryQueueWithLogger(t, 1)
-
 			var attempts atomic.Int32
-			q.RegisterHandler(tc.jobType, func(_ context.Context, _ Job) error {
+			q.RegisterHandler(tc.job.Type, func(context.Context, Job) error {
 				attempts.Add(1)
 				return tc.err
 			})
-			q.Start()
-			if err := q.Enqueue(context.Background(), Job{Type: tc.jobType, MaxAttempts: tc.maxAttempts}); err != nil {
+			t.Cleanup(func() { _ = q.Close() })
+			start(ctx)
+			if err := q.Enqueue(ctx, tc.job); err != nil {
 				t.Fatalf("enqueue: %v", err)
 			}
-
-			waitFor(t, func() bool { return attempts.Load() >= 1 }, 5*time.Second,
-				"handler was never called")
-			q.Close()
-
+			waitFor(t, func() bool { return attempts.Load() >= 1 }, 5*time.Second, "handler was never called")
+			if err := q.Close(); err != nil {
+				t.Fatalf("close queue: %v", err)
+			}
 			assertLogLine(t, buf, tc.wantLevel, tc.wantMsg)
 		})
 	}

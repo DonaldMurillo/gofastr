@@ -80,7 +80,7 @@
     clearTimeout(NS._toastTimers.get(id)?.timer);
     NS._toastTimers.delete(id);
     restoreToastFocus(item);
-    const stack = item.parentElement;
+    const stack = item.closest('[data-hui-toast-stack],[data-cui-toast-stack]');
     item.remove();
     if (stack) syncLayer(stack);
   }
@@ -112,7 +112,7 @@
   const pending = [];
   let watch = null;
   function held(stack) {
-    try { if (document.querySelector(':modal')) return true; } catch (_) {}
+    try { if (document.querySelector('dialog:modal')) return true; } catch (_) {}
     return !!(NS._modalStack?.length || stack.closest('[inert]'));
   }
   function release() {
