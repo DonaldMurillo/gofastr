@@ -77,3 +77,21 @@ decisions:
     rejected:
       - option: Let shutdown wait for the watcher to stop by itself.
         why: The watcher's go list can stall on a module proxy, and a signal would then hang the command until the proxy answered.
+  - id: generated-default-icon
+    date: 2026-11-28
+    status: accepted
+    decision: Without --icon the CLI generates a flat square with framework/image as the icon source.
+    rejected:
+      - option: Take a default icon from uihost.WithAppIcon.
+        why: WithAppIcon has no default icon of its own.
+      - option: Ship a default icon file in the CLI.
+        why: The CLI carries no binary assets, and a generated square needs none.
+    upholds: [icons-from-one-source]
+  - id: linux-scheme-is-a-hand-off
+    date: 2026-11-28
+    status: accepted
+    decision: A plain Linux executable built with --scheme embeds the scheme for the argv and session-bus hand-off and installs no OS URL association.
+    rejected:
+      - option: Register the scheme with the desktop when building.
+        why: A build writes only its output, and the association belongs to an installed app; the tar.gz bundle's desktop entry, which desktop install writes, carries it as an x-scheme-handler MimeType.
+    upholds: [linux-build-is-a-plain-executable]
