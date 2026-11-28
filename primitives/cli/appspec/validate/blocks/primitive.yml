@@ -171,3 +171,11 @@ decisions:
       - option: Call only the boot check.
         why: Its errors name Go fields and options the author never wrote.
     upholds: [charts-group-a-shown-column, stat-cards-read-what-they-say]
+  - id: control-kinds-are-not-node-kinds
+    date: 2026-11-28
+    status: accepted
+    decision: The control kinds (action_button, custom_form, text_field, number_field, checkbox, switch, select_field, radio_group, data_table, item_list, nav_links) are the framework/ui form controls, static tables and lists that gofastr generate screen --from-a11y maps a captured page onto, so a screen can carry a form no entity is bound to.
+    rejected:
+      - option: Name them button, form, select, list, table and nav.
+        why: Those are the raw node kinds, which render as uinode trees and keep that meaning, so the same word would name two different blocks.
+    upholds: [control-blocks-render]

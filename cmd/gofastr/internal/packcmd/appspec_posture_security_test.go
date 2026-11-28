@@ -9,10 +9,10 @@ import (
 
 // Pins: an app spec YAML value naming a security posture is REFUSED when its node is a list or a map.
 // (family enumeration; tier T2).
-// Family: the requireScalarString doctrine, appspec.go:1358-1366 —
-// "stringValue answers '' for a list or a map, which is fine for a cosmetic
-// field and wrong for a security posture ... so the shape is an error rather
-// than a default". Pinned sibling (green today):
+// Family: the registry rule cli.appspec.decode/posture-strings-are-single-values
+// (`go run ./cmd/primitives show cli.appspec.decode`): a posture key read
+// through requireScalarString refuses a list or a non-empty map rather than
+// decoding it to "". Pinned sibling (green today):
 // TestDBConfigRejectsNonScalarTypes (appspec_decode_security_test.go:113)
 // moved app.db.driver/url onto requireScalarString (appspec.go:550,554);
 // decodeEntityReadScope did the same for unrestricted (:1464) and every
@@ -69,7 +69,7 @@ entities:
 			if e := bp.Entities[0].Exposure; e != nil && e.Access != nil {
 				read = e.Access.Read
 			}
-			t.Errorf("SECURITY: [app-spec-posture-shape-drift] entities[0].access.read as a list decoded without error to Read=%q — an empty read permission is anonymous read; the requireScalarString doctrine (appspec.go:1358-1366) demands this shape be an error", read)
+			t.Errorf("SECURITY: [app-spec-posture-shape-drift] entities[0].access.read as a list decoded without error to Read=%q — an empty read permission is anonymous read; cli.appspec.decode/posture-strings-are-single-values demands this shape be an error", read)
 		}
 		// Control: the scalar twin decodes and lands in the declaration.
 		bp, err = decodeAppSpecString(`
@@ -126,7 +126,7 @@ entities:
 				if s := bp.Entities[0].Scope; s != nil {
 					owner = s.OwnerField
 				}
-				t.Errorf("SECURITY: [app-spec-posture-shape-drift] %s owner_field as a list decoded without error to OwnerField=%q — owner scoping silently no-ops and every row is exposed to every caller; the requireScalarString doctrine demands this shape be an error", name, owner)
+				t.Errorf("SECURITY: [app-spec-posture-shape-drift] %s owner_field as a list decoded without error to OwnerField=%q — owner scoping silently no-ops and every row is exposed to every caller; cli.appspec.decode/posture-strings-are-single-values demands this shape be an error", name, owner)
 			}
 		}
 		// Control: the scalar twin decodes, names the owner column, and gets
@@ -166,7 +166,7 @@ screens:
 				t.Fatalf("setup broken: decoded %d screens, want 1", len(bp.Screens))
 			}
 			mount := appgen.AppSpecScreenMountStmt(bp.Screens[0], bp)
-			t.Errorf("SECURITY: [app-spec-posture-shape-drift] screens[0].access.role as a map decoded without error to Auth=%v Role=%q, and the mount site is the ungated %q — a world-readable screen where the author wrote an access block; the requireScalarString doctrine demands this shape be an error",
+			t.Errorf("SECURITY: [app-spec-posture-shape-drift] screens[0].access.role as a map decoded without error to Auth=%v Role=%q, and the mount site is the ungated %q — a world-readable screen where the author wrote an access block; cli.appspec.decode/posture-strings-are-single-values demands this shape be an error",
 				bp.Screens[0].Access.Auth, bp.Screens[0].Access.Role, strings.TrimSpace(mount))
 		}
 		// Control: the scalar twin decodes to a gated screen whose mount
