@@ -196,3 +196,47 @@ func firstLine(s string) string {
 	}
 	return s
 }
+
+// One case per clause of appgen.sdk/config-values-stay-inert, each with a byte only that clause removes.
+func TestSDKConfigValuesLoseEachByteTheRuleNames(t *testing.T) {
+	render := func(name, version string) []GeneratedFile {
+		opts := SdkOptions{name: name, module: "local/acme-sdk", sdkVersion: version, baseURL: "https://api.example.com"}
+		spec, err := buildSDKSpec(sdkFixtureDecls(), &opts)
+		if err != nil {
+			t.Fatalf("buildSDKSpec(%q): %v", name, err)
+		}
+		files, err := renderSDKFiles(spec, []string{"go", "js"}, false)
+		if err != nil {
+			t.Fatalf("renderSDKFiles: %v", err)
+		}
+		return files
+	}
+	t.Run("header drops DEL", func(t *testing.T) {
+		for _, f := range render("acme", "1.2.3\x7f") {
+			if strings.ContainsRune(f.Content, 0x7f) {
+				t.Errorf("SECURITY: [injection] %s keeps a DEL byte from sdk_version", f.Name)
+			}
+		}
+	})
+	t.Run("readme prose drops tildes", func(t *testing.T) {
+		benign := map[string]int{}
+		for _, f := range render("acme", "1.2.3") {
+			benign[f.Name] = strings.Count(f.Content, "~")
+		}
+		for _, f := range render("acme~~~sh", "1.2.3") {
+			if strings.HasSuffix(f.Name, "README.md") && strings.Count(f.Content, "~") != benign[f.Name] {
+				t.Errorf("SECURITY: [sdk-readme] %s: the name added tildes, and ~~~ opens a fence:\n%s", f.Name, f.Content)
+			}
+		}
+	})
+	t.Run("fence word drops backticks", func(t *testing.T) {
+		if got := sdkFenceWord("acme`sh"); got != "acmesh" {
+			t.Errorf("SECURITY: [sdk-readme] sdkFenceWord(%q) = %q, want only the path-component alphabet", "acme`sh", got)
+		}
+	})
+	t.Run("module refuses a space", func(t *testing.T) {
+		if err := validateSDKModulePath("local/app sdk"); err == nil {
+			t.Errorf("SECURITY: [injection] --module %q accepted; a space splits the go.mod directive", "local/app sdk")
+		}
+	})
+}

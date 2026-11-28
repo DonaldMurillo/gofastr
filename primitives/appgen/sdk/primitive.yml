@@ -14,6 +14,7 @@ invariants:
       - test: cmd/gofastr/internal/appgen.TestSDKReadmeScrubConfigName
       - test: cmd/gofastr/internal/appgen.TestSDKModulePathRejectsDirectives
       - test: cmd/gofastr/internal/appgen.TestSDKModulePathRefusesEmptyElements
+      - test: cmd/gofastr/internal/appgen.TestSDKConfigValuesLoseEachByteTheRuleNames
   - id: derived-names-are-safe-and-unique
     rule: An entity is refused when its Go type is not an identifier, its table holds a quote, backslash or control byte, its client.js property is not a JS identifier or is a Client or Object.prototype member, two entities derive one property or one Go type, or its states block would fail the app's boot check.
     enforced_by:
