@@ -20,7 +20,7 @@ invariants:
       - test: cmd/gofastr/internal/releasecmd.TestOptionsAcceptSemverPrerelease
       - test: cmd/gofastr/internal/releasecmd.TestURLRefusesUnquotableText
   - id: url-refusal-hides-credentials
-    rule: A refused --url is shown with everything between :// and its last @ replaced by REDACTED, and without url.Parse's own error when it holds an @, so a credential in it reaches neither the terminal nor a CI log.
+    rule: A refused --url is shown with everything between :// and its last @ replaced by REDACTED, and without url.Parse's own error when it holds an @, so a user name or password in it reaches neither the terminal nor a CI log; a query is refused but shown as written.
     enforced_by:
       - test: cmd/gofastr/internal/releasecmd.TestURLRefusalHidesCredentials
   - id: one-main-package-per-target
