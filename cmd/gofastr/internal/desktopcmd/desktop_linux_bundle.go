@@ -10,8 +10,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 )
 
-// buildLinuxDesktop defaults to a plain ELF executable. The opt-in tar.gz
-// format packages release artifacts, never runtime libraries or an installer.
 func buildLinuxDesktop(f desktopBuildFlags, name string) error {
 	arch := os.Getenv("GOARCH")
 	if arch == "" {
@@ -65,9 +63,6 @@ func buildLinuxDesktop(f desktopBuildFlags, name string) error {
 	return nil
 }
 
-// Embed the same opt-in launch gate used by the native battery, without
-// installing a protocol handler. Validate here too: both build helpers are
-// callable independently of the CLI's earlier flag validation.
 func linuxDesktopLinkerFlags(scheme string) (string, error) {
 	if scheme != "" && !desktopSchemeRe.MatchString(scheme) {
 		return "", fmt.Errorf("--scheme %q must match %s", scheme, desktopSchemeRe.String())

@@ -169,6 +169,7 @@ kiln-*
 !assets/brand/*.png
 .playwright-mcp/
 screens/
+!primitives/**/screens/
 research-ui-approaches.md
 .mcp.json
 # pi agent state (auto-added)

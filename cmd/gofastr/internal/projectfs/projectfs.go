@@ -1,18 +1,4 @@
-// Package projectfs reads and writes files inside a user's project
-// without following a symlink out of it.
-//
-// The CLI writes into checkouts the user may have cloned from anyone. A
-// path joined onto the project directory and handed to os.WriteFile,
-// os.ReadFile or atomicfile.Rewrite follows every symlink on the way, so
-// a repo carrying .gitignore -> ~/.bashrc, or static -> /elsewhere, had
-// `gofastr init .` append its ignore rules to the user's shell profile
-// and create files in a directory the project does not own. Every
-// operation here goes through an os.Root on the project directory: a
-// link that stays in the project is followed, the way a write through it
-// would be; one that leaves (an absolute target, or a relative one that
-// climbs past the root) is refused, dangling or not. A file the CLI
-// writes a secret into (ReplaceOwnerOnly) is stricter: a link at the
-// file itself is refused even when it stays in the project.
+// Package projectfs reads and writes a project's files without following a symlink out of it.
 package projectfs
 
 import (
@@ -28,12 +14,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-// maxLinkHops bounds how many symlinks Resolve follows, as the kernel's
-// own ELOOP limit does.
 const maxLinkHops = 40
 
-// OpenRoot opens dir, creating it first, as the root a command's writes
-// are confined to.
+// OpenRoot creates dir if needed and opens it as an os.Root.
 func OpenRoot(dir string) (*os.Root, error) {
 	//gofastr:allow(worldreadable) dir is the project checkout, which holds committed source and docs; 0755 is the mode it would get from git clone or mkdir
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -42,14 +25,9 @@ func OpenRoot(dir string) (*os.Root, error) {
 	return os.OpenRoot(dir)
 }
 
-// Resolve returns the path name (slash-separated, relative to root)
-// really names inside root, with every symlink on the way replaced by
-// its target, so a replace lands on the file a link points at and the
-// link stays a link. A relative target is read from the directory the
-// link really sits in, which is the resolved parent, not the lexical
-// one: with docs -> real/sub, docs/x -> ../y is real/y. A link to an
-// absolute path, or one whose target climbs out of root, is refused. A
-// missing component ends the walk; the rest of name is joined as given.
+// Resolve returns the slash path under root that name really names, with
+// every symlink on the way replaced by its target; it errors on a link
+// that leaves root.
 func Resolve(root *os.Root, name string) (string, error) {
 	pending := strings.Split(filepath.ToSlash(name), "/")
 	var done []string
@@ -102,10 +80,6 @@ func Resolve(root *os.Root, name string) (string, error) {
 		if filepath.IsAbs(target) || path.IsAbs(slashTarget) || filepath.VolumeName(target) != "" {
 			return "", outErr(cur, target)
 		}
-		// The target is read from the link's own (already resolved)
-		// directory: done is left as it is and the target's components go
-		// first in line. A ".." in them that pops past root is an escape,
-		// refused above with this link named.
 		lastLink, lastTarget = cur, target
 		pending = append(strings.Split(slashTarget, "/"), pending...)
 	}
@@ -119,13 +93,7 @@ func outErr(link, target string) error {
 	return fmt.Errorf("%q is a symlink out of the project (to %q); move it, then re-run", link, target)
 }
 
-// Check refuses name (relative to dir) when a symlink on the way to it,
-// or name itself, leads out of dir, dangling or not; a missing name, or
-// a link that stays in dir, passes. The writers here confine
-// themselves, so Check is for what they cannot cover: a step that runs
-// outside an os.Root (the go and git subprocesses of init, an editor
-// that writes only later), and a refusal that must come before anything
-// is written, so a refused command leaves no half-made project.
+// Check errors when a symlink on the way to name, or name itself, leads out of dir.
 func Check(dir, name string) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -136,8 +104,7 @@ func Check(dir, name string) error {
 	return err
 }
 
-// Read reads name under root, following a link only while it stays in
-// root.
+// Read reads name under root, following a link only while it stays in root.
 func Read(root *os.Root, name string) ([]byte, error) {
 	resolved, err := Resolve(root, name)
 	if err != nil {
@@ -146,9 +113,7 @@ func Read(root *os.Root, name string) ([]byte, error) {
 	return root.ReadFile(filepath.FromSlash(resolved))
 }
 
-// Lstat reports on name under root without following a link at name
-// itself; a link on the way to it is followed only while it stays in
-// root.
+// Lstat reports on name under root without following a link at name itself.
 func Lstat(root *os.Root, name string) (fs.FileInfo, error) {
 	dir, base := path.Split(filepath.ToSlash(name))
 	p, err := resolveParent(root, dir, base)
@@ -166,14 +131,7 @@ func resolveParent(root *os.Root, dir, base string) (string, error) {
 	return path.Join(resolved, base), nil
 }
 
-// Replace replaces name under root with data through a temporary file
-// beside it, synced and renamed over it, so a crash mid-write leaves the
-// old file or the new one, never a truncated one. A link at name is
-// followed while it stays in root (Resolve); the rename then replaces
-// the target, never the link, and never anything outside root. An
-// existing file keeps its mode. A new one is created with perm, and the
-// process umask applies, as it does to os.WriteFile. A file without its
-// owner write bit is refused, as opening it for writing would be.
+// Replace atomically replaces name under root with data, creating it with perm.
 func Replace(root *os.Root, name string, data []byte, perm fs.FileMode) error {
 	return replace(root, name, data, func(existing fs.FileInfo) (fs.FileMode, func(*os.File) error) {
 		if existing == nil {
@@ -183,28 +141,14 @@ func Replace(root *os.Root, name string, data []byte, perm fs.FileMode) error {
 	})
 }
 
-// ReplaceFixedMode replaces a planned file at name inside root, refusing a
-// leaf symlink and setting mode explicitly before writing.
+// ReplaceFixedMode replaces name under root with data at mode, refusing a link at name.
 func ReplaceFixedMode(root *os.Root, name string, data []byte, mode fs.FileMode) error {
 	return replaceAt(root, name, data, true, func(fs.FileInfo) (fs.FileMode, func(*os.File) error) {
 		return 0o600, atomicfile.Mode(mode)
 	})
 }
 
-// ReplaceOwnerOnly is Replace for a file that holds secrets (a .env, the
-// settings file): the temporary file is owner-only (0600, or an
-// owner-only ACL on Windows, fileperm.RestrictOpenFile) before a byte
-// lands, whatever mode a file already there had.
-//
-// Unlike Replace, name itself must be a regular file or missing
-// (RegularLeaf): a symlink there is refused whatever it points at, in
-// the project or out, dangling or not. A link that stays in the project
-// still chooses which file receives the secret, and `init . --force`
-// with .env -> static/robots.txt wrote a generated JWT_SECRET into a
-// committed, statically served file. A link on the way to name is
-// followed while it stays in root, as Replace does. The rename replaces
-// the directory entry at name, so a link that appears after the check
-// is replaced, never written through.
+// ReplaceOwnerOnly is Replace into an owner-only file, refusing what RegularLeaf refuses.
 func ReplaceOwnerOnly(root *os.Root, name string, data []byte) error {
 	resolved, err := RegularLeaf(root, name)
 	if err != nil {
@@ -215,11 +159,7 @@ func ReplaceOwnerOnly(root *os.Root, name string, data []byte) error {
 	})
 }
 
-// RegularLeaf returns the path name (slash-separated, relative to root)
-// names inside root with every link on the way to it resolved (Resolve),
-// and refuses name itself unless it is missing or a regular file: a
-// symlink at name is refused whatever it points at, as is a directory or
-// any other kind of file.
+// RegularLeaf resolves name's directory and errors unless name is missing or a regular file.
 func RegularLeaf(root *os.Root, name string) (string, error) {
 	dir, base := path.Split(strings.TrimRight(filepath.ToSlash(name), "/"))
 	if base == "" || base == "." || base == ".." {
@@ -243,9 +183,7 @@ func RegularLeaf(root *os.Root, name string) (string, error) {
 	return p, nil
 }
 
-// CheckRegularLeaf is RegularLeaf on an os.Root on dir, for a refusal
-// that must come before anything is written (`init .` checks .env and
-// the settings file before it writes main.go).
+// CheckRegularLeaf is RegularLeaf on an os.Root on dir.
 func CheckRegularLeaf(dir, name string) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -264,7 +202,6 @@ func replace(root *os.Root, name string, data []byte, modeFor func(existing fs.F
 	return replaceAt(root, name, data, false, modeFor)
 }
 
-// replaceAt is replace on a name already resolved inside root.
 func replaceAt(root *os.Root, name string, data []byte, refuseLeafLink bool, modeFor func(existing fs.FileInfo) (fs.FileMode, func(*os.File) error)) error {
 	var existing fs.FileInfo
 	if fi, serr := root.Lstat(filepath.FromSlash(name)); serr == nil {
@@ -283,10 +220,7 @@ func replaceAt(root *os.Root, name string, data []byte, refuseLeafLink bool, mod
 	return atomicfile.WriteFileAt(root, name, data, createMode, prepare)
 }
 
-// ReadFile reads name (slash-separated, relative to dir) through an
-// os.Root on dir: a symlink is followed only while it stays in dir, so a
-// project file linked out of the project reads as an error, never as the
-// file it points at.
+// ReadFile is Read on an os.Root on dir.
 func ReadFile(dir, name string) ([]byte, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -296,10 +230,7 @@ func ReadFile(dir, name string) ([]byte, error) {
 	return Read(root, name)
 }
 
-// WriteFile replaces name (slash-separated, relative to dir) with data
-// through Replace on an os.Root on dir: a link inside dir is written
-// through, one out of dir is refused, an existing file keeps its mode
-// and a new one gets perm less the umask.
+// WriteFile is Replace on an os.Root on dir.
 func WriteFile(dir, name string, data []byte, perm fs.FileMode) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -309,9 +240,7 @@ func WriteFile(dir, name string, data []byte, perm fs.FileMode) error {
 	return Replace(root, name, data, perm)
 }
 
-// WriteOwnerOnly replaces name (relative to dir) with data through
-// ReplaceOwnerOnly on an os.Root on dir: a symlink at name is refused,
-// in the project or not.
+// WriteOwnerOnly is ReplaceOwnerOnly on an os.Root on dir.
 func WriteOwnerOnly(dir, name string, data []byte) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -321,9 +250,7 @@ func WriteOwnerOnly(dir, name string, data []byte) error {
 	return ReplaceOwnerOnly(root, name, data)
 }
 
-// MkdirAll creates name (relative to dir) and its parents through an
-// os.Root on dir: an existing link on the way is followed only while it
-// stays in dir.
+// MkdirAll creates name and its parents through an os.Root on dir.
 func MkdirAll(dir, name string, perm fs.FileMode) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -333,9 +260,7 @@ func MkdirAll(dir, name string, perm fs.FileMode) error {
 	return root.MkdirAll(filepath.FromSlash(name), perm)
 }
 
-// LstatFile is Lstat on an os.Root on dir: a link at name is reported as
-// a link (so a dangling one counts as a file that is already there),
-// and a link on the way to it is followed only while it stays in dir.
+// LstatFile is Lstat on an os.Root on dir.
 func LstatFile(dir, name string) (fs.FileInfo, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -345,11 +270,7 @@ func LstatFile(dir, name string) (fs.FileInfo, error) {
 	return Lstat(root, name)
 }
 
-// UserPath splits a path the user named and makes sure the directory it
-// is confined to exists: a non-local path names its own directory on
-// purpose (Split), and that directory is created as given; a local one
-// is confined to the working directory, whose subdirectories the caller
-// creates through MkdirAll.
+// UserPath is Split, creating the returned directory when it is not ".".
 func UserPath(p string) (dir, name string, err error) {
 	dir, name = Split(p)
 	if dir != "." {
@@ -359,15 +280,7 @@ func UserPath(p string) (dir, name string, err error) {
 	return dir, name, err
 }
 
-// Split splits a path the user named into the directory to confine to
-// and the name under it. A local path (theme/theme.go) is confined to
-// the working directory, so a symlinked theme/ in the checkout cannot
-// carry the write out; so is an absolute path that lies under the
-// working directory ($PWD/theme/theme.go), which names the same file,
-// however the working directory is spelled: through a link to it or to
-// a directory inside it, or macOS's /var for /private/var. A path that climbs or is absolute
-// elsewhere (../x, /abs/x) names its own directory on purpose; only its
-// last element is confined.
+// Split splits a path the user named into the directory to confine to and the name under it.
 func Split(p string) (dir, name string) {
 	if filepath.IsLocal(p) {
 		return ".", filepath.ToSlash(filepath.Clean(p))
@@ -385,14 +298,6 @@ func Split(p string) (dir, name string) {
 	return filepath.Dir(p), filepath.Base(p)
 }
 
-// underDir reports p's path below dir when one of p's ancestors is dir,
-// or a directory inside it, under another spelling. It compares files,
-// not strings: the nearest ancestor that os.SameFile calls dir, or whose
-// resolved path lies under dir's, decides, and the remainder must be
-// local. A path through an alias of a project subdirectory is still a
-// project path. A link below that ancestor (a theme/ linked out of the
-// project) stays in the remainder, where the os.Root confinement
-// refuses it.
 func underDir(dir, p string) (string, bool) {
 	want, err := os.Stat(dir)
 	if err != nil {
@@ -417,9 +322,6 @@ func underDir(dir, p string) (string, bool) {
 	}
 }
 
-// ancestorUnder reports a's path below the directory want (realDir
-// resolved): "." when a is that directory, the relative path when a
-// resolves to a directory inside it.
 func ancestorUnder(a string, want fs.FileInfo, realDir string) (string, bool) {
 	fi, err := os.Stat(a)
 	if err != nil || !fi.IsDir() {

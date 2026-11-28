@@ -13,9 +13,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/codegen"
 )
 
-// entryConfig reads one built-in generator's settings entry strictly: an
-// unknown key, a value of the wrong type, or a comma string where a list
-// belongs is an error naming the entry, never a value dropped on the floor.
 type entryConfig struct {
 	index int
 	name  string
@@ -29,7 +26,6 @@ func (e entryConfig) errorf(format string, args ...any) error {
 	return fmt.Errorf("codegen.generators[%d] (%s): %s", e.index, e.name, fmt.Sprintf(format, args...))
 }
 
-// known refuses a config key outside keys.
 func (e entryConfig) known(keys ...string) error {
 	for _, key := range slices.Sorted(maps.Keys(e.cfg)) {
 		if !slices.Contains(keys, key) {
@@ -39,8 +35,6 @@ func (e entryConfig) known(keys ...string) error {
 	return nil
 }
 
-// str reads a string key. ok is false when the key is absent. Only a key in
-// emptyOK may hold "".
 func (e entryConfig) str(key string, emptyOK bool) (v string, ok bool, err error) {
 	raw, present := e.cfg[key]
 	if !present {
@@ -54,8 +48,6 @@ func (e entryConfig) str(key string, emptyOK bool) (v string, ok bool, err error
 	return s, true, nil
 }
 
-// list reads a list of non-empty strings. A string value is refused with
-// the list spelling, so the comma form older releases read fails loudly.
 func (e entryConfig) list(key string) ([]string, error) {
 	raw, present := e.cfg[key]
 	if !present {
@@ -80,9 +72,6 @@ func (e entryConfig) list(key string) ([]string, error) {
 	return out, nil
 }
 
-// verbs reads the cli entry's verbs: a list for every entity, or a map from
-// entity to its list. It returns the --verbs spelling parseVerbSelection
-// reads, so both sources share one validator.
 func (e entryConfig) verbs() (string, error) {
 	raw, present := e.cfg["verbs"]
 	if !present {
@@ -114,7 +103,7 @@ func (e entryConfig) verbs() (string, error) {
 	}
 	list, err := e.list("verbs")
 	if _, isString := raw.(string); isString {
-		return "", err // the list spelling for the string it read
+		return "", err
 	}
 	if err != nil {
 		return "", e.errorf("config.verbs must be a list of verbs, or a map from entity to its list")
@@ -125,8 +114,6 @@ func (e entryConfig) verbs() (string, error) {
 	return strings.Join(list, ","), nil
 }
 
-// singleVerbs refuses a list item carrying --verbs syntax: joined, it would
-// turn a global list into per-entity pairs.
 func (e entryConfig) singleVerbs(list []string) error {
 	for _, v := range list {
 		if strings.ContainsAny(v, "=;") {
@@ -136,8 +123,6 @@ func (e entryConfig) singleVerbs(list []string) error {
 	return nil
 }
 
-// decodeCLIEntry turns a `cli` settings entry into the options the flags
-// would set. output is relative to the project, like --out.
 func decodeCLIEntry(index int, gen codegen.GeneratorConfig) (CliOptions, error) {
 	e := entryConfig{index: index, name: "cli", cfg: gen.Config}
 	opts := CliOptions{ApiPrefix: "api", entryIndex: index}
@@ -182,9 +167,6 @@ func decodeCLIEntry(index int, gen codegen.GeneratorConfig) (CliOptions, error) 
 	return opts, nil
 }
 
-// decodeSDKEntry turns an `sdk` settings entry into SDK options. output is
-// left to the caller: the engine and the direct command root it
-// differently.
 func decodeSDKEntry(index int, gen codegen.GeneratorConfig) (SdkOptions, error) {
 	e := entryConfig{index: index, name: "sdk", cfg: gen.Config}
 	var opts SdkOptions
@@ -234,8 +216,6 @@ func decodeSDKEntry(index int, gen codegen.GeneratorConfig) (SdkOptions, error) 
 	return opts, nil
 }
 
-// checkOpenAPISDKOptions refuses an entity selection beside an OpenAPI
-// source: the SDK covers every operation the document declares.
 func checkOpenAPISDKOptions(opts SdkOptions) error {
 	if opts.fromOpenAPI != "" && (len(opts.only) > 0 || len(opts.exclude) > 0) {
 		return fmt.Errorf("only and exclude select entities, and an SDK generated from an OpenAPI document covers every operation in it; drop them")
@@ -243,11 +223,7 @@ func checkOpenAPISDKOptions(opts SdkOptions) error {
 	return nil
 }
 
-// ApplyCLIConfigDefaults fills what the flags left unset from a cli entry in
-// the project's gofastr.settings.yml, so `gofastr generate cli` and `gofastr
-// build` produce the same CLI. With --out or --binary it uses the entry
-// that names the same directory or binary; without, the only entry (two or
-// more need --out to pick). It reports whether an entry was used.
+// ApplyCLIConfigDefaults fills unset flags from the cli entry --out or --binary names, else the only one, and reports whether it used one.
 func ApplyCLIConfigDefaults(opts *CliOptions) (bool, error) {
 	discovery, err := codegen.DiscoverConfig(".")
 	if err != nil {
@@ -275,7 +251,6 @@ func ApplyCLIConfigDefaults(opts *CliOptions) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	// An entry without binary or output takes the defaults a run would.
 	defaultBinary := strings.ToLower(filepath.Base(abs))
 	var picked *CliOptions
 	switch {
@@ -308,10 +283,6 @@ func ApplyCLIConfigDefaults(opts *CliOptions) (bool, error) {
 	if !opts.flagSet["from-openapi"] {
 		opts.FromOpenAPI = picked.FromOpenAPI
 	} else if opts.FromOpenAPI != "" {
-		// --from-openapi is spec-driven: the entry's entity selection does
-		// not apply, and copying it would refuse flags nobody typed. An
-		// entry for the same document lends its api_prefix, so the flag
-		// builds the CLI a settings run does.
 		if !opts.apiPrefixSet && picked.apiPrefixSet && sameOpenAPISource(picked.FromOpenAPI, opts.FromOpenAPI) {
 			opts.ApiPrefix, opts.apiPrefixSet = picked.ApiPrefix, true
 		}
@@ -320,7 +291,6 @@ func ApplyCLIConfigDefaults(opts *CliOptions) (bool, error) {
 	if !opts.apiPrefixSet && picked.apiPrefixSet {
 		opts.ApiPrefix, opts.apiPrefixSet = picked.ApiPrefix, true
 	}
-	// A flag given empty (--only=) still wins: it clears the entry's value.
 	if !opts.flagSet["only"] {
 		opts.only = picked.only
 	}
@@ -333,8 +303,6 @@ func ApplyCLIConfigDefaults(opts *CliOptions) (bool, error) {
 	return true, checkCLIOptions(*opts)
 }
 
-// sameOpenAPISource reports whether two --from-openapi values name the
-// same document: equal URLs, or local paths equal once cleaned.
 func sameOpenAPISource(a, b string) bool {
 	if a == "" || b == "" {
 		return false
@@ -351,10 +319,6 @@ func sameDir(a, b string) bool {
 	return errA == nil && errB == nil && absA == absB
 }
 
-// cliEntryYAML renders the cli entry that reproduces a run, for the next
-// steps of a run no entry drove. It refuses a value that is not UTF-8:
-// yamlScalar's strconv.Quote writes such a byte as \xff, which YAML 1.2
-// reads as U+00FF, so the entry would name a different path.
 func cliEntryYAML(opts CliOptions, binary string) (string, error) {
 	values := append([]string{opts.OutDir, binary, opts.FromOpenAPI, opts.ApiPrefix, opts.verbs}, opts.only...)
 	for _, v := range append(values, opts.exclude...) {
@@ -389,8 +353,6 @@ func cliEntryYAML(opts CliOptions, binary string) (string, error) {
 			fmt.Fprintf(&b, "        %s: %s\n", list.key, yamlList(list.items))
 		}
 	}
-	// The parsed selection, not the flag text: a repeated entity in --verbs
-	// would be a duplicate YAML key.
 	global, per, err := parseVerbSelection(opts.verbs)
 	switch {
 	case err != nil || (global == nil && per == nil):
@@ -409,8 +371,6 @@ func cliEntryYAML(opts CliOptions, binary string) (string, error) {
 	return b.String(), nil
 }
 
-// yamlList renders a flow list; "*" is quoted, since bare it is a YAML
-// alias.
 func yamlList(items []string) string {
 	quoted := make([]string, len(items))
 	for i, item := range items {
@@ -419,8 +379,6 @@ func yamlList(items []string) string {
 	return "[" + strings.Join(quoted, ", ") + "]"
 }
 
-// yamlScalar quotes a value unless YAML reads it plain as the same string:
-// a name or path that starts with a letter and is no boolean or null word.
 func yamlScalar(v string) string {
 	plain := v != "" && (v[0] >= 'a' && v[0] <= 'z' || v[0] >= 'A' && v[0] <= 'Z') &&
 		strings.IndexFunc(v, func(r rune) bool {

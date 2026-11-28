@@ -13,7 +13,7 @@ import (
 // compares CFBundleShortVersionString as semver, so a bundle built with
 // "1.0" failed every update check forever. The build refuses it first.
 func TestMacBuildRefusesNonSemverVersion(t *testing.T) {
-	for _, v := range []string{"1.0", "1.2.3+build", "01.2.3", "1.2.3-"} {
+	for _, v := range []string{"1.0", "1.2.3+build", "01.2.3", "1.2.3-", "1.2.3-" + strings.Repeat("a", 59)} {
 		t.Run(v, func(t *testing.T) {
 			out := filepath.Join(t.TempDir(), "dist")
 			var code int

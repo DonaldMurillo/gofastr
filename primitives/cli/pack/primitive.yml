@@ -1,0 +1,100 @@
+primitive: cli.pack
+summary: gofastr pack - reads a generated app's Go source back into a best-effort app spec (entities, app config, theme, screens, nav, seed, stubs and endpoints), writes it as gofastr.yml and checks it by regenerating; its children write the YAML, read the screens and run the check.
+code:
+  - cmd/gofastr/internal/packcmd/pack.go
+  - cmd/gofastr/internal/packcmd/pack_read.go
+  - cmd/gofastr/internal/packcmd/appspec_endpoints.go
+  - cmd/gofastr/internal/packcmd/casing.go
+  - cmd/gofastr/internal/packcmd/doc.go
+docs:
+  - framework/docs/content/cli.md
+on_change:
+  - A new app spec construct is learned by the decoder and by appSpecToMap together, with its keys in orderFor, or the serializer round-trip and coverage tests fail.
+  - Every reader follows one spelling the app generator writes; a generator change to that spelling changes the reader here in the same commit, and an older spelling stays readable for apps generated before it.
+invariants:
+  - id: encode-inverts-decode
+    rule: Decoding what encodeAppSpecYAML writes gives back the spec it was given, for every construct the decoder knows, and an encode the decoder cannot read back is an error, never output.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPack_SerializerRoundTrip
+      - test: cmd/gofastr/internal/packcmd.TestPackEncodeDecodeRoundTripProperty
+      - test: cmd/gofastr/internal/packcmd.TestPackSerializerCoversEveryAppSpecField
+      - test: cmd/gofastr/internal/packcmd.TestPackSerializerCoversEveryAppField
+      - test: cmd/gofastr/internal/packcmd.TestPackSerializerCoversEveryConstructField
+      - test: cmd/gofastr/internal/packcmd.TestPackRefusesYAMLThatCannotDecode
+  - id: defaults-and-derived-values-stay-out
+    rule: A fragment writes no app section, api_prefix is written only when it is not api, dev_mode whenever auth is written, a description equal to the one the generator derives is dropped, and so is the hidden owner column the generator adds for scope.owner_field.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPack_SeedCountWeightsRoundTrips
+      - test: cmd/gofastr/internal/packcmd.TestPackSerializerCoversEveryAppField
+      - test: cmd/gofastr/internal/packcmd.TestPackEncodeDecodeRoundTripProperty
+      - test: cmd/gofastr/internal/packcmd.TestPackUnionOmitsDerivedDescription
+      - test: cmd/gofastr/internal/packcmd.TestPackDropsTheSynthesizedOwnerColumn
+  - id: synthesized-screens-dropped
+    rule: The login screen generate adds for an app with auth and no login form, and the create and edit screens it adds for a list, are dropped; an edit form's omitted fields go back to the fields allowlist, and a composite-key record route folds back to its {id}.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestEditFormPacksBack
+      - test: cmd/gofastr/internal/packcmd.TestPackRoundTripPerScreenFiles
+      - test: cmd/gofastr/internal/packcmd.TestPackUnionRegeneratesSameFiles
+  - id: return-of-a-name-is-followed
+    rule: A builder that ends in return <name> reads as the composite literal last assigned to that name, so a sidebar built in a variable still packs its nav.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackReadsNavFromAGeneratedAuthApp
+      - test: cmd/gofastr/internal/packcmd.TestPack_ReadSeedAndNav
+  - id: stubs-follow-the-wiring
+    rule: Middleware, plugins, helpers and hooks come from their wiring in app.go and main.go, in its order, with names and descriptions from stubs.go, and a hook handler registered twice packs once, at its first registration.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackHookHandlerOnce
+      - test: cmd/gofastr/internal/packcmd.TestPackReadStubsRecoversPointerAndGenericPlugins
+      - test: cmd/gofastr/internal/packcmd.TestPack_StubDescriptionRoundTrips
+  - id: seed-recipe-is-checked
+    rule: A seed entity keeps its authored rows and recipe only when regenerating the recipe gives back every generated row; a hand-edited or unmatched row turns all rows into explicit data with no recipe.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPack_SeedRecipeRoundTrips
+      - test: cmd/gofastr/internal/packcmd.TestPack_SeedRecipeHandEditKeptAsRows
+  - id: env-read-as-the-app-reads-it
+    rule: The secrets kept in the generated .env are read back with core/dotenv, the parser the app boots with.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestEnvValuesRoundTrip
+  - id: secret-output-is-owner-only
+    rule: pack -o replaces the output file whole at owner-only permissions, also over an existing file, and warns when the spec carries a JWT secret, a seed password or a DSN dsnredact calls secret, keyword DSNs included.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackOutOwnerOnlyOnOverwrite
+      - test: cmd/gofastr/internal/packcmd.TestPackOutputReplacesWhole
+      - test: cmd/gofastr/internal/packcmd.TestPackDetectsKeywordDSNSecret
+  - id: missing-seed-password-is-named
+    rule: When the app seeds an admin and .env holds no ADMIN_SEED_PASSWORD, pack says the packed spec seeds no admin before the check names app.go and main.go.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackNamesMissingSeedPassword
+decisions:
+  - id: pack-is-best-effort
+    date: 2026-11-28
+    status: accepted
+    decision: Pack recovers the spelling the generator writes and reports, through the check, every file the packed spec does not reproduce.
+    rejected:
+      - option: Make pack an exact inverse of generate.
+        why: Hand-written handlers, hooks and edits after generation have no spec spelling, so the honest output is the spec plus a list of what it misses.
+  - id: secrets-come-back-from-env
+    date: 2026-11-28
+    status: accepted
+    decision: Pack reads JWT_SECRET, ADMIN_SEED_PASSWORD and DATABASE_URL back from .env so the spec round-trips, and writes -o at 0600 with a do-not-commit warning.
+    rejected:
+      - option: Leave the env-backed fields empty.
+        why: The packed spec would no longer regenerate the app it came from.
+    revisit_if: The app spec gains a way to name a secret by environment variable instead of value.
+    upholds: [secret-output-is-owner-only, env-read-as-the-app-reads-it]
+  - id: fragment-writes-no-app-section
+    date: 2026-11-28
+    status: accepted
+    decision: appSpecToMap writes no app section for a fragment, even though the decoder gives a fragment a zero App.
+    rejected:
+      - option: Write whatever appToMap returns for every spec.
+        why: 'The zero App writes api_prefix: "", which turns the fragment into a whole app that mounts its CRUD API at the root, and the next decode runs the checks a fragment skips.'
+    upholds: [defaults-and-derived-values-stay-out]
+  - id: warn-when-the-output-holds-secrets
+    date: 2026-11-28
+    status: accepted
+    decision: pack warns on stderr whenever its output carries a secret recovered from .env.
+    rejected:
+      - option: Rely on the generated .gitignore, as .env does.
+        why: It names .env, not an arbitrary -o path, so nothing keeps the packed file and its secrets out of a commit.
+    upholds: [secret-output-is-owner-only]

@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/contractsrun"
 )
 
+// RunBuild runs `gofastr build` and exits non-zero when a step fails.
 func RunBuild(args []string) {
 	if cli.HasHelpFlag(args) {
 		printBuildUsage()
@@ -33,10 +34,6 @@ func RunBuild(args []string) {
 		cli.OsExit(2)
 	}
 
-	// Step 1: run the codegen extension protocol when a gofastr.settings.yml
-	// is present, and rebuild entities/client and entities/endpoints.gen.go
-	// when the app has them. App generation (gofastr generate app) is an
-	// explicit, separate step: `gofastr build` does not guess an app spec.
 	if !opts.noGenerate {
 		plan, err := appgen.PlanGenerate(appgen.GenerateOptions{})
 		if err != nil {
@@ -59,7 +56,6 @@ func RunBuild(args []string) {
 		cli.OsExit(1)
 	}
 
-	// Step 2: go vet
 	cli.Info("Running go vet...")
 	vetCmd := exec.Command("go", "vet", "./...")
 	vetCmd.Stdout = os.Stdout
@@ -70,11 +66,6 @@ func RunBuild(args []string) {
 	}
 	cli.Success("go vet passed")
 
-	// Step 3: static accessibility lint. Enforced by default. The rules
-	// are the WCAG floor the type system can already see (Alt on images,
-	// Label on buttons/landmarks, …) and every finding ships with a fix
-	// hint, so failing here is cheaper than failing a real user.
-	// --no-a11y skips the gate for genuinely blocked builds.
 	if !opts.noA11y {
 		cli.Info("Checking accessibility...")
 		if !buildA11yGate(".") {
@@ -84,24 +75,12 @@ func RunBuild(args []string) {
 		cli.Success("accessibility lint passed")
 	}
 
-	// Step 3b: .ui.go hydration-sandbox lint. The sandbox rules forbid
-	// goroutines, channels, type switches, and imports outside the safe
-	// allow-list in client-hydrated .ui.go files: they break hydration at
-	// runtime. This is a correctness floor (not a WCAG nicety), so unlike
-	// a11y it is NOT skippable: no valid .ui.go violates it.
 	cli.Info("Checking .ui.go sandbox...")
 	if !buildSandboxGate(".") {
 		cli.Fail(".ui.go sandbox lint failed. Move goroutines/channels/IO out of .ui.go (see findings above)")
 		cli.OsExit(1)
 	}
 	cli.Success(".ui.go sandbox lint passed")
-
-	// Step 4: embed surface server-action gate. G.serverAction is refused inside
-	// a frame (the action registry is app-global, so honouring an embed grant
-	// would let one surface's credential invoke any action), and framework/uihost
-	// panics at boot when a surface's screen registers one. This catches it at
-	// build time, with the same signal the boot walk uses. --no-embed-check
-	// skips it for genuinely blocked builds.
 
 	if !opts.noEmbedCheck {
 		cli.Info("Checking embed surfaces for server actions...")
@@ -112,11 +91,6 @@ func RunBuild(args []string) {
 		cli.Success("no embeddable surface registers a server action")
 	}
 
-	// Step 4b: the contract analyzers. Only findings at the fail-on
-	// severity (error by default) stop the build. Warnings print and let
-	// it through, because a build that fails on "this route has no test"
-	// is a build people learn to bypass. `gofastr verify` is where the
-	// full picture lives; this is the floor.
 	if !opts.noContracts {
 		cli.Info("Verifying contracts...")
 		if !buildContractsGate(".") {
@@ -126,7 +100,6 @@ func RunBuild(args []string) {
 		cli.Success("contracts verified")
 	}
 
-	// Step 5: go build
 	cli.Info("Compiling %s...", opts.pkg)
 	buildCmd := exec.Command("go", "build", "-o", opts.output, opts.pkg)
 	buildCmd.Stdout = os.Stdout
@@ -141,16 +114,7 @@ func RunBuild(args []string) {
 	cli.Printf("  Binary: "+cli.Bold("%s")+"\n", opts.output)
 }
 
-// buildContractsGate runs the contract analyzers for `gofastr build` and
-// reports whether the build may proceed. It prints the same report
-// `gofastr verify` does, so a developer who has only ever run `build`
-// still learns the rule and the fix rather than a bare rejection.
 func buildContractsGate(root string) bool {
-	// `gofastr verify --baseline-write` is how an existing app adopts
-	// contracts: accept what is there, fail on what is added. The build
-	// gate has to honour the same file, or recording a baseline fixes
-	// `verify` and leaves `build` permanently red, and the only exit a
-	// user finds from that is --no-contracts, which turns everything off.
 	report, err := contractsrun.RunPipeline(root, "", contracts.RunOptions{}, true)
 	if err != nil {
 		cli.Fprintf(os.Stderr, "contracts: %v\n", err)
@@ -163,32 +127,12 @@ func buildContractsGate(root string) bool {
 	return report.Passed()
 }
 
-// buildEmbedGate runs the embed-surface server-action check for `gofastr build`
-// and reports whether the build may proceed. It scans pattern (the package
-// graph being built) via the shared embedcheck driver, the same one the
-// standalone cmd/check-embed CLI uses, so build-time and CLI findings are
-// identical. On a violation it prints each finding with its fix hint.
 func buildEmbedGate(pattern string, allowUnverified bool) bool {
 	findings, unresolved, fset, err := embedcheck.CheckAll(pattern)
 	if err != nil {
 		cli.Fprintf(os.Stderr, "check-embed: %v\n", err)
 		return false
 	}
-	// Print every note; fail only on the BLOCKING class.
-	//
-	// The boot-time walk in framework/uihost reads live component values, so a
-	// child held in a field, whether through an interface, a map key, or an island
-	// wrapper, is checked at Mount, and a note describing one is advisory.
-	// The exception is a child CONSTRUCTED inside Render() whose type is in
-	// another package: it does not exist as a value when the walk runs, and
-	// its Actions() body is not in the analyzer's syntax tree. Neither gate
-	// can vouch for it, so that one stops the build.
-	//
-	// Failing on every note was tried and reverted: it also rejected clean
-	// island surfaces (the shape the app generator emits for every island block),
-	// interface-typed fields the analyzer had already resolved, and the
-	// fixture named for false positives, with no remedy available, since
-	// "hold the child in a field" is impossible for a wrapper.
 	var blocking int
 	for _, u := range unresolved {
 		cli.Fprintf(os.Stderr, "check-embed: %s: %s\n", fset.Position(u.Pos), u.Format())
@@ -214,10 +158,6 @@ func buildEmbedGate(pattern string, allowUnverified bool) bool {
 	return false
 }
 
-// buildCommandExtRefusal is build's refusal of a discovered config's
-// command extension. build takes no --config, so the remedies it names
-// are the opt-in, or an explicit generate followed by a build that skips
-// generation (build's own generate step is that same generate).
 func buildCommandExtRefusal(d codegen.Discovery) string {
 	return fmt.Sprintf("%s: %s\n"+
 		"Set GOFASTR_CODEGEN_ALLOW_COMMANDS=1 to allow commands from a discovered config, "+
@@ -225,9 +165,6 @@ func buildCommandExtRefusal(d codegen.Discovery) string {
 		codegen.ErrCommandExtensionNotAllowed, d.CommandExtensionDetails(), shellWord(d.Path))
 }
 
-// shellWord quotes s for a POSIX shell when it holds anything beyond the
-// bytes a shell reads as one plain word, so the remedy can be pasted as
-// printed. A single quote inside is closed, escaped and reopened.
 func shellWord(s string) string {
 	plain := s != ""
 	for i := 0; i < len(s) && plain; i++ {

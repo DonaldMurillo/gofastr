@@ -1,22 +1,15 @@
 package gates
 
 import (
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
-	"github.com/DonaldMurillo/gofastr/framework/contracts"
-	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
 )
 
-// BuildSandboxGateTo is buildSandboxGate writing to the given streams,
-// so `gofastr dev` can also show the report on its hold page.
+// BuildSandboxGateTo runs the .ui.go sandbox lint over root, writes its
+// report to stdout and its error to stderr, and reports whether it passed.
 func BuildSandboxGateTo(root string, stdout, stderr io.Writer) bool {
 	return lintGate(root, stdout, stderr, ".ui.go sandbox lint", auditSandbox, formatSandboxReport)
 }
@@ -28,68 +21,18 @@ type SandboxFinding struct {
 	Message string
 }
 
-// auditSandbox statically scans every non-test, non-generated .ui.go file
-// under root with check.LintFile, the goroutine/channel/import sandbox that
-// LintA11yFile deliberately skips. Mirrors auditA11y's walk/skip policy so
-// the two gates agree on which files are in scope.
 func auditSandbox(root string) ([]SandboxFinding, error) {
-	var all []SandboxFinding
-	err := sourcewalk.Walk(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if path != filepath.Clean(root) && errors.Is(err, fs.ErrNotExist) {
-				return nil
-			}
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		// The sandbox governs .ui.go files only; a plain .go file is free
-		// to spawn goroutines. Generated .ui.go is the generator's job.
-		if !strings.HasSuffix(path, ".ui.go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		body, err := os.ReadFile(path)
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil
-			}
-			return err
-		}
-		if contracts.IsGeneratedSource(body) {
-			return nil
-		}
-		res, lintErr := check.LintFile(path)
-		if lintErr != nil {
-			// Mid-edit parse errors shouldn't kill the audit.
-			return nil
-		}
-		rel, _ := filepath.Rel(root, path)
-		if rel == "" {
-			rel = path
-		}
-		for _, v := range res.Violations {
-			all = append(all, SandboxFinding{
-				File:    rel,
-				Line:    v.Line,
-				Message: v.Message,
-			})
-		}
-		return nil
-	})
+	violations, err := auditTree(root, ".ui.go", check.LintFile)
 	if err != nil {
 		return nil, err
 	}
-	sort.Slice(all, func(i, j int) bool {
-		if all[i].File != all[j].File {
-			return all[i].File < all[j].File
-		}
-		return all[i].Line < all[j].Line
-	})
+	all := make([]SandboxFinding, 0, len(violations))
+	for _, v := range violations {
+		all = append(all, SandboxFinding(v))
+	}
 	return all, nil
 }
 
-// formatSandboxReport renders .ui.go sandbox findings with a one-line summary.
 func formatSandboxReport(findings []SandboxFinding) string {
 	if len(findings) == 0 {
 		return "No .ui.go sandbox issues found.\n"

@@ -163,6 +163,12 @@ codegen:
 		t.Fatal(err)
 	}
 	h1 := hashGenerateInputs(appgen.GenerateOptions{ConfigPath: configPath})
+	if err := os.WriteFile(configPath, []byte("version: still-nope\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if hashGenerateInputs(appgen.GenerateOptions{ConfigPath: configPath}) == h1 {
+		t.Fatal("hash unchanged after editing a config that still does not parse")
+	}
 	if err := os.WriteFile(configPath, []byte(`
 version: 1
 codegen:

@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	xharness "github.com/DonaldMurillo/gofastr/framework/experimental/harness"
@@ -13,24 +12,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/logging"
 )
 
-// runHarnessMCP is the `gofastr harness mcp` subcommand entry. It
-// boots a minimal harness (no TUI, no web), creates one session, and
-// hands stdio to the MCP server. Exits when stdin closes.
-//
-// Wire this into Claude Code / Codex / Cursor's MCP config:
-//
-//	{
-//	  "mcpServers": {
-//	    "gofastr-harness": {
-//	      "command": "gofastr",
-//	      "args": ["harness", "mcp", "--profile", "/path/to/default.toml"],
-//	      "env": {
-//	        "GOFASTR_HARNESS_PASSPHRASE": "your-passphrase",
-//	        "ZAI_API_KEY": "your-zai-key"
-//	      }
-//	    }
-//	  }
-//	}
+// runHarnessMCP boots a harness with one session and serves it as a stdio
+// MCP server until stdin closes.
 func runHarnessMCP(args []string) {
 	fs := flag.NewFlagSet("harness mcp", flag.ExitOnError)
 	useFramework := fs.Bool("framework", false, "use the framework preset profile")
@@ -39,22 +22,13 @@ func runHarnessMCP(args []string) {
 	allowRepoSecrets := fs.Bool("allow-repo-secrets", false, "use provider keys from this repository's .harness-secrets/env without a remembered approval")
 	_ = fs.Parse(args)
 
-	home, err := os.UserHomeDir()
+	xdgConfig, xdgState, err := harnessDirs()
 	if err != nil {
 		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
+		return
 	}
-	xdgConfig := filepath.Join(home, ".config", "gofastr", "harness")
-	xdgState := filepath.Join(home, ".local", "share", "gofastr", "harness")
-	_ = os.MkdirAll(xdgConfig, 0o700)
-	_ = os.MkdirAll(xdgState, 0o700)
 
-	// Load repo-local secrets (gitignored) before reading any env vars.
-	// Shell env still wins. This is the fallback for cases where the
-	// MCP client (Claude Code, Codex) doesn't pass env through. stdin
-	// carries the MCP protocol, so nobody can be asked here: the keys
-	// need an approval remembered from an interactive run, or
-	// --allow-repo-secrets in the client's launch args.
 	loadRepoSecrets(xdgConfig, *allowRepoSecrets, false, nil, os.Stderr)
 
 	prof, err := loadProfile(*useFramework, *profilePath)
@@ -63,8 +37,6 @@ func runHarnessMCP(args []string) {
 		cli.OsExit(1)
 	}
 
-	// Stdio MCP needs stderr-only logging so JSON-RPC on stdout
-	// stays clean.
 	logger := logging.New(os.Stderr, logging.LevelWarn)
 
 	machineKey, err := machineKeyFromEnv()
@@ -83,11 +55,6 @@ func runHarnessMCP(args []string) {
 		MachineKey:    machineKey,
 	}
 	if cfg.CredstorePass == "" && len(cfg.MachineKey) == 0 {
-		// Fail closed: no default passphrase. This is the wiring its
-		// own doc comment advertises to Claude Code / Codex, where
-		// real provider keys get stored; booting it keyed by a
-		// repo-public constant was protection in name only
-		// (2026-09-04 red-probe round).
 		fmt.Fprintf(os.Stderr, "gofastr harness mcp: %s\n", noCredstoreKeyHelp)
 		cli.OsExit(1)
 		return
@@ -99,7 +66,6 @@ func runHarnessMCP(args []string) {
 	}
 	defer h.Shutdown()
 
-	// Create one default session bound to the profile's default model.
 	prov, modelID := resolveDefaultModel(h, prof)
 	if prov == nil {
 		cli.Fprintf(os.Stderr, "harness mcp: no provider matches %q\n", prof.DefaultModel)
@@ -110,7 +76,6 @@ func runHarnessMCP(args []string) {
 		cli.OsExit(1)
 	}
 
-	// Boot the MCP server.
 	srv := mcpserver.New(h.Mux, h.Catalog)
 	srv.RequiredToken = *requiredToken
 	if err := srv.Serve(context.Background()); err != nil {

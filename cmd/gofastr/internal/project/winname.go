@@ -2,11 +2,7 @@ package project
 
 import "strings"
 
-// ValidWindowsFileName reports whether name can be a file in a Windows
-// directory: none of <>:"/\|?* or a control character, no trailing dot
-// or space, and no reserved device stem (CON, PRN, AUX, NUL, CONIN$,
-// CONOUT$, COM1-9, LPT1-9 and their superscript forms), which Windows
-// reserves before any extension too ("aux.exe").
+// ValidWindowsFileName reports whether name can be a file in a Windows directory.
 func ValidWindowsFileName(name string) bool {
 	if name == "" || strings.ContainsAny(name, `<>:"/\\|?*`) || strings.TrimRight(name, ". ") != name {
 		return false

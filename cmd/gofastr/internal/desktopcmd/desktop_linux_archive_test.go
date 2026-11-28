@@ -299,6 +299,22 @@ func TestLinuxArchiveIconValidation(t *testing.T) {
 	if _, err = linuxBundleIcon(dir); err == nil {
 		t.Fatal("directory accepted as icon")
 	}
+	var wide bytes.Buffer
+	if err = png.Encode(&wide, image.NewGray(image.Rect(0, 0, 4097, 1))); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(file, wide.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = linuxBundleIcon(file); err == nil || !strings.Contains(err.Error(), "4096") {
+		t.Fatalf("a 4097-pixel icon: err = %v", err)
+	}
+	if err = os.WriteFile(file, make([]byte, 16<<20+1), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = linuxBundleIcon(file); err == nil || !strings.Contains(err.Error(), "16 MiB") {
+		t.Fatalf("an icon over 16 MiB: err = %v", err)
+	}
 }
 func TestLinuxArchiveInvalidInputBeforeOutput(t *testing.T) {
 	t.Setenv("GOARCH", "amd64")

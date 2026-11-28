@@ -221,3 +221,47 @@ func TestToastShowsOverAFullscreenElement(t *testing.T) {
 		t.Fatal("a toast raised over a fullscreen element was held")
 	}
 }
+
+// A stack the browser refuses to raise (showPopover throws) drops the
+// popover attribute, so its toast still draws instead of being hidden by
+// the browser's rule for a [popover] out of the top layer.
+func TestToastStackTheBrowserWillNotRaiseStillDraws(t *testing.T) {
+	ctx := toastPage(t)
+	evalJS(t, ctx, `HTMLElement.prototype.showPopover = function () { throw new DOMException('refused', 'InvalidStateError'); }`, nil)
+	evalJS(t, ctx, `window.__gofastr.toast({title: 'Saved', ttl: 0})`, nil)
+	if !pollJS(ctx, `!!document.querySelector('[data-cui-toast-stack="toasts"] [data-hui-toast-id]')`) {
+		t.Fatal("the toast was not added")
+	}
+	var shown string
+	evalJS(t, ctx, `(() => { const h = `+stackHost+`; return h.hasAttribute('popover') ? 'kept the popover attribute' : getComputedStyle(h).display === 'none' ? 'not drawn' : 'drawn'; })()`, &shown)
+	if shown != "drawn" {
+		t.Fatalf("a stack whose showPopover threw is %s, want it drawn in place", shown)
+	}
+}
+
+// A raised stack a move takes out of the top layer (a swap's re-attach, a
+// closing dialog handing it back to <body>) rises again when the arrival
+// scan sees it.
+func TestMovedToastStackRisesAgain(t *testing.T) {
+	ctx := toastPage(t)
+	evalJS(t, ctx, `window.__gofastr.toast({title: 'Saved', ttl: 0})`, nil)
+	if !pollJS(ctx, stackHost+`.matches(':popover-open')`) {
+		t.Fatal("the stack did not rise for a toast")
+	}
+	evalJS(t, ctx, `document.body.append(`+stackHost+`)`, nil)
+	if !pollJS(ctx, stackHost+`.matches(':popover-open')`) {
+		t.Fatal("the moved stack stayed out of the top layer, hidden")
+	}
+}
+
+// A toast shown before the widget runtime has loaded (a toast the server
+// rendered, or one raised during the first paint) still raises its stack:
+// headless-feedback does not wait on widgets.js for the step.
+func TestToastStackRisesBeforeTheWidgetRuntimeLoads(t *testing.T) {
+	ctx := toastPage(t)
+	evalJS(t, ctx, `for (const k of ['mountWidget', 'openWidget', 'closeWidget', '_widgets']) delete window.__gofastr[k]`, nil)
+	evalJS(t, ctx, `window.__gofastr.toast({title: 'Saved', ttl: 0})`, nil)
+	if !pollJS(ctx, stackHost+`.matches(':popover-open')`) {
+		t.Fatal("a toast shown before the widget runtime loaded left its stack out of the top layer")
+	}
+}

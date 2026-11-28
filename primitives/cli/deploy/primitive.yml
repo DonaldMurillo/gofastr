@@ -1,0 +1,78 @@
+primitive: cli.deploy
+summary: gofastr deploy - builds the app for the server's CPU, copies the binary over ssh's stdin and runs its child's scripts as root to start the release under systemd, with rollback and status; nothing is installed on the server but the app.
+code:
+  - cmd/gofastr/internal/deploycmd/deploy.go
+  - cmd/gofastr/internal/deploycmd/deploy_test.go
+  - cmd/gofastr/internal/deploycmd/deploy_rules_test.go
+  - cmd/gofastr/internal/deploycmd/usage_error_test.go
+docs:
+  - framework/docs/content/deploy.md
+on_change:
+  - Every value that reaches the root shell or ssh's command line is checked in options.validate or quoted with shellQuote before the scripts see it; a new flag gets a case in TestRefusedBeforeAnythingRuns.
+invariants:
+  - id: values-checked-before-the-server
+    rule: A target that is not user@host or an SSH alias, or starts with a hyphen, a --name outside nameRe, a --health that is not a plain path, and a port, --wait or --keep out of range are usage errors returned before ssh or the compiler runs.
+    enforced_by:
+      - test: cmd/gofastr/internal/deploycmd.TestRefusedBeforeAnythingRuns
+  - id: usage-errors-exit-two
+    rule: A command-line mistake exits 2 with the usage on stderr, and a failed deploy exits 1.
+    enforced_by:
+      - test: cmd/gofastr/internal/deploycmd.TestRunDeployUsageErrorExitsTwoOnStderr
+      - test: cmd/gofastr/internal/deploycmd.TestRunDeployMissingServerExitsTwo
+  - id: server-answer-is-checked
+    rule: The deploy goes on only when the server answers uname -m with x86_64, aarch64 or arm64 and mktemp -d with a path uploadRe accepts, and stops before the build otherwise.
+    enforced_by:
+      - test: cmd/gofastr/internal/deploycmd.TestServersThatCannotBeDeployedTo
+      - test: cmd/gofastr/internal/deploycmd.TestOddUploadDirectoryIsRefused
+  - id: uploads-are-private
+    rule: The upload directory is made under umask 077 and every file is copied through ssh's stdin under umask 077, and a deploy that stops before the install script removed it removes the upload directory.
+    enforced_by:
+      - test: cmd/gofastr/internal/deploycmd.TestUploadsArePrivate
+      - test: cmd/gofastr/internal/deploycmd.TestDeployCleansFailedUploads
+  - id: ssh-invocation
+    rule: execRunner runs ssh with BatchMode=yes, a 15-second connect timeout and "--" before the target, reports exit 255 as ssh failing to reach the server and any other exit as the remote command's code, and gives up waiting for output 10 seconds after ssh exits.
+    enforced_by:
+      - test: cmd/gofastr/internal/deploycmd.TestExecRunnerEndsSSHOptionsBeforeTheTarget
+      - test: cmd/gofastr/internal/deploycmd.TestExecRunnerTreats255AsSSHFailing
+      - test: cmd/gofastr/internal/deploycmd.TestExecRunnerDoesNotWaitForAChildHoldingThePipe
+  - id: root-through-sudo-n
+    rule: The scripts run through asRoot, plain bash for root and sudo -n for anyone else, so a sudo that wants a password fails at once.
+    enforced_by:
+      - test: cmd/gofastr/internal/deploycmd.TestScriptsForARealServer
+  - id: output-parsed-from-stdout
+    rule: The outcome is read from the last line of ssh's stdout and the exit code; ssh's stderr is printed scrubbed and never parsed.
+    enforced_by:
+      - test: cmd/gofastr/internal/deploycmd.TestDeployParsesOnlySSHStdout
+  - id: socket-by-marker
+    rule: A binary holding sdlisten.Marker anywhere, a read boundary included, gets its port held by systemd, and one without it opens its own.
+    enforced_by:
+      - test: cmd/gofastr/internal/deploycmd.TestTakesSocketFindsTheMarker
+      - test: cmd/gofastr/internal/deploycmd.TestPortIsHeldBySystemdWhenTheAppCanTakeIt
+  - id: release-ids-are-unique
+    rule: A release id is the UTC time to the nanosecond plus a random suffix, so two deploys in the same instant get distinct releases.
+    enforced_by:
+      - test: cmd/gofastr/internal/deploycmd.TestSameInstantDeploysGetDistinctReleases
+decisions:
+  - id: one-binary-over-ssh
+    date: 2026-11-28
+    status: accepted
+    decision: A deploy is one binary under /opt/<name>/releases/<release>, a current link, a systemd unit and a health check, driven over ssh; the server needs sshd, systemd and bash, and the SSH user root or passwordless sudo.
+    rejected:
+      - option: An agent or a container runtime on the server.
+        why: It is one more thing to install, update and secure on every server, for a job ssh and systemd already do.
+  - id: copy-through-stdin
+    date: 2026-11-28
+    status: accepted
+    decision: Files reach the server as ssh's stdin into cat under umask 077.
+    rejected:
+      - option: scp or rsync.
+        why: Each is one more program to depend on at both ends, and neither creates the file private by default.
+    upholds: [uploads-are-private]
+  - id: name-fits-unit-user-and-directory
+    date: 2026-11-28
+    status: accepted
+    decision: --name is held to nameRe, a lower-case letter then up to 30 lower-case letters, digits or hyphens, because one name is at once the systemd unit, the Unix user and the /opt directory.
+    rejected:
+      - option: Accept any name one of the three accepts.
+        why: A name with a dot, an underscore or a capital letter is fine for one of them and refused or rewritten by another, so the deploy would fail half way on the server.
+    upholds: [values-checked-before-the-server]

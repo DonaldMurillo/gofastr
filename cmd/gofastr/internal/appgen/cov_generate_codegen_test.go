@@ -72,11 +72,11 @@ func TestErrorDiagnosticFailsGeneration(t *testing.T) {
 	// The scrub happens in the cli helpers the diagnostics print through.
 	hostile := []codegen.Diagnostic{
 		{Severity: "error", Message: "a\x1b]0;pwned\x07b"},
-		{Severity: "warning", Message: "c‮d"},
+		{Severity: "warning", Message: "c\u202ed"},
 		{Severity: "info", Message: "e\u009b2Jf"},
 	}
 	out := clitest.CovT_capStdout(t, func() { reportCodegenDiagnostics(hostile) })
-	if !strings.Contains(out, "a]0;pwnedb") || strings.ContainsAny(out, "\x1b\x07‮\u009b") {
+	if !strings.Contains(out, "a]0;pwnedb") || strings.ContainsAny(out, "\x1b\x07\u202e\u009b") {
 		t.Errorf("diagnostics printed terminal escapes live: %q", out)
 	}
 }

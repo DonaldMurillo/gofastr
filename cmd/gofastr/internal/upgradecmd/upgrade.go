@@ -18,20 +18,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/upgrade/scan"
 )
 
-// scanRun is the engine entry point; a var so tests can stub the scan
-// while exercising the renderer.
 var scanRun = scan.Run
 
-// loadRegistry is the registry entry point; a var so tests can stub a
-// synthetic registry while exercising RunUpgrade's report and exit paths.
 var loadRegistry = upgrade.Load
 
-// maxNoteHits caps the hits rendered per note (and the unexplained
-// compile errors) so one pervasive pattern doesn't drown the report.
 const maxNoteHits = 20
 
-// writeCapped renders at most maxNoteHits items through render, then an
-// "… and N more" line at indent when more remain.
 func writeCapped(b *strings.Builder, n int, indent string, render func(int)) {
 	for i := range n {
 		if i == maxNoteHits {
@@ -42,15 +34,6 @@ func writeCapped(b *strings.Builder, n int, indent string, render func(int)) {
 	}
 }
 
-// upgradeReport scans root once for every note in range and renders
-// the whole notes block: the not-type-checked NOTE, the releases with
-// their guidance and hits, and the unexplained compile errors. When
-// the engine cannot run at all the notes still print, with no hits:
-// guidance never depends on the scan succeeding.
-//
-// The int returned is the number of edit hits under BREAKING notes, the
-// figure RunUpgrade gates its exit status on (#669): a report that
-// still points at breaking lines must not read as success to a script.
 func upgradeReport(root string, inRange []upgrade.Release, sinks upgrade.MarkerSinks) (string, int) {
 	var notes []*upgrade.Note
 	for _, r := range inRange {
@@ -93,9 +76,6 @@ func upgradeReport(root string, inRange []upgrade.Release, sinks upgrade.MarkerS
 			fmt.Fprintf(&b, "  %s  %s\n", hitPos(h), strings.ReplaceAll(textsafe.ScrubTerminal(h.Why), "\n", "\n      "))
 		})
 	}
-	// Edit hits only, the ones the report files as edits (hitsFor): a
-	// hits: review hit may already be right and never clears, so
-	// counting it would fail every run after a finished port.
 	breakingHits := 0
 	for _, note := range notes {
 		if note.Breaking {
@@ -105,8 +85,6 @@ func upgradeReport(root string, inRange []upgrade.Release, sinks upgrade.MarkerS
 	return b.String(), breakingHits
 }
 
-// brokenList renders the broken-package list, capped: at most five
-// names, then "and N more".
 func brokenList(broken []string) string {
 	const max = 5
 	if len(broken) == 0 {
@@ -123,10 +101,6 @@ func brokenList(broken []string) string {
 	return s
 }
 
-// formatUpgradeNotes renders the migration notes for the releases a
-// project crosses in three sections: the lines that must change, the
-// lines to check, and the notes the scan found nothing for. A nil
-// result (no scan ran) renders every note once, with no hits.
 func formatUpgradeNotes(result *scan.Result, releases []upgrade.Release) string {
 	if len(releases) == 0 {
 		return "No migration notes between these versions: the mechanical steps below are all there is.\n"
@@ -159,9 +133,6 @@ func formatUpgradeNotes(result *scan.Result, releases []upgrade.Release) string 
 	return b.String()
 }
 
-// hitsFor returns a note's hits for one report section, sorted. A hit
-// is an edit when its note says every hit is a dead spelling, or when
-// it was read from a compile error: that line no longer builds.
 func hitsFor(result *scan.Result, n *upgrade.Note, edit bool) []scan.Hit {
 	var out []scan.Hit
 	for _, h := range sortedHits(result, n) {
@@ -172,9 +143,6 @@ func hitsFor(result *scan.Result, n *upgrade.Note, edit bool) []scan.Hit {
 	return out
 }
 
-// renderNotes renders the notes pick selects, grouped under their
-// release, each followed by the hits pick returns. It returns "" when
-// pick selects nothing.
 func renderNotes(releases []upgrade.Release, pick func(*upgrade.Note) ([]scan.Hit, bool)) string {
 	var b strings.Builder
 	for _, r := range releases {
@@ -213,8 +181,6 @@ func renderNotes(releases []upgrade.Release, pick func(*upgrade.Note) ([]scan.Hi
 	return b.String()
 }
 
-// sortedHits copies a note's hits out of the scan result in the
-// report's stable order: file, line, column.
 func sortedHits(result *scan.Result, note *upgrade.Note) []scan.Hit {
 	if result == nil {
 		return nil
@@ -232,10 +198,6 @@ func sortedHits(result *scan.Result, note *upgrade.Note) []scan.Hit {
 	return hits
 }
 
-// hitPos renders a hit's position; the column is dropped for matchers
-// that have none (gomod, config), and an error the go command reported
-// without a position reads "(no position)". The file name is project
-// data, scrubbed like every other hit field.
 func hitPos(h scan.Hit) string {
 	if h.File == "" {
 		return "(no position)"
@@ -247,11 +209,6 @@ func hitPos(h scan.Hit) string {
 	return fmt.Sprintf("%s:%d", file, h.Line)
 }
 
-// resolveLatestVersion asks the module proxy for the newest tagged
-// release, the one `go get …@latest` picks: the newest release, or the
-// newest prerelease when no release exists. -mod=mod lets the query run
-// inside a vendored module, where the go command otherwise refuses to
-// list versions. Needs network; callers fall back to requiring --to.
 func resolveLatestVersion() (string, error) {
 	out, err := exec.Command("go", "list", "-mod=mod", "-m", "-versions", project.GofastrModule).Output()
 	if err != nil {
@@ -274,10 +231,6 @@ func resolveLatestVersion() (string, error) {
 	return versions[len(versions)-1], nil
 }
 
-// applySteps are the mechanical steps --apply runs, in order. A vendored
-// module (vendor/modules.txt at root) re-vendors after tidy: go get
-// leaves vendor/ behind go.mod, and every later go command refuses the
-// mismatch ("inconsistent vendoring").
 func applySteps(root, target string) [][]string {
 	steps := [][]string{
 		{"go", "get", project.GofastrModule + "@" + target},
@@ -298,14 +251,9 @@ type upgradeOpts struct {
 	to             string
 	apply          bool
 	allowDowngrade bool
-	// missingValue is the first of --from/--to given no value, an empty
-	// one, or the next flag where its value belongs. It is set only when
-	// it is the first argument error, ahead of any unknown flag.
-	missingValue string
+	missingValue   string
 }
 
-// runStep runs one --apply step; a var so tests can stub the exec while
-// exercising the refusal and completion paths.
 var runStep = func(name string, args []string, dir string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
@@ -314,11 +262,6 @@ var runStep = func(name string, args []string, dir string) error {
 	return cmd.Run()
 }
 
-// parseUpgradeArgs resolves `gofastr upgrade` arguments: an optional
-// positional root, --from and --to in both `--to=v` and `--to v`
-// spellings, --apply, and --help. badFlag carries the first unknown flag
-// when it comes before any missing value; only the first argument error
-// is reported.
 func parseUpgradeArgs(args []string) (upgradeOpts, string) {
 	opts := upgradeOpts{root: "."}
 	missing := func(flag string) {
@@ -363,7 +306,7 @@ func parseUpgradeArgs(args []string) (upgradeOpts, string) {
 	return opts, ""
 }
 
-// RunUpgrade is the `gofastr upgrade` entry point.
+// RunUpgrade implements `gofastr upgrade`.
 func RunUpgrade(args []string) {
 	opts, bad := parseUpgradeArgs(args)
 	if bad == "--help" {
@@ -417,9 +360,6 @@ func RunUpgrade(args []string) {
 		}
 		current, currentFrom = opts.from, "--from"
 	} else if err := semver.Validate(current); err != nil {
-		// The version is project data headed for the terminal: one that
-		// is not vX.Y.Z (escape bytes included) is refused, and the
-		// error quotes it.
 		cli.Fprintf(os.Stderr, "upgrade: go.mod: %v\n", err)
 		cli.OsExit(1)
 	}
@@ -462,9 +402,6 @@ func RunUpgrade(args []string) {
 	if semver.Less(target, current) {
 		lo, hi = target, current
 	}
-	// Key the staleness warning on the UPPER bound of the inspected
-	// range rather than only the target. A downgrade FROM a version newer
-	// than the registry also spans releases this binary doesn't know.
 	if semver.Less(reg.Through, hi) {
 		cli.Printf("NOTE: this CLI's migration registry is complete through %s: the\n", reg.Through)
 		cli.Printf("range shown reaches %s, so it may cross notes this binary doesn't\n", hi)
@@ -478,10 +415,6 @@ func RunUpgrade(args []string) {
 	fmt.Println("Consult the release notes for the full story:")
 	fmt.Printf("    https://github.com/DonaldMurillo/gofastr/releases\n\n")
 
-	// --apply on a downgrade is refused without --allow-downgrade: the
-	// steps below are written for moving FORWARD (go get would pin the
-	// older release, and the notes above describe what you'd be undoing,
-	// not how to undo it). #669.
 	if downgrade && opts.apply && !opts.allowDowngrade {
 		fmt.Println("Downgrade refused: --apply would run go get against the older release,")
 		fmt.Println("and the notes above describe what you'd be undoing, not how to undo it.")
@@ -514,10 +447,6 @@ func RunUpgrade(args []string) {
 	exitIfBreakingHitsRemain(breakingHits)
 }
 
-// exitIfBreakingHitsRemain ends the run non-zero when the report still
-// holds hits under BREAKING notes, plan and apply alike: a script reading
-// the exit status must not take unfinished migration work for success
-// (#669). The report above has already said which lines.
 func exitIfBreakingHitsRemain(breakingHits int) {
 	if breakingHits == 0 {
 		return

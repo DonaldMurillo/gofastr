@@ -1,0 +1,51 @@
+primitive: cli.appspec.readback
+summary: Reads a generated app's Go source back into spec values, the entity declarations for gofastr pack and the app settings for pack and generate app --add.
+code:
+  - cmd/gofastr/internal/appspec/pack.go
+  - cmd/gofastr/internal/appspec/generated_app.go
+docs:
+  - framework/docs/content/app-spec.md
+on_change:
+  - A new setting the entity or app emitter writes is read back here in the same commit, or pack drops it from the spec it writes.
+invariants:
+  - id: anyone-reads-back
+    rule: An Access operation set to the framework.Anyone constant reads back as anyone, not as an unset permission.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPack_AccessAnyoneRoundTrips
+  - id: negative-numbers-read-back
+    rule: A number literal under a unary minus reads back negative, with the sign joined to the digits before parsing.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAstAnyReadsNegativeNumbers
+      - test: cmd/gofastr/internal/appspec.TestPackFieldKeepsNegativeDefaultAndMin
+  - id: empty-group-reads-as-none
+    rule: An all-zero Scope literal reads back as no scope, the declaration writing nothing would give.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestPackReadsAnEmptyScopeAsNone
+  - id: builder-settings-read-back
+    rule: Timestamps is read from the WithTimestamps builder call the generator emits.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPack_TimestampsEntityRoundTrips
+  - id: unheld-field-keys-fail-the-pack
+    rule: A schema.Field key outside packHeldFieldKeys set to a non-zero value, a type with no spec name, or a Max, Min or AutoGenerate that is not a literal fails the pack naming the key.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestPackRefusesUnheldFieldKey
+  - id: index-expression-reads-back
+    rule: An index's Expression reads back, so an expression index survives pack and regenerate.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestPackKeepsAnIndexExpression
+  - id: generated-defaults-read-as-unset
+    rule: ReadGeneratedApp reads the admin path /admin and role admin as unset, takes the admin path only from admin.Config, reads base_url only from a literal getEnv("APP_BASE_URL", ...) fallback, and reads NoLLMMD as the inverse of entity_llm_md.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackOmitsImplicitAdminDefaults
+      - test: cmd/gofastr/internal/packcmd.TestPackAdminIgnoresPrintConfig
+      - test: cmd/gofastr/internal/packcmd.TestPackBaseURLCanonicalRoundTrip
+      - test: cmd/gofastr/internal/packcmd.TestEntityLLMMDRoundTrip
+decisions:
+  - id: dev-base-url-is-a-constant
+    date: 2026-11-28
+    status: accepted
+    decision: The generator spells the unset base_url fallback as the devBaseURL constant, never as a literal.
+    rejected:
+      - option: Emit the literal http://localhost:8080 for the fallback.
+        why: ReadGeneratedApp could not tell it from an explicit base_url of the same value, so pack would write a base_url the author never set.
+    upholds: [generated-defaults-read-as-unset]

@@ -1,3 +1,2 @@
-// Package clitest holds test helpers the cmd/gofastr packages share.
-// Only tests import it.
+// Package clitest holds the test helpers cmd/gofastr's packages share.
 package clitest

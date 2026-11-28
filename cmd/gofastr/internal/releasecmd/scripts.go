@@ -23,35 +23,24 @@ var (
 	ps1Template = template.Must(template.New("install.ps1").Parse(installPs1Tmpl))
 )
 
-// scriptBuild is one archive as the install scripts see it.
 type scriptBuild struct {
-	Platform string // "linux/amd64"
-	Arch     string // "amd64"
+	Platform string
+	Arch     string
 	File     string
 	SHA256   string
 }
 
-// scriptValues fill the install-script templates. Every string lands
-// inside a single-quoted sh or PowerShell literal, so checkScriptValues
-// holds each one to a character set with no quote, no expansion
-// character and no whitespace before a template sees it.
 type scriptValues struct {
-	Name      string
-	Version   string
-	BaseURL   string
-	EnvPrefix string
-	Service   bool
-	// DarwinArm64 is a darwin/arm64 build in the release: a Rosetta
-	// shell on Apple silicon gets it instead of the amd64 one.
+	Name        string
+	Version     string
+	BaseURL     string
+	EnvPrefix   string
+	Service     bool
 	DarwinArm64 bool
 	Unix        []scriptBuild
 	Windows     []scriptBuild
 }
 
-// envPrefix is the binary name as an environment-variable prefix,
-// the one a generated CLI uses for <BINARY>_URL: upper case, every
-// character other than a letter or digit turned into "_", outer "_"
-// trimmed.
 func envPrefix(name string) string { return appgen.CLIEnvPrefix(name) }
 
 func scriptData(res result, opts options) scriptValues {
@@ -80,9 +69,6 @@ var (
 	fileRe      = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 )
 
-// checkScriptValues refuses a value the templates cannot embed safely.
-// parseOptions has already checked each one; this keeps the emitter safe
-// on its own.
 func checkScriptValues(v scriptValues) error {
 	ok := nameRe.MatchString(v.Name) &&
 		validVersion(v.Version) &&
@@ -98,9 +84,6 @@ func checkScriptValues(v scriptValues) error {
 	return nil
 }
 
-// writeScripts writes install.sh (when the release has a macOS or Linux
-// build) and install.ps1 (when it has a Windows build) and returns the
-// names written.
 func writeScripts(root *outDir, v scriptValues) ([]string, error) {
 	if err := checkScriptValues(v); err != nil {
 		return nil, err

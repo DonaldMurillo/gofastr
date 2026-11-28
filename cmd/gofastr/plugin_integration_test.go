@@ -193,10 +193,13 @@ func TestNativePluginLifecycle(t *testing.T) {
 	}
 
 	// 3. Built-in shadowing must be rejected (canonical + alias + meta).
-	for _, shadow := range []string{"build", "m", "gen", "plugin", "help", "version"} {
+	for shadow, canonical := range map[string]string{"build": "build", "m": "migrate", "gen": "generate", "g": "generate", "plugin": "plugin", "help": "help", "version": "version"} {
 		_, errOut, code = runDispatch(t, "plugin", "add", shadow, bin)
 		if code == 0 || !strings.Contains(errOut, "collides with built-in") {
 			t.Fatalf("built-in shadow %q accepted: code=%d err=%q", shadow, code, errOut)
+		}
+		if !strings.Contains(errOut, `built-in command "`+canonical+`"`) {
+			t.Fatalf("alias %q is not registered under its canonical command %q: err=%q", shadow, canonical, errOut)
 		}
 	}
 
@@ -685,5 +688,21 @@ func TestMigrateBuiltinRefusesFilteredDB(t *testing.T) {
 	_, errOut, code := runDispatch(t, "--builtin", "migrate", "status")
 	if code != 1 || !strings.Contains(errOut, "DATABASE_URL was stripped") {
 		t.Fatalf("expected --builtin migrate refusal when DATABASE_URL was stripped: code=%d err=%q", code, errOut)
+	}
+
+	out, errOut, code := runDispatch(t, "--builtin", "migrate", "--help")
+	if code != 0 || strings.Contains(errOut, "DATABASE_URL was stripped") || !strings.Contains(out+errOut, "Usage") {
+		t.Fatalf("--builtin migrate --help should print usage, not refuse: code=%d out=%q err=%q", code, out, errOut)
+	}
+
+	_, errOut, code = runDispatch(t, "migrate", "status")
+	if strings.Contains(errOut, "DATABASE_URL was stripped") {
+		t.Fatalf("plain migrate, without --builtin, must not get the isolation refusal: code=%d err=%q", code, errOut)
+	}
+
+	t.Setenv("DATABASE_URL", "postgres://caller@127.0.0.1:1/none?sslmode=disable&connect_timeout=1")
+	_, errOut, code = runDispatch(t, "--builtin", "migrate", "status")
+	if strings.Contains(errOut, "DATABASE_URL was stripped") {
+		t.Fatalf("--builtin migrate with the caller's DATABASE_URL set must not be refused: code=%d err=%q", code, errOut)
 	}
 }

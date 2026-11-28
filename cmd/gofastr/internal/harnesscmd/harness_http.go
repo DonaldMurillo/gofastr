@@ -1,10 +1,5 @@
 // check-csp:ignore-file
-// The harness web client is a dev-only operator surface, not a
-// production browser app, so the framework's strict-CSP contract
-// does not apply. The renderTUIShell helper inlines a tiny
-// bootstrap <script> + <style> bundle so the harness runs without
-// a build step or an extra HTTP round-trip; that's the explicit
-// trade-off, hence the directive.
+// The chat page is a dev-only operator page whose inline script and style are its whole client (decision cli.harness.web/inline-chat-page).
 
 package harnesscmd
 
@@ -29,28 +24,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 )
 
-// startHTTPListener binds a TCP listener at bindAddr, mounts the REST
-// API at /v1/* and the WS endpoint at /v1/ws, and returns the public
-// URL plus a shutdown closure. Returns the actual bound address even
-// when the caller asked for an ephemeral port (host:0).
-//
-// Auth: HMAC tokens are signed with a per-process secret derived from
-// the machine key (or a fresh random secret on first boot). The token
-// is printed to stderr once so the user can paste it into curl /
-// browser; subsequent calls within the same process accept any token
-// the same encoder produced.
+// startHTTPListener serves the REST API, the WebSocket and the chat page on a
+// loopback listener at bindAddr and returns its URL, the page's token and a shutdown func.
 func startHTTPListener(h *xharness.Harness, sess ids.SessionID, bindAddr string) (url string, token string, shutdown func(), err error) {
 	secret := DeriveListenerSecret()
 	enc := auth.NewEncoder(secret)
 	revs := auth.NewRevocationList()
 
-	// Token is generated FIRST, before the listener opens: it depends
-	// on nothing net.Listen produces, and encoding it after Listen
-	// meant an encode failure returned with the socket still open —
-	// repeated startup failures leaked listening sockets. The chat
-	// page embeds it in a meta tag so the inline JS can use it for
-	// fetch + EventSource without round-tripping through a separate
-	// /auth endpoint.
 	token, err = enc.Encode(auth.Claims{
 		Ver:           auth.VerCurrent,
 		JTI:           ids.NewJTI(),
@@ -62,9 +42,6 @@ func startHTTPListener(h *xharness.Harness, sess ids.SessionID, bindAddr string)
 		return "", "", nil, fmt.Errorf("encode harness token: %w", err)
 	}
 
-	// Bind: the Host/Origin guards below must be pinned to the
-	// authority we actually got, which for the default "127.0.0.1:0"
-	// is only known after Listen picks the ephemeral port.
 	ln, lerr := listenLoopback(bindAddr)
 	if lerr != nil {
 		return "", "", nil, lerr
@@ -72,20 +49,16 @@ func startHTTPListener(h *xharness.Harness, sess ids.SessionID, bindAddr string)
 	addr := ln.Addr().String()
 	hosts, origins := loopback.LoopbackGuards(addr)
 
-	// Make sure the catalog exposes the running session so REST
-	// callers can query it via /v1/sessions/<id>.
 	h.Catalog.RegisterEngine(h.Mux.EngineFor(sess))
 
 	restSrv := &rest.Server{
-		Mux:          h.Mux,
-		Catalog:      h.Catalog,
-		Encoder:      enc,
-		Revocations:  revs,
-		Features:     []string{"rest", "ws"},
-		SessionStore: h.Sessions, // enables ?past=true sidebar
-		AllowedHosts: hosts,
-		// A browser that sets Origin must be same-origin with the
-		// sidecar; curl/CLI callers send none and still pass.
+		Mux:            h.Mux,
+		Catalog:        h.Catalog,
+		Encoder:        enc,
+		Revocations:    revs,
+		Features:       []string{"rest", "ws"},
+		SessionStore:   h.Sessions,
+		AllowedHosts:   hosts,
 		AllowedOrigins: origins,
 	}
 	wsHandler := &ws.Handler{
@@ -99,10 +72,6 @@ func startHTTPListener(h *xharness.Harness, sess ids.SessionID, bindAddr string)
 	mux := http.NewServeMux()
 	mux.Handle("/v1/ws", wsHandler)
 	mux.Handle("/v1/", restSrv.Handler())
-	// The chat page embeds the bearer token in a meta tag, so it is a
-	// credential-bearing response even though it takes no token to
-	// request. Host-pinning it is what stops a DNS-rebound page from
-	// reading the token out of a same-origin fetch.
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if !loopback.HostAllowed(r.Host, hosts) {
 			http.Error(w, "forbidden: unexpected Host", http.StatusForbidden)
@@ -126,13 +95,6 @@ func startHTTPListener(h *xharness.Harness, sess ids.SessionID, bindAddr string)
 	return url, token, shutdown, nil
 }
 
-// listenLoopback binds bindAddr and refuses any address that is not
-// loopback. The chat page at / embeds a 24 h human-class token for
-// whoever loads it, and the Host guard stops DNS rebinding, not a peer
-// that reaches the port directly and sends Host: localhost. So a LAN
-// address, a wildcard (0.0.0.0, ::, :PORT) or a name that resolves off
-// loopback is refused. The check reads the address the kernel bound,
-// not the spelling the caller passed.
 func listenLoopback(bindAddr string) (net.Listener, error) {
 	ln, err := net.Listen("tcp", bindAddr)
 	if err != nil {
@@ -145,9 +107,8 @@ func listenLoopback(bindAddr string) (net.Listener, error) {
 	return ln, nil
 }
 
-// DeriveListenerSecret returns 32 bytes derived from the machine key
-// if set (via GOFASTR_HARNESS_MACHINE_KEY), else a fresh random secret
-// so each process restart invalidates outstanding tokens.
+// DeriveListenerSecret returns the token-signing secret: derived from the
+// machine key when one is set, else 32 fresh random bytes.
 func DeriveListenerSecret() []byte {
 	if mk, err := machineKeyFromEnv(); err == nil && len(mk) > 0 {
 		h := sha256.Sum256(append([]byte("harness-http:"), mk...))
@@ -158,9 +119,6 @@ func DeriveListenerSecret() []byte {
 	return b
 }
 
-// shortSessionLabel produces a status-bar-friendly truncation of the
-// session id. Handles shorter-than-expected inputs (tests +
-// future formats); never panics.
 func shortSessionLabel(s string) string {
 	if len(s) <= 14 {
 		return s
@@ -168,25 +126,11 @@ func shortSessionLabel(s string) string {
 	return s[:14] + "…"
 }
 
-// chatPage is the SSR chat UI served at /. Renders an empty
-// scrollback + input box; client-side JS opens an SSE stream and
-// POSTs input so the browser experience mirrors the TUI.
 func chatPage(w http.ResponseWriter, r *http.Request, sess ids.SessionID, token string) {
-	// The chat page embeds the live 24h bearer token + session id in
-	// meta tags, and the whole path is served for a resolved principal:
-	// no shared cache or bfcache may retain either response.
-	// theme_edit_page.go sets the same header for a page carrying no
-	// token at all.
 	w.Header().Set("Cache-Control", "no-store")
-	// Never framed: the Host guard stops a rebound page from reading
-	// the token, not a page on any site from loading this one in an
-	// iframe and steering the operator's click onto the permission
-	// modal's "Allow for session" button. frame-ancestors is the only
-	// CSP directive set, so the inline bootstrap script still runs.
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
 	if r.URL.Path != "/" {
-		// The /endpoints sub-page is a fallback developer reference.
 		if r.URL.Path == "/endpoints" {
 			render.RespondHTML(w, renderLanding(r.Host))
 			return
@@ -197,27 +141,6 @@ func chatPage(w http.ResponseWriter, r *http.Request, sess ids.SessionID, token 
 	render.RespondHTML(w, renderChat(r.Host, string(sess), token))
 }
 
-// renderChat builds the chat document. The token + session land in
-// meta tags rather than a query string so they aren't logged in
-// referrers or browser history.
-//
-// Layout (web is not the TUI; it has affordances the TUI can't have):
-//
-//	┌──────────────────────────── status bar ──────────────────┐
-//	│ harness · session · model · $cost                api docs │
-//	├──────────────┬────────────────────────────────────────────┤
-//	│              │                                            │
-//	│  Sessions    │  message bubbles                           │
-//	│  ● this      │  ● collapsible tool cards                  │
-//	│    other     │  ● live markdown                           │
-//	│              │  ● spinner during thinking                 │
-//	│  /help       │  ● copy buttons on hover                   │
-//	│              │                                            │
-//	├──────────────┴────────────────────────────────────────────┤
-//	│ permission modal overlay (when triggered)                 │
-//	├───────────────────────────────────────────────────────────┤
-//	│ > input box                                               │
-//	└───────────────────────────────────────────────────────────┘
 func renderChat(host, sessionID, token string) render.HTML {
 	statusBar := html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"id": "status-bar"}},
 		render.Tag("span", map[string]string{"class": "status-name"},
@@ -325,8 +248,6 @@ func renderChat(host, sessionID, token string) render.HTML {
 	)
 }
 
-// renderLanding is the old endpoints-reference page, kept at
-// /endpoints as a developer reference.
 func renderLanding(host string) render.HTML {
 	endpoints := []struct{ method, path, desc, auth string }{
 		{"GET", "/v1/handshake", "wire-protocol version + features", ""},
@@ -583,7 +504,6 @@ const chatJS = `
   let pendingPermissionCallId = null;
   const toolCardsByCallId = new Map(); // callId → tool-card DOM
 
-  // ----- HTML escape + tiny markdown renderer ---------------------
   function esc(s) {
     return String(s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -592,26 +512,19 @@ const chatJS = `
   function renderMarkdown(text) {
     if (!text) return '';
     let s = esc(text);
-    // Fenced code blocks ` + "`" + `` + "`" + `` + "`" + ` ... ` + "`" + `` + "`" + `` + "`" + `
     s = s.replace(/` + "`" + `` + "`" + `` + "`" + `([\s\S]*?)` + "`" + `` + "`" + `` + "`" + `/g,
       (_, code) => '<pre><code>' + code.replace(/^\n/, '') + '</code></pre>');
-    // Inline code
     s = s.replace(/` + "`" + `([^` + "`" + `\n]+?)` + "`" + `/g, '<code>$1</code>');
-    // Bold + italic
     s = s.replace(/\*\*([^\*\n]+)\*\*/g, '<strong>$1</strong>');
     s = s.replace(/(^|[^\*])\*([^\*\n]+)\*/g, '$1<em>$2</em>');
-    // Headings (### text)
     s = s.replace(/^(#{1,6})\s+(.+)$/gm,
       (_, hashes, text) => '<h' + hashes.length + '>' + text + '</h' + hashes.length + '>');
-    // Bullet lists
     s = s.replace(/((?:^[-*]\s.+\n?)+)/gm, (block) => {
       const items = block.trim().split(/\n/).map(l => '<li>' + l.replace(/^[-*]\s+/, '') + '</li>');
       return '<ul>' + items.join('') + '</ul>';
     });
-    // Auto-link bare URLs
     s = s.replace(/(https?:\/\/[^\s<]+)/g,
       (url) => '<a href="' + url + '" target="_blank" rel="noopener">' + url + '</a>');
-    // Paragraphs: wrap remaining bare lines
     s = s.split(/\n\n+/).map(p =>
       /^<(h\d|ul|pre|p|blockquote)/.test(p) ? p : ('<p>' + p.replace(/\n/g, '<br>') + '</p>')
     ).join('');
@@ -633,7 +546,6 @@ const chatJS = `
     return btn;
   }
 
-  // ----- Bubble + tool card builders ------------------------------
   function appendUserBubble(text) {
     const wrap = document.createElement('div');
     wrap.className = 'bubble user';
@@ -687,7 +599,6 @@ const chatJS = `
   }
 
   function detectDiff(text) {
-    // Heuristic: contains a hunk header or alternating +/- lines.
     return /^@@/m.test(text) || /^\+\+\+/m.test(text) ||
       (/^[-+]/m.test(text) && text.split('\n').filter(l => /^[+-]/.test(l)).length >= 2);
   }
@@ -733,13 +644,11 @@ const chatJS = `
     const preview = card.querySelector('.preview');
     body.classList.toggle('err', !!isError);
     const safe = text || '(no output)';
-    // Full body (used when user expands).
     if (detectDiff(safe)) {
       body.innerHTML = renderDiff(safe);
     } else {
       body.textContent = safe;
     }
-    // Preview = first PREVIEW_LINES non-empty source lines, one per row.
     const lines = safe.split('\n');
     preview.innerHTML = '';
     const shown = lines.slice(0, PREVIEW_LINES);
@@ -755,9 +664,6 @@ const chatJS = `
       more.textContent = '… +' + (lines.length - PREVIEW_LINES) + ' more lines (click to expand)';
       preview.appendChild(more);
     }
-    // Stay COLLAPSED by default: user expands by clicking the
-    // header. Avoids the previous behavior where every tool card
-    // popped open and ate the viewport.
   }
 
   function appendError(msg) {
@@ -780,13 +686,11 @@ const chatJS = `
     sb.scrollTop = sb.scrollHeight;
   }
 
-  // ----- Cost tracker ---------------------------------------------
   function bumpCost(usd) {
     totalCost += usd || 0;
     statusCost.textContent = '$' + totalCost.toFixed(4);
   }
 
-  // ----- Permission modal -----------------------------------------
   function openPermissionModal(tool, args, callId) {
     permTool.textContent = tool || '?';
     permArgs.textContent = JSON.stringify(args || {}, null, 2);
@@ -821,7 +725,6 @@ const chatJS = `
   document.getElementById('perm-no').addEventListener('click', () => answerPermission('deny', 'once'));
   permModal.addEventListener('click', (e) => { if (e.target === permModal) closePermissionModal(); });
 
-  // ----- Session sidebar ------------------------------------------
   async function refreshSessions() {
     try {
       const res = await fetch(BASE + '/v1/sessions',
@@ -850,7 +753,6 @@ const chatJS = `
   refreshSessions();
   setInterval(refreshSessions, 5000);
 
-  // ----- Task panel ----------------------------------------------
   const taskPanel = document.getElementById('task-panel');
   async function refreshTasks() {
     try {
@@ -888,7 +790,6 @@ const chatJS = `
   refreshTasks();
   setInterval(refreshTasks, 2000);
 
-  // Quick command buttons
   document.querySelectorAll('.qc').forEach(btn => {
     btn.addEventListener('click', () => {
       input.value = btn.dataset.cmd;
@@ -896,7 +797,6 @@ const chatJS = `
     });
   });
 
-  // ----- SSE event dispatch ---------------------------------------
   function handleEvent(ev) {
     const data = JSON.parse(ev.data);
     const kind = data.kind;
@@ -964,7 +864,6 @@ const chatJS = `
     }
   }
 
-  // ----- SSE wiring -----------------------------------------------
   const es = new EventSource(
     BASE + '/v1/sessions/' + SESSION + '/events?token=' + encodeURIComponent(TOKEN));
   const KINDS = [
@@ -979,7 +878,6 @@ const chatJS = `
   es.onmessage = handleEvent;
   es.onerror = () => { appendError('event stream disconnected'); };
 
-  // ----- Form submit ----------------------------------------------
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const line = input.value;
@@ -1006,7 +904,6 @@ const chatJS = `
     }
   });
 
-  // Esc closes permission modal as deny (safe default).
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !permModal.classList.contains('hidden')) {
       answerPermission('deny', 'once');

@@ -15,13 +15,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-// runHarnessCreds dispatches `gofastr harness creds <subcommand>`.
-//
-// Subcommands:
-//
-//	add  <provider> <account> <secret>   Store a credential ("-" reads it from stdin; GOFASTR_HARNESS_SECRET env also works).
-//	list                                 List stored providers/accounts (no secrets).
-//	delete <provider> <account>          Remove a stored credential.
 func runHarnessCreds(args []string) {
 	if len(args) == 0 {
 		cli.Fail("Subcommand required.")
@@ -43,29 +36,6 @@ func runHarnessCreds(args []string) {
 	}
 }
 
-// runHarnessCredsAdd stores one credential in the harness credstore.
-//
-//	gofastr harness creds add <provider> <account> <secret>
-//
-// The secret argument accepts the conventional "-" marker: the real
-// secret is then read from GOFASTR_HARNESS_SECRET or piped stdin (env
-// first), never stored as the literal marker. A literal secret keeps
-// working (documented interface) but draws a one-line warning: argv is
-// ps/procfs world-readable, the exact local observer the encrypted
-// store exists to defend against.
-//
-// Examples:
-//
-//	gofastr harness creds add openrouter default -   # secret on stdin
-//	echo "$KEY" | gofastr harness creds add zai default -
-//	GOFASTR_HARNESS_SECRET=... gofastr harness creds add zai default -
-//	gofastr harness creds add zai default <api-key>  # legacy argv form
-//
-// Key resolution order (first wins):
-//  1. GOFASTR_HARNESS_MACHINE_KEY env var (32-byte hex/base64/raw key).
-//  2. GOFASTR_HARNESS_PASSPHRASE env var.
-//
-// With neither set the store refuses to open (no default passphrase).
 func runHarnessCredsAdd(args []string) {
 	if len(args) < 3 {
 		cli.Fail("Usage: gofastr harness creds add <provider> <account> <secret>")
@@ -94,10 +64,6 @@ func runHarnessCredsAdd(args []string) {
 	cli.Success("Stored credential for %s/%s", provider, account)
 }
 
-// resolveCredSecret resolves the `creds add` secret argument. "-" is the
-// conventional stdin marker: GOFASTR_HARNESS_SECRET wins, then piped
-// stdin; an empty resolution is refused rather than storing "-" or "".
-// A literal value is returned as-is after a one-line argv warning.
 func resolveCredSecret(literal string) (string, error) {
 	if literal != "-" {
 		fmt.Fprintln(os.Stderr, "warning: a secret passed as an argument is visible to every local process via ps; prefer GOFASTR_HARNESS_SECRET or `add <provider> <account> -` (reads the secret from stdin)")
@@ -117,7 +83,6 @@ func resolveCredSecret(literal string) (string, error) {
 	return secret, nil
 }
 
-// runHarnessCredsList prints every stored provider/account pair (no secrets).
 func runHarnessCredsList(args []string) {
 	_ = args
 	store, err := openCredstore()
@@ -136,7 +101,6 @@ func runHarnessCredsList(args []string) {
 		cli.Info("No credentials stored.")
 		return
 	}
-	// Sort for stable output.
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].Provider != entries[j].Provider {
 			return entries[i].Provider < entries[j].Provider
@@ -152,9 +116,6 @@ func runHarnessCredsList(args []string) {
 	fmt.Println()
 }
 
-// runHarnessCredsDelete removes a stored credential.
-//
-//	gofastr harness creds delete <provider> <account>
 func runHarnessCredsDelete(args []string) {
 	if len(args) < 2 {
 		cli.Fail("Usage: gofastr harness creds delete <provider> <account>")
@@ -176,13 +137,6 @@ func runHarnessCredsDelete(args []string) {
 	cli.Success("Deleted credential for %s/%s", provider, account)
 }
 
-// openCredstore resolves the XDG config path and derives the credstore
-// key using the same priority order as runHarness:
-//  1. GOFASTR_HARNESS_MACHINE_KEY (CI / headless path)
-//  2. GOFASTR_HARNESS_PASSPHRASE
-//
-// With neither set it fails closed (noCredstoreKeyHelp); there is no
-// default passphrase.
 func openCredstore() (*credstore.EncryptedFileStore, error) {
 	xdgConfig, err := resolveHarnessXDGConfig()
 	if err != nil {
@@ -199,10 +153,8 @@ func openCredstore() (*credstore.EncryptedFileStore, error) {
 	return credstore.NewEncryptedFileStore(credPath, key)
 }
 
-// resolveHarnessXDGConfig returns ~/.config/gofastr/harness, honouring
-// XDG_CONFIG_HOME when it is set (standard XDG Base Dir spec).
 func resolveHarnessXDGConfig() (string, error) {
-	if xch := os.Getenv("XDG_CONFIG_HOME"); xch != "" {
+	if xch := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(xch) {
 		return filepath.Join(xch, "gofastr", "harness"), nil
 	}
 	home, err := os.UserHomeDir()
@@ -212,22 +164,26 @@ func resolveHarnessXDGConfig() (string, error) {
 	return filepath.Join(home, ".config", "gofastr", "harness"), nil
 }
 
-// noCredstoreKeyHelp is the single fail-closed refusal shared by every
-// CLI path that opens the credential store (harness, harness mcp,
-// harness creds). The repo shipped a hard-coded default passphrase
-// here until the 2026-09-04 red-probe round; a constant published in
-// the source tree is not encryption, so with neither a passphrase nor
-// a machine key configured the store refuses to open and the harness
-// refuses to boot. The message names the two ways to provide a key.
+func harnessDirs() (config, state string, err error) {
+	config, err = resolveHarnessXDGConfig()
+	if err != nil {
+		return "", "", err
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", "", fmt.Errorf("home dir: %w", err)
+	}
+	state = filepath.Join(home, ".local", "share", "gofastr", "harness")
+	for _, d := range []string{config, state} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			return "", "", err
+		}
+	}
+	return config, state, nil
+}
+
 const noCredstoreKeyHelp = "no credential-store key configured: set GOFASTR_HARNESS_PASSPHRASE, or provide a 32-byte key via GOFASTR_HARNESS_MACHINE_KEY"
 
-// deriveCredstoreKeyFromEnv picks the key using the same policy as the
-// main runHarness boot path:
-//  1. GOFASTR_HARNESS_MACHINE_KEY
-//  2. GOFASTR_HARNESS_PASSPHRASE
-//
-// With neither set it fails closed (see noCredstoreKeyHelp): there is
-// deliberately no default passphrase.
 func deriveCredstoreKeyFromEnv(xdgConfig string) ([]byte, error) {
 	if mk, err := machineKeyFromEnv(); err != nil {
 		return nil, fmt.Errorf("GOFASTR_HARNESS_MACHINE_KEY: %w", err)
@@ -248,9 +204,6 @@ func deriveCredstoreKeyFromEnv(xdgConfig string) ([]byte, error) {
 	return credstore.DeriveKey([]byte(pass), salt), nil
 }
 
-// credsReadOrCreateSalt reads the salt from path, creating a new random
-// salt if the file is absent or too short. This mirrors the behaviour of
-// the main harness boot path so both share the same salt file.
 func credsReadOrCreateSalt(path string) ([]byte, error) {
 	data, err := os.ReadFile(path)
 	if err == nil && len(data) >= 16 {
@@ -263,8 +216,6 @@ func credsReadOrCreateSalt(path string) ([]byte, error) {
 	if _, err := rand.Read(salt); err != nil {
 		return nil, fmt.Errorf("generate salt: %w", err)
 	}
-	// WriteOwnerOnly, not os.WriteFile: the mode must hold on overwrite
-	// too, and this salt derives the credstore key.
 	if err := fileperm.WriteOwnerOnly(path, salt); err != nil {
 		return nil, fmt.Errorf("write salt: %w", err)
 	}

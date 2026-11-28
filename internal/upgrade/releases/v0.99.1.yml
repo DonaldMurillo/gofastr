@@ -51,3 +51,15 @@ notes:
     breaking: true
     guidance: "The runner used to skip that SQL and could still record the migration as applied. If the migration has not been applied, move the SQL under -- +migrate Up (or -- +migrate Down for rollback SQL). If it has already been applied, remove the stray SQL from that file and put it in a new migration."
     nodetect: "the statements and directives are in .sql migration files, not Go source"
+  - change: "BREAKING - gofastr harness and gofastr harness mcp read their config directory (repository-key approvals, permissions.json, user skills/, the credential salt and creds.enc) from $XDG_CONFIG_HOME/gofastr/harness when XDG_CONFIG_HOME is an absolute path, the directory gofastr harness creds already wrote; all three now ignore a relative XDG_CONFIG_HOME and use ~/.config/gofastr/harness"
+    breaking: true
+    guidance: "If you set XDG_CONFIG_HOME and kept harness files under ~/.config/gofastr/harness, move them to $XDG_CONFIG_HOME/gofastr/harness. If you set a relative XDG_CONFIG_HOME, set an absolute path or move the files gofastr harness creds wrote there to ~/.config/gofastr/harness."
+    nodetect: "the directory depends on the developer's environment, not on a spelling in the app's source"
+  - change: "BREAKING - a .json app spec refuses {} where an access or database setting takes a single value (read, create, update, delete, role, owner_field, tenant_field, read_scope.unrestricted, app.db.driver); {} used to load as blank, which opened reads or lifted the read scope"
+    breaking: true
+    guidance: "gofastr validate now names the key. Write the permission or value the key should hold, or leave the key out if blank was what you meant."
+    nodetect: "the value is in a .json app spec, not in Go source"
+  - change: "BREAKING - gofastr validate refuses an app.static_dir with a directory whose name starts with a dot (.git, .env.d, public/.git), which the app would have served to anyone"
+    breaking: true
+    guidance: "Move the files the app should serve into a directory of their own, such as static, and point app.static_dir at it."
+    nodetect: "the value is in the app spec, not in Go source"

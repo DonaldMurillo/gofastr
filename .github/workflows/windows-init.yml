@@ -48,6 +48,11 @@ jobs:
       # test puts the old value back), and a tampered archive refused.
       - name: Release install script
         run: go test ./cmd/gofastr/internal/releasecmd -run '^TestInstallPs1InstallsVerifiedBuild$' -count=1 -v
+      # The Windows-only tests the cli.desktop.windows rules name:
+      # signtool arguments and lookup, the --zip archive and the
+      # version resource's length limit.
+      - name: Desktop build
+        run: go test ./cmd/gofastr/internal/desktopcmd -run '^(TestSigntoolArgs|TestSignWindowsExecutableRunsSigntool|TestCompareSDKPathsIsNumeric|TestWindowsZipIsAFeedArchive|TestZipWindowsBundleRefusesAPathName|TestZipWindowsBundleKeepsTheOldArchiveOnFailure|TestWindowsVersionParts)$' -count=1
       # The desktop updater on Windows: the executable-and-loader layout,
       # the Authenticode policy, the relaunch environment and the
       # cross-process install lock, which no Linux runner can exercise.

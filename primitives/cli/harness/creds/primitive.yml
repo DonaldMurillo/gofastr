@@ -1,0 +1,59 @@
+primitive: cli.harness.creds
+summary: "`gofastr harness creds add|list|delete` and the config directory, salt and key every gofastr harness path opens the encrypted credential store with."
+code:
+  - cmd/gofastr/internal/harnesscmd/harness_creds.go
+docs:
+  - framework/docs/content/harness-architecture.md
+twins:
+  - job: Derive the credential-store key (a 32-byte machine key as is, else PBKDF2 of the passphrase with the 32-byte salt in the config directory) and open creds.enc there.
+    why: The harness package's deriveCredstoreKey and readOrCreateSalt are unexported and take a harness Config, so the creds subcommand, which opens the store without booting a harness, has its own copy; TestCredsAddIsReadByTheHarness pins them to one result.
+    sites:
+      - path: cmd/gofastr/internal/harnesscmd/harness_creds.go
+        note: openCredstore, deriveCredstoreKeyFromEnv and credsReadOrCreateSalt.
+      - path: framework/experimental/harness/harness.go
+        note: New's creds.enc path, deriveCredstoreKey and readOrCreateSalt.
+invariants:
+  - id: one-config-directory
+    rule: gofastr harness, gofastr harness mcp and gofastr harness creds use one config directory, $XDG_CONFIG_HOME/gofastr/harness when XDG_CONFIG_HOME is an absolute path and ~/.config/gofastr/harness otherwise, so a credential creds add stores is the one the booted harness reads.
+    enforced_by:
+      - test: cmd/gofastr/internal/harnesscmd.TestCredsAddIsReadByTheHarness
+      - test: cmd/gofastr/internal/harnesscmd.TestHarnessAndMCPReadTheXDGConfigDirectory
+      - test: cmd/gofastr/internal/harnesscmd.TestRelativeXDGConfigHomeIsIgnored
+  - id: machine-key-before-passphrase
+    rule: The store key is the 32-byte machine key when one is set, with no salt written; else the passphrase's PBKDF2 key with the salt; with neither the store refuses to open and writes no salt.
+    enforced_by:
+      - test: cmd/gofastr/internal/harnesscmd.TestCredstoreKeyPrefersTheMachineKey
+      - test: cmd/gofastr/internal/harnesscmd.TestCredsKeyEnvRefusesPublicDefault
+  - id: salt-is-owner-only-and-kept
+    rule: The salt is written owner-only, on overwrite too, and a salt of 16 bytes or more is reused.
+    enforced_by:
+      - test: cmd/gofastr/internal/harnesscmd.TestCredsSaltIsOwnerOnly
+      - test: cmd/gofastr/internal/harnesscmd.TestHarnessCredsRedStdinSecret
+  - id: dash-reads-the-secret-off-argv
+    rule: A secret given as "-" is read from GOFASTR_HARNESS_SECRET, else from stdin trimmed, and an empty result is refused rather than storing "-"; a literal secret is stored with a warning that argv is visible to every local process.
+    enforced_by:
+      - test: cmd/gofastr/internal/harnesscmd.TestHarnessCredsRedStdinSecret
+      - test: cmd/gofastr/internal/harnesscmd.TestResolveCredSecret
+  - id: list-shows-no-secrets
+    rule: creds list prints provider and account only, sorted by provider then account.
+    enforced_by:
+      - test: cmd/gofastr/internal/harnesscmd.TestCredsListIsSorted
+decisions:
+  - id: relative-xdg-config-home-ignored
+    date: 2026-11-28
+    status: accepted
+    decision: A relative XDG_CONFIG_HOME is ignored and the config directory falls back to ~/.config/gofastr/harness, as the XDG spec says and battery/service already does.
+    rejected:
+      - option: Join a relative XDG_CONFIG_HOME onto the working directory.
+        why: The harness reads permissions.json, user skills, the salt, creds.enc and repository-key approvals from that directory, and inside a cloned repository a relative path names files the repository's author wrote.
+    upholds: [one-config-directory]
+  - id: dash-marker-for-secrets
+    date: 2026-11-28
+    status: accepted
+    decision: creds add takes "-" to read the secret from GOFASTR_HARNESS_SECRET or stdin, and keeps the literal argv form with a warning.
+    rejected:
+      - option: Accept the secret in argv only.
+        why: argv is world-readable through ps and procfs, the local observer the encrypted store exists to keep out.
+      - option: Drop the argv form.
+        why: The documented interface takes it, so it stays, with the warning.
+    upholds: [dash-reads-the-secret-off-argv]

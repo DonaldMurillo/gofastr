@@ -1,0 +1,32 @@
+primitive: cli.pack.check
+summary: Pack's check - regenerates the app from the packed spec, compares each Go file at the app root and directly under entities/ with the file on disk, and reports through pack's notes the files it could not reproduce, could not read or left out as hand-written.
+code:
+  - cmd/gofastr/internal/packcmd/pack_check.go
+docs:
+  - framework/docs/content/cli.md
+invariants:
+  - id: check-classifies-every-file
+    rule: A file the spec reproduces is silent; one it does not is unrecovered with a note from its provenance marker; an unmarked file the spec does not generate, or a handler an endpoint links, is hand-written; a file another generator marked is skipped; and a file in scope that is not regular is unread.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackCheckClassifiesFiles
+      - test: cmd/gofastr/internal/packcmd.TestPackCheckSilentOnUntouchedApp
+      - test: cmd/gofastr/internal/packcmd.TestPackCheckNamesUnreadAndMissing
+      - test: cmd/gofastr/internal/packcmd.TestPackChecksEndpointsFromHandlers
+      - test: cmd/gofastr/internal/packcmd.TestUntouchedNoteNamesTemplateDrift
+  - id: line-endings-are-not-differences
+    rule: The check drops a UTF-8 byte order mark and reads CRLF as LF before it compares, so a Windows checkout of an untouched app is silent.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackCheckIgnoresCRLFAndBOM
+  - id: notes-go-to-stderr
+    rule: With no -o every pack note and error goes to stderr, so stdout holds only the YAML and pack > gofastr.yml writes a valid file.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackCheckNotesGoToStderr
+      - test: cmd/gofastr/internal/packcmd.TestPackStdoutIsOnlyYAML
+decisions:
+  - id: report-not-refuse
+    date: 2026-11-28
+    status: accepted
+    decision: The check names the files the packed spec does not reproduce and still writes the spec.
+    rejected:
+      - option: Refuse to write a spec that loses anything.
+        why: Every app with one hand-written file would get no spec at all, where a spec plus the list of what it misses is the useful answer.

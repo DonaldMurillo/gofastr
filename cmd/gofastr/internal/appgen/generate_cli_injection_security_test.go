@@ -99,11 +99,12 @@ func TestCLIHeaderEchoesNoFlags(t *testing.T) {
 // buildCLISpec refuses a --api-prefix carrying control characters: it is
 // joined into every request URL, where a control byte is never a path.
 func TestCLIAPIPrefixControlCharsRefused(t *testing.T) {
-	opts := defaultCLIOptions()
-	opts.ApiPrefix = "api\nx()"
-	_, err := buildCLISpec(cliFixtureDecls(), opts, "example.com/app/entities/client")
-	if err == nil {
-		t.Fatalf("buildCLISpec accepted a --api-prefix carrying a newline")
+	for _, prefix := range []string{"api\nx()", "api\rv1", "api\x7fv1"} {
+		opts := defaultCLIOptions()
+		opts.ApiPrefix = prefix
+		if _, err := buildCLISpec(cliFixtureDecls(), opts, "example.com/app/entities/client"); err == nil {
+			t.Errorf("buildCLISpec accepted the --api-prefix %q", prefix)
+		}
 	}
 }
 

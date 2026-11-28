@@ -26,7 +26,6 @@ type AuditFinding struct {
 	Line int
 }
 
-// trackedKinds lists the global registration APIs the audit matches by import and call syntax.
 var trackedKinds = []struct {
 	ImportPath  string
 	PackageName string // the import alias most callers use
@@ -102,14 +101,7 @@ func parseFile(path string, source []byte) (*parsedFile, error) {
 	return &parsedFile{fset: fset, f: f}, nil
 }
 
-// scanFile resolves the file's import aliases against trackedKinds and
-// returns one AuditFinding per qualified-call (alias.FuncName) it
-// matches.
 func scanFile(pf *parsedFile, pkg, rel string) []AuditFinding {
-	// Resolve each tracked import to the name the file calls it by: its
-	// package name, or the name the import gives it. A dot import calls
-	// the function bare, keyed under ".". Matching the usual name alone
-	// missed cuistyle.Contribute and a dot-imported Contribute.
 	want := make(map[[2]string]string)
 	for _, imp := range pf.f.Imports {
 		ipath, err := strconv.Unquote(imp.Path.Value)
@@ -169,9 +161,6 @@ func scanFile(pf *parsedFile, pkg, rel string) []AuditFinding {
 	return out
 }
 
-// formatAuditReport renders findings into a human-readable text block,
-// grouped by package, with per-(pkg,kind) counts and per-call-site
-// pointers. Quiet when findings is empty.
 func formatAuditReport(findings []AuditFinding) string {
 	if len(findings) == 0 {
 		return "No candidate global registration call sites found.\n"
@@ -180,7 +169,6 @@ func formatAuditReport(findings []AuditFinding) string {
 	var b strings.Builder
 	b.WriteString("Candidate global registration call sites\n\n")
 
-	// Group: pkg → kind → []findings
 	type group map[string][]AuditFinding
 	byPkg := make(map[string]group)
 	for _, f := range findings {
@@ -216,7 +204,7 @@ func formatAuditReport(findings []AuditFinding) string {
 	return b.String()
 }
 
-// RunAudit is the CLI entry point. Subcommand: `gofastr audit deps`.
+// RunAudit implements `gofastr audit deps` and `gofastr audit a11y`.
 func RunAudit(args []string) {
 	auditUsage := func() {
 		fmt.Println("Usage: gofastr audit <subcommand>")
@@ -231,10 +219,6 @@ func RunAudit(args []string) {
 		fmt.Println("suppression. `audit` remains for what verify does not do: the runtime")
 		fmt.Println("browser scan (`a11y --url`) and the registration report (`deps`).")
 	}
-	// `audit --help` (or a help flag on deps) prints the usage and
-	// exits 0. Asking for help is not a usage error. a11y owns its
-	// flags and prints its own richer help, and an unknown subcommand
-	// exits 2 even with a help flag.
 	if len(args) > 0 && (args[0] == "deps" || args[0] == "--help" || args[0] == "-h") {
 		for _, a := range args {
 			if a == "--help" || a == "-h" {
@@ -277,9 +261,6 @@ func RunAudit(args []string) {
 	}
 }
 
-// mkdirAll + writeFile are small wrappers used by the audit's tests
-// (and trivially elsewhere) so the test file doesn't have to import
-// "os" directly.
 func mkdirAll(path string) error { return os.MkdirAll(path, 0o755) }
 
 func writeFile(p string, b []byte) error { return os.WriteFile(p, b, 0o644) }

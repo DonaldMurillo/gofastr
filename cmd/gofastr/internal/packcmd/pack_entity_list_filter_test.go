@@ -64,12 +64,16 @@ func TestReverseEntityUIRefusesTwoWherePins(t *testing.T) {
 // pin must make the chain irreversible rather than reverse as "filter:
 // =".
 func TestReverseEntityUIRefusesNonLiteralWhere(t *testing.T) {
-	src := `appUI.List("projects").Where(col, val).RenderCtx(ctx)`
-	e, err := parser.ParseExpr(src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if b, ok := reverseEntityUI(e.(*ast.CallExpr), nil); ok {
-		t.Fatalf("a Where pinned by variables reversed to filter=%q; a pin the spec cannot spell must stay irreversible", b.Filter)
+	for _, src := range []string{
+		`appUI.List("projects").Where(col, val).RenderCtx(ctx)`,
+		`appUI.List("projects").Where("status", 1).RenderCtx(ctx)`,
+	} {
+		e, err := parser.ParseExpr(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b, ok := reverseEntityUI(e.(*ast.CallExpr), nil); ok {
+			t.Fatalf("%s reversed to filter=%q; a pin the spec cannot spell must stay irreversible", src, b.Filter)
+		}
 	}
 }
