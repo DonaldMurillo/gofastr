@@ -25,6 +25,8 @@ const (
 
 const holdDetailLimit = 64 << 10
 
+const holdRelistenFor = 3 * time.Second
+
 // devHold answers the dev address while no app process serves it.
 type devHold struct {
 	addr       string
@@ -99,7 +101,7 @@ func (h *devHold) relisten() {
 	if serving {
 		return
 	}
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(holdRelistenFor)
 	for {
 		ln, err := net.Listen("tcp", h.addr)
 		if err == nil {
