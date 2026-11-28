@@ -1,0 +1,52 @@
+primitive: cli.export
+summary: gofastr export - runs the app's main package with GOFASTR_EXPORT set so App.Start writes the static site and returns, then checks the receipt the app wrote for this run.
+code:
+  - cmd/gofastr/internal/exportcmd/
+docs:
+  - framework/docs/content/static-export.md
+on_change:
+  - The receipt's file name and JSON shape are framework.ExportReceiptFile and what App.Start writes; a change to either changes both sides, and firstReceiptVersion names the first release that writes it.
+invariants:
+  - id: receipt-proves-the-export
+    rule: An app that exits 0 fails the export when its receipt is missing and the receipt is required, or when the receipt names a run other than the id this invocation passed in GOFASTR_EXPORT_RUN.
+    enforced_by:
+      - test: cmd/gofastr/internal/exportcmd.TestExportFailsWithoutReceipt
+      - test: cmd/gofastr/internal/exportcmd.TestExportRefusesAReceiptForAnotherRun
+  - id: earlier-receipt-is-cleared
+    rule: The export removes a receipt an earlier run left in the directory before it starts the app, and a missing one is not an error.
+    enforced_by:
+      - test: cmd/gofastr/internal/exportcmd.TestClearReceiptRemovesAnEarlierRun
+  - id: receipt-does-not-ship
+    rule: The receipt is removed from the directory once read, so the exported site never carries it.
+    enforced_by:
+      - test: cmd/gofastr/internal/exportcmd.TestExportRunsTheApp
+  - id: receipt-read-is-bounded
+    rule: readReceipt decodes at most maxReceiptBytes, so a larger receipt is an error rather than a read of the whole file.
+    enforced_by:
+      - test: cmd/gofastr/internal/exportcmd.TestReadReceiptIsBounded
+  - id: receipt-policy
+    rule: A receipt is required for a package of this repository's module and for an app whose go.mod requires GoFastr at firstReceiptVersion or later without a replace directive; any other app gets a warning for a missing receipt instead of a failure.
+    enforced_by:
+      - test: cmd/gofastr/internal/exportcmd.TestExportReceiptRequired
+  - id: usage-errors-exit-two
+    rule: An unknown flag, a missing output directory, a flag without its value and a --base that does not start with / or ends with one are usage errors, exiting 2 with the diagnostic on stderr.
+    enforced_by:
+      - test: cmd/gofastr/internal/exportcmd.TestExportUsageErrorsExitTwoOnStderr
+      - test: cmd/gofastr/internal/exportcmd.TestExportOptions
+decisions:
+  - id: receipt-not-exit-status
+    date: 2026-11-28
+    status: accepted
+    decision: The CLI trusts a receipt App.Start writes for the run it names, not the app's exit status.
+    rejected:
+      - option: Treat exit 0 as a finished export.
+        why: A main that returns before App.Start exits 0 having exported nothing, and the command reported success over an empty or stale directory.
+    upholds: [receipt-proves-the-export, earlier-receipt-is-cleared]
+  - id: old-frameworks-warn
+    date: 2026-11-28
+    status: accepted
+    decision: An app on a framework that may predate receipts, an older pin, a replace directive or no go.mod, gets a warning for a missing receipt.
+    rejected:
+      - option: Require the receipt from every app.
+        why: An app pinned to a release before firstReceiptVersion exports correctly and writes none, so every export it ran would fail.
+    upholds: [receipt-policy]

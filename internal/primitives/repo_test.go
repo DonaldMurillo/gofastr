@@ -294,6 +294,7 @@ var ownedPackages = []string{
 	"cmd/vettool",
 	// cmd/gofastr: build and ship
 	"cmd/gofastr/internal/buildcmd",
+	"cmd/gofastr/internal/exportcmd",
 	"cmd/gofastr/internal/gates",
 }
 
