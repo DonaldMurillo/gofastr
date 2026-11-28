@@ -286,3 +286,12 @@ func TestDiscoverStaysOpenUnderServerGate(t *testing.T) {
 		t.Fatalf("modern tools/list under a refusing gate = %v, want an error", out)
 	}
 }
+
+// A header mismatch answers under a null id when the request's id is not a valid scalar, as JSON-RPC requires.
+func TestModernHeaderMismatchNullsInvalidID(t *testing.T) {
+	body := `{"jsonrpc":"2.0","id":[1],"method":"tools/list","params":{` + modernMeta + `}}`
+	status, out := modernPOST(t, modernServer(t), body, map[string]string{ProtocolVersionHeader: "2026-07-28"})
+	if id, ok := out["id"]; status != http.StatusBadRequest || errCode(out) != ErrHeaderMismatch || !ok || id != nil {
+		t.Fatalf("= %d %v, want 400 -32020 under a null id", status, out)
+	}
+}

@@ -126,7 +126,7 @@ func refuseVersionHeader(w http.ResponseWriter, r *http.Request, req Request) bo
 	if len(requested) > maxEchoedVersionBytes {
 		requested = requested[:maxEchoedVersionBytes]
 	}
-	resp := newErrorResponse(req.ID, ErrInvalidRequest, "unsupported "+ProtocolVersionHeader)
+	resp := newErrorResponse(replyID(req.ID), ErrInvalidRequest, "unsupported "+ProtocolVersionHeader)
 	resp.Error.Data = map[string]any{"supported": SupportedProtocolVersions(), "requested": requested}
 	writeEnvelopeError(w, resp)
 	return true
@@ -154,13 +154,13 @@ func refuseHTTPHeaders(w http.ResponseWriter, r *http.Request, req Request, noti
 			if req.Method == "server/discover" {
 				return false
 			}
-			writeEnvelopeError(w, headerMismatch(req.ID, ProtocolVersionHeader+" names a per-request revision but params._meta carries no "+MetaProtocolVersion))
+			writeEnvelopeError(w, headerMismatch(replyID(req.ID), ProtocolVersionHeader+" names a per-request revision but params._meta carries no "+MetaProtocolVersion))
 			return true
 		}
 		return refuseVersionHeader(w, r, req)
 	}
 	if msg := modernHeaderMismatch(r, req, facts); msg != "" {
-		writeEnvelopeError(w, headerMismatch(req.ID, msg))
+		writeEnvelopeError(w, headerMismatch(replyID(req.ID), msg))
 		return true
 	}
 	return false
@@ -243,6 +243,14 @@ func httpStatusFor(resp Response) int {
 		}
 	}
 	return http.StatusOK
+}
+
+// replyID is the id a transport-level refusal answers under: the request's own when it is a valid scalar, else null.
+func replyID(id any) any {
+	if !validRequestID(id) {
+		return nil
+	}
+	return id
 }
 
 func errorAsMaxBytes(err error, target **http.MaxBytesError) bool {
