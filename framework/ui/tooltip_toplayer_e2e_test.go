@@ -81,28 +81,34 @@ func kitHead(t *testing.T, anchorPositioning bool) string {
 	return "<style>" + th.CSSCustomProperties() + "\n" + sheet + "</style>"
 }
 
-// withoutBlock drops the brace-balanced block that opens with head from
-// css, as a browser that does not support it ignores it.
+// withoutBlock drops every brace-balanced block that opens with head
+// from css, as a browser that does not support it ignores them all.
 func withoutBlock(t *testing.T, css, head string) string {
 	t.Helper()
-	at := strings.Index(css, head)
-	if at < 0 {
+	if !strings.Contains(css, head) {
 		t.Fatalf("the sheet has no %q block", head)
 	}
-	depth := 0
-	for i := at; i < len(css); i++ {
-		switch css[i] {
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return css[:at] + css[i+1:]
+	for {
+		at := strings.Index(css, head)
+		if at < 0 {
+			return css
+		}
+		end, depth := -1, 0
+		for i := at; i < len(css) && end < 0; i++ {
+			switch css[i] {
+			case '{':
+				depth++
+			case '}':
+				if depth--; depth == 0 {
+					end = i
+				}
 			}
 		}
+		if end < 0 {
+			t.Fatalf("the %q block never closes", head)
+		}
+		css = css[:at] + css[end+1:]
 	}
-	t.Fatalf("the %q block never closes", head)
-	return css
 }
 
 type tipRect struct {

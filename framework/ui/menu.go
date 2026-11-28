@@ -362,6 +362,29 @@ details[data-cui-comp="ui-menu"]:not([open]) .fui-menu__panel { display: none; }
 [data-cui-comp="ui-menu"].fui-menu--bottom-end   .fui-menu__panel { inset-inline-end: 0;   top: calc(100% + var(--spacing-sm, 4px)); }
 [data-cui-comp="ui-menu"].fui-menu--top-start    .fui-menu__panel { inset-inline-start: 0; bottom: calc(100% + var(--spacing-sm, 4px)); }
 [data-cui-comp="ui-menu"].fui-menu--top-end      .fui-menu__panel { inset-inline-end: 0;   bottom: calc(100% + var(--spacing-sm, 4px)); }
+/* Where the browser has anchor positioning, the top-level panel is
+   anchored to its trigger, and headless-disclosure opens a panel so
+   anchored in the top layer: no clipping box cuts it, and the browser
+   flips it when its side has no room. Submenus stay in their panel. */
+@supports (anchor-scope: --x) and (position-area: top) {
+  [data-cui-comp="ui-menu"] { anchor-scope: --hui-disclosure; }
+  details[data-cui-comp="ui-menu"] > summary,
+  [data-cui-comp="ui-menu"] > [data-hui-menu-trigger] > * { anchor-name: --hui-disclosure; }
+  :is(details[data-cui-comp="ui-menu"], [data-cui-comp="ui-menu"] > details[data-hui-menu]) > .fui-menu__panel { position-anchor: --hui-disclosure; }
+  :is(details[data-cui-comp="ui-menu"], [data-cui-comp="ui-menu"] > details[data-hui-menu]) > .fui-menu__panel[popover] {
+    position: fixed;
+    inset: auto;
+    margin: var(--spacing-sm, 4px) 0;
+    overflow: visible;
+    color: inherit;
+    translate: none;
+    position-area: block-end span-inline-end;
+    position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+  }
+  [data-cui-comp="ui-menu"].fui-menu--bottom-end .fui-menu__panel[popover][data-hui-menu-panel] { position-area: block-end span-inline-start; }
+  [data-cui-comp="ui-menu"].fui-menu--top-start  .fui-menu__panel[popover][data-hui-menu-panel] { position-area: block-start span-inline-end; }
+  [data-cui-comp="ui-menu"].fui-menu--top-end    .fui-menu__panel[popover][data-hui-menu-panel] { position-area: block-start span-inline-start; }
+}
 @keyframes fui-menu-in {
   from { opacity: 0; transform: translateY(-4px) scale(0.98); }
   to   { opacity: 1; transform: translateY(0)    scale(1);    }
