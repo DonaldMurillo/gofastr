@@ -10,21 +10,17 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 )
 
-// desktopFeedFlags carries `desktop feed` flags.
 type desktopFeedFlags struct {
-	key      string
-	version  string
-	notes    string
-	platform string
-	archive  string
-	url      string
-	out      string
-	// validDays is --valid-days as typed; "" means the default lifetime.
+	key       string
+	version   string
+	notes     string
+	platform  string
+	archive   string
+	url       string
+	out       string
 	validDays string
 }
 
-// parseDesktopFeedFlags parses the feed flag list. Only --valid-days
-// has a default: every other value is a release decision.
 func parseDesktopFeedFlags(args []string) desktopFeedFlags {
 	var f desktopFeedFlags
 	var help bool
@@ -47,8 +43,6 @@ func parseDesktopFeedFlags(args []string) desktopFeedFlags {
 	return f
 }
 
-// runDesktopFeed writes manifest.json and manifest.json.sig into -o
-// for one platform archive, refusing anything SignUpdateFeed refuses.
 func runDesktopFeed(args []string) {
 	f := parseDesktopFeedFlags(args)
 	missing := make([]string, 0, 5)
@@ -93,12 +87,8 @@ func runDesktopFeed(args []string) {
 	cli.Info("the manifest expires in %d days; run this command again before then, or apps refuse the feed", days)
 }
 
-// maxFeedDays is the longest --valid-days accepts.
 const maxFeedDays = int(desktop.MaxFeedLifetime / (24 * time.Hour))
 
-// feedLifetime turns --valid-days into the manifest lifetime. "" is 0,
-// which SignUpdateFeed reads as its default. The range is checked on
-// the day count, before it becomes a duration.
 func feedLifetime(validDays string) (time.Duration, error) {
 	if validDays == "" {
 		return 0, nil

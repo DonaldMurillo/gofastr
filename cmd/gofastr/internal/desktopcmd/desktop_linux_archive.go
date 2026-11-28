@@ -44,9 +44,6 @@ func linuxBundleRoot(f desktopBuildFlags, name, arch string) (string, error) {
 	return linuxbundle.RootName(f.id, f.version, arch)
 }
 
-// linuxUpdateVersionWarning is the warning a Linux archive built with
-// version earns when the version installs but no update feed can carry
-// it (it is not major.minor.patch), or "" when it can.
 func linuxUpdateVersionWarning(version string) string {
 	if desktop.ValidateAppVersion(version) == nil {
 		return ""
@@ -75,7 +72,6 @@ func buildLinuxDesktopArchive(f desktopBuildFlags, name, arch string) error {
 	if err != nil {
 		return err
 	}
-	// Validate all public metadata before creating output or running the compiler.
 	if strings.ContainsRune(f.out, 0) {
 		return fmt.Errorf("invalid output directory")
 	}
@@ -142,9 +138,6 @@ func linuxBundleIcon(filename string) ([]byte, error) {
 	if filename == "" {
 		data, _ = loadIconSource("")
 	} else {
-		// Reject special inputs before opening: opening a FIFO for reading can
-		// block forever without a writer. Recheck the opened file below too;
-		// this preflight does not promise protection against same-UID races.
 		info, err := os.Stat(filename)
 		if err != nil {
 			return nil, fmt.Errorf("read --icon: %w", err)
@@ -192,8 +185,6 @@ func linuxBundleIcon(filename string) ([]byte, error) {
 }
 
 func linuxBundleEntries(f desktopBuildFlags, name, arch, executable string, icon []byte) ([]linuxArchiveEntry, error) {
-	// ID has a closed ASCII grammar, so neither shell source nor archive paths
-	// contain the display name. Arguments remain separate; there is no eval.
 	if _, err := linuxBundleRoot(f, name, arch); err != nil {
 		return nil, err
 	}
