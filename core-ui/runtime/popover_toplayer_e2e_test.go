@@ -217,3 +217,34 @@ func TestPopoverTheBrowserWillNotRaiseStillDraws(t *testing.T) {
 		t.Fatalf("a popover whose showPopover threw is %s, want it drawn in place", shown)
 	}
 }
+
+// A browser without the Popover API (no showPopover, and :popover-open an
+// invalid selector) still gets the popover placed beside its trigger, as
+// before the top layer: placement never asks it about :popover-open.
+func TestPopoverWithoutThePopoverAPIIsStillPlaced(t *testing.T) {
+	var fetches atomic.Int32
+	srv := openAnchorServer(t, &fetches)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	var state string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		until(runtimeReady),
+		chromedp.Evaluate(`(() => {
+			delete HTMLElement.prototype.showPopover;
+			const m = Element.prototype.matches;
+			Element.prototype.matches = function (sel) {
+				if (String(sel).includes(':popover-open')) throw new DOMException('not a valid selector', 'SyntaxError');
+				return m.call(this, sel);
+			};
+		})()`, nil),
+		chromedp.Evaluate(`document.getElementById('bell').click()`, nil),
+		until(`!!`+notesRoot+` && `+notesRoot+`.hasAttribute('data-cui-popover-side')`),
+		chromedp.Evaluate(`(() => { const w = `+notesRoot+`; return [w.style.position, w.hasAttribute('popover') ? 'popover' : 'no popover'].join(' '); })()`, &state),
+	); err != nil {
+		t.Fatalf("chromedp: %v (placement did not run)", err)
+	}
+	if state != "fixed no popover" {
+		t.Fatalf("without the Popover API the popover is %q, want it placed (fixed) with no popover attribute", state)
+	}
+}
