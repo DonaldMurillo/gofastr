@@ -99,10 +99,7 @@
       // toasts already open; a root a move took out of it (a swap's
       // re-attach, a closing dialog handing it back to <body>) rises
       // again on its next placement.
-      if (root.showPopover && !root.matches(':popover-open')) {
-        root.setAttribute('popover', 'manual');
-        try { root.showPopover(); } catch (_) { root.removeAttribute('popover'); }
-      }
+      if (!root.matches(':popover-open')) NS._raiseWidget?.(root);
       // Set the anchored marker BEFORE measuring so the chrome's
       // border + shadow + max-inline-size are reflected in the
       // bounding rect, without this the measurement is from the
@@ -232,7 +229,7 @@
     for (const n in NS._widgets || {}) {
       const st = NS._widgets[n];
       const r = st && st.root;
-      if (st.anchorPlace && r && r.isConnected && r.hasAttribute('popover') && !r.matches(':popover-open')) st.anchorPlace();
+      if (st?.anchorPlace && r && r.isConnected && r.hasAttribute('popover') && !r.matches(':popover-open')) st.anchorPlace();
     }
   };
   document.addEventListener('fui:widget-open', (e) => { if ((e.detail || {}).reinserted) raiseMoved(); });

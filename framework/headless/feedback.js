@@ -101,10 +101,8 @@
     for (const r of rows) if (!seen.has(r)) { seen.add(r); fresh = true; }
     const open = h.matches(':popover-open');
     if (rows.length ? open && !fresh : !open) return;
-    try {
-      if (open) h.hidePopover();
-      if (rows.length) { h.setAttribute('popover', 'manual'); h.showPopover(); }
-    } catch (_) {}
+    if (open) try { h.hidePopover(); } catch (_) {}
+    if (rows.length) NS._raiseWidget?.(h);
   }
 
   // Behind a modal, or in an inert subtree, a toast is neither seen nor

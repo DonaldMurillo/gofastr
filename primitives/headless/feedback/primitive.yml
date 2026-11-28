@@ -160,11 +160,13 @@ invariants:
       - test: framework/headless.TestToastRefusesBrokenConfigurations
       - test: framework/headless.TestToastFamilyRefusesTheEdgesOfItsRanges
   - id: toast-stack-rises-to-the-top-layer
-    rule: headless-feedback makes the widget a toast stack is mounted in (data-cui-widget, as uihost's default and preset.ToastStack mount it) a manual popover, open while the stack holds a row and closed once its last row leaves, so a toast shows above whatever is already in the top layer; a stack with no widget around it stays where its layout placed it.
+    rule: headless-feedback makes the widget a toast stack is mounted in (data-cui-widget, as uihost's default and preset.ToastStack mount it) a manual popover through the widget runtime's NS._raiseWidget, which drops the attribute when the browser refuses, open while the stack holds a row and closed once its last row leaves, so a toast shows above whatever is already in the top layer; a stack with no widget around it stays where its layout placed it.
     enforced_by:
       - test: framework/ui.TestToastStackRisesIntoTheTopLayer
       - test: framework/ui.TestToastStackLeavesTheTopLayerWhenEmpty
       - test: framework/ui.TestToastDismissInASlotKeepsTheStackUp
+      - test: framework/ui.TestToastStackTheBrowserWillNotRaiseStillDraws
+      - test: framework/ui.TestMovedToastStackRisesAgain
   - id: toast-stack-rises-again-for-a-new-row
     rule: When a row the module has not seen joins a stack whose widget is already open, the widget is shown again so it sits above a popover opened since; focus inside the stack stays where it was, and a sync that adds no row changes nothing.
     enforced_by:
