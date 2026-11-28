@@ -463,6 +463,40 @@ func TestExposedHoldDropsLiveReload(t *testing.T) {
 	}
 }
 
+// A rebound name reached the hold's stream while the page withheld its output.
+func TestLoopbackHoldRefusesLiveReloadToAForeignHost(t *testing.T) {
+	h := newTestHold(t)
+	h.show(holdBuildFailed, "x")
+	_, port, err := net.SplitHostPort(h.addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := func(host string) int {
+		t.Helper()
+		req, err := http.NewRequest("GET", "http://"+h.addr+"/__livereload", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Host = host
+		res, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = res.Body.Close()
+		return res.StatusCode
+	}
+	for _, host := range []string{"evil.example:" + port, "evil.example", "127.0.0.1.evil.example:" + port} {
+		if code := status(host); code != http.StatusForbidden {
+			t.Errorf("Host %q: /__livereload answered %d, want 403", host, code)
+		}
+	}
+	for _, host := range []string{"127.0.0.1:" + port, "localhost:" + port} {
+		if code := status(host); code != http.StatusOK {
+			t.Errorf("Host %q: /__livereload answered %d, want 200", host, code)
+		}
+	}
+}
+
 func holdStreamStatus(t *testing.T, addr string) int {
 	t.Helper()
 	res, err := (&http.Client{Timeout: 5 * time.Second}).Get("http://" + addr + "/__livereload")

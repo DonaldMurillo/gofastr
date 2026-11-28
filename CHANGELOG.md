@@ -109,6 +109,12 @@ few lines, and link the PR or the docs page for the rest.
   refuses.** The error shows `https://REDACTED@host/...`, so a token in
   the URL stays out of the terminal and CI logs
   ([#934](https://github.com/DonaldMurillo/gofastr/pull/934)).
+
+- **`gofastr dev`'s hold page answers `/__livereload` only to its own host
+  names** on a loopback bind, as the page already did for the build output.
+  A page on a name rebound to 127.0.0.1 gets 403
+  ([#941](https://github.com/DonaldMurillo/gofastr/issues/941)).
+
 - **`gofastr telemetry … --json` escapes C1, bidi and zero-width runes**
   in every subcommand, so a stored route or error cannot reach the terminal
   raw. A byte that is not UTF-8 inside a stored line's string prints as the

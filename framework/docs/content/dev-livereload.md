@@ -16,7 +16,7 @@ When you run `gofastr dev`, GoFastr watches your source files, rebuilds and rest
 
 - `framework.NewApp()` registers `GET /__livereload` (SSE stream sending a build ID on connect) and `GET /__livereload.js` (CSP-safe external script injected automatically into `uihost` and full HTML responses).
 - Open tabs reload only when a reconnect reports a **new** build ID; transient disconnects preserve unsaved form state.
-- **Hold page while building/failing:** during builds or compile/a11y failures, `gofastr dev` holds the port and answers `503` with compiler/lint output (localhost only) so tabs show the error and reload automatically once your fix compiles.
+- **Hold page while building/failing:** during builds or compile/a11y failures, `gofastr dev` holds the port and answers `503` with compiler/lint output (localhost only; the output and the hold's `/__livereload` stream answer only the bind's own loopback host names) so tabs show the error and reload automatically once your fix compiles.
 - **Loopback-only by default:** if you bind a non-loopback address (`0.0.0.0:8080`), livereload and dev MCP turn off unless you opt in with `GOFASTR_DEV_LIVERELOAD_EXPOSE=1` or `GOFASTR_DEV_MCP_EXPOSE=1` (exposing dev MCP grants unauthenticated remote access).
 - **Uncached project assets:** static files serve with `Cache-Control: no-store` in dev mode so CSS/JS edits never stick in browser cache.
 
