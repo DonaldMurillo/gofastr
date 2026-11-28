@@ -6,3 +6,54 @@ code:
   - cmd/gofastr/internal/devcmd/serverproc_*.go
 docs:
   - framework/docs/content/cli.md
+on_change:
+  - gofastr desktop's watch loop (cmd/gofastr/internal/desktopcmd) calls these too; a change here is a change to both loops.
+invariants:
+  - id: binary-in-a-private-directory
+    rule: The rebuilt binary lives in one os.MkdirTemp directory per process, owner-only with a random name, and an isolated run's binary is named by its isolation ID inside it.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestDevServerBinDirIsPrivate
+      - test: cmd/gofastr/internal/devcmd.TestDevServerBinaryPathUnguessable
+      - test: cmd/gofastr/internal/devcmd.TestIsolatedBinaryPathsDiffer
+  - id: build-heartbeat
+    rule: RunBuildWithHeartbeat prints a line naming the build every heartbeatEvery (10s) while go build runs.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestBuildHeartbeatSaysStillBuilding
+  - id: interrupt-ends-the-build
+    rule: With a non-nil interrupt the build runs in a process group of its own; an interrupt closed before the build starts nothing, and one closed during it kills the whole group, compiler, linker and cgo toolchain included, and returns ErrBuildInterrupted.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestInterruptKillsBuildChildren
+      - test: cmd/gofastr/internal/devcmd.TestShutdownInterruptsBuild
+      - test: cmd/gofastr/internal/devcmd.TestBuildAfterSignalIsInterrupted
+  - id: the-app-gets-to-drain
+    rule: KillServer sends SIGTERM, returns as soon as the app has exited, sends SIGKILL after killGrace (5s), and clears *cmd; where there is no SIGTERM it kills at once and still waits up to killGrace for the exit.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestKillServerLetsAppDrain
+      - test: cmd/gofastr/internal/devcmd.TestKillServerReturnsOnExit
+      - test: cmd/gofastr/internal/devcmd.TestKillServerKillsAfterGrace
+      - test: cmd/gofastr/internal/devcmd.TestKillAtOnceWaitsForExit
+      - test: cmd/gofastr/internal/devcmd.TestKillServerNilAndProcess
+  - id: the-app-dies-with-the-loop
+    rule: On Linux the app gets SIGTERM from the kernel when the dev loop dies, SIGKILL included, so it never keeps the dev address reparented to init.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestAppDiesWithKilledDev
+  - id: one-thread-starts-the-app
+    rule: No dev loop starts the app from a goroutine that has locked its OS thread and might exit, because the kernel sends the parent-death signal when the starting thread exits.
+    judge: Does this change start the app from a goroutine that calls runtime.LockOSThread without unlocking it?
+decisions:
+  - id: private-temp-dir
+    date: 2026-11-28
+    status: accepted
+    decision: The binary is built into a per-process os.MkdirTemp directory that every caller shares.
+    rejected:
+      - option: A predictable name in the shared temp root.
+        why: A local co-user could plant a symlink there or swap the binary between go build -o and the exec (CWE-377).
+    upholds: [binary-in-a-private-directory]
+  - id: kill-grace-five-seconds
+    date: 2026-11-28
+    status: accepted
+    decision: The app gets five seconds after SIGTERM, room for shutdown hooks, the process-module drain (a 2s budget) and outbox flushes.
+    rejected:
+      - option: 100 ms.
+        why: It cut every save's drain short; the framework ends its own event streams when the drain starts, so an app usually exits well inside five seconds and KillServer returns then.
+    upholds: [the-app-gets-to-drain]
