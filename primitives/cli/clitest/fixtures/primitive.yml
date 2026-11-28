@@ -24,3 +24,18 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/clitest.TestWriteModuleTakesNilFiles
       - test: cmd/gofastr/internal/clitest.TestWriteA11yTree
+decisions:
+  - id: marketing-links-has-its-own-fixture
+    date: 2026-11-28
+    status: accepted
+    decision: MarketingLinksFixtureYAML declares only /, /pricing and, with auth, /login, so a chrome link to /about, /terms or /privacy points at a route the generated app never mounts (#312).
+    rejected:
+      - option: Test the chrome links on examples/meridian/meridian.yml.
+        why: It declares all four chrome routes, so it cannot show a link to an unmounted one.
+  - id: no-query-has-its-own-fixture
+    date: 2026-11-28
+    status: accepted
+    decision: AppSpecWithNoQuery drives a no_query column through the generator end to end.
+    rejected:
+      - option: Rely on the repo's app spec fixtures and the render functions' unit tests.
+        why: No fixture in the repo declares no_query, so the whole emission path would go untested end to end.
