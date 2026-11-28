@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -116,5 +117,35 @@ func TestVersionHeaderRefusalNullsInvalidID(t *testing.T) {
 		if id, ok := resp["id"]; w.Code != http.StatusBadRequest || !ok || id != nil {
 			t.Fatalf("%s = %d %s, want 400 under a null id", name, w.Code, w.Body)
 		}
+	}
+}
+
+// A repeated header is refused as repeated, not as unsupported: each copy may name a revision the server speaks.
+func TestVersionHeaderRepeatedSaysRepeated(t *testing.T) {
+	w := postWithVersionHeader(t, NewServer(), `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, "2025-06-18", "2025-06-18")
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "repeated "+ProtocolVersionHeader) {
+		t.Fatalf("= %d %s, want 400 naming the header as repeated", w.Code, w.Body)
+	}
+}
+
+// The notification stream opens for a client that sends a supported header, as 2025-06-18 clients do on the GET.
+func TestVersionHeaderOpensStreamWhenSupported(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	srv := httptest.NewServer(NewServer().ServeSSE("/mcp"))
+	defer srv.Close()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/mcp", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set(ProtocolVersionHeader, "2025-06-18")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	first, err := bufio.NewReader(resp.Body).ReadString('\n')
+	if resp.StatusCode != http.StatusOK || err != nil || first != "event: endpoint\n" {
+		t.Fatalf("GET under 2025-06-18 = %d, first line %q (%v); want 200 and the endpoint event", resp.StatusCode, first, err)
 	}
 }
