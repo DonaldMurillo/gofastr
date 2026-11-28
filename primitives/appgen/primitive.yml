@@ -17,6 +17,24 @@ invariants:
     rule: App-spec YAML recipes use block mappings and load through the app-spec reader.
     enforced_by:
       - test: cmd/gofastr/internal/appspec.TestRewrittenAppSpecDocExamplesLoad
+  - id: discovered-config-runs-no-command
+    rule: A codegen config found by discovery rather than named with --config may not run a command extension.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestDiscoverGenerateConfigKeepsRefusedConfig
+  - id: app-generate-is-one-shot
+    rule: gofastr generate app refuses to write over any existing target file, the endpoints section of a settings file included, unless --force, and --force names every hand-edited file it replaces.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOverwriteErrorNamesAddPath
+      - test: cmd/gofastr/internal/appgen.TestAppConflictIsOneJSON
+      - test: cmd/gofastr/internal/generatecmd.TestForceNamesHandEditedFiles
+  - id: add-extends-only-what-it-can
+    rule: --add and generate entity|screen refuse a project with the aggregated entities/register.go or screens.go layout, union the project's entities first so a redeclaration (matched by its file name, case and separators folded) is skipped, and write only files that are absent.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestAddRefusesLegacyLayout
+      - test: cmd/gofastr/internal/appgen.TestScaffoldEntityRefusesLegacyLayout
+      - test: cmd/gofastr/internal/appgen.TestAddRefusesAggregatedScreensLayout
+      - test: cmd/gofastr/internal/appgen.TestAddEntityCaseVariantIsRedeclaration
+      - test: cmd/gofastr/internal/appgen.TestAddRedeclaredEntitySkipped
   - id: config-lists-only-derived-generators
     rule: A codegen config that lists a scaffold generator by name is refused, since plain gofastr generate and every build re-run the config, while an extension that shares the name is allowed.
     enforced_by:
