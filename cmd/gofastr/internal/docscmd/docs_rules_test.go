@@ -6,13 +6,18 @@ import (
 	"compress/gzip"
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 )
 
 func TestDocsSiteRefreshReplacesTheCachedCopy(t *testing.T) {
@@ -52,6 +57,9 @@ func TestSwapIntoPlaceKeepsAConcurrentCopy(t *testing.T) {
 }
 
 func TestDocsSiteArchiveCaps(t *testing.T) {
+	if docsSiteMaxEntries != 50_000 || docsSiteMaxExtract != 512<<20 {
+		t.Fatalf("caps = %d entries, %d bytes; the rule says 50,000 entries and 512 MiB", docsSiteMaxEntries, docsSiteMaxExtract)
+	}
 	many := make([]tarEntry, docsSiteMaxEntries+1)
 	for i := range many {
 		many[i] = tarEntry{name: "./", typeflag: tar.TypeDir}
@@ -143,5 +151,50 @@ func TestDocsServeFullRefusesAnInstallWithoutTheBinary(t *testing.T) {
 func TestDocsListenAddrIsLoopback(t *testing.T) {
 	if got := loopbackAddr(8083); got != "127.0.0.1:8083" {
 		t.Fatalf("loopbackAddr = %q", got)
+	}
+}
+
+// The static server is started under forced worktree isolation, so it must
+// both turn isolation off and bind 127.0.0.1 at the port asked for.
+func TestStaticDocsServerListensOnLoopbackAtPort(t *testing.T) {
+	project := t.TempDir()
+	if err := os.WriteFile(filepath.Join(project, "gofastr.settings.yml"), []byte("isolation:\n  mode: always\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(project)
+	t.Setenv(isolation.EnvIsolation, "")
+	export := t.TempDir()
+	if err := os.WriteFile(filepath.Join(export, "index.html"), []byte("<h1>home</h1>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+	app, err := newDocsSiteApp(export)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound := make(chan string, 1)
+	app.OnReady(func(addr string) {
+		bound <- addr
+		go func() { _ = app.Shutdown(context.Background()) }()
+	})
+	done := make(chan error, 1)
+	go func() { done <- startDocsSite(app, docsServeOptions{port: port}) }()
+	select {
+	case addr := <-bound:
+		if want := net.JoinHostPort("127.0.0.1", strconv.Itoa(port)); addr != want {
+			t.Fatalf("static docs server listened on %s, want %s", addr, want)
+		}
+	case err := <-done:
+		t.Fatalf("static docs server exited before listening: %v", err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("static docs server never listened")
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("startDocsSite = %v", err)
 	}
 }
