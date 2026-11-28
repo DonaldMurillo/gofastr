@@ -1,0 +1,78 @@
+primitive: cli.deploy.server
+summary: The bash scripts and systemd units gofastr deploy sends a server - install, rollback and status under one per-app lock, the release order, the health probe, recovery to the release before, and the app and socket units.
+code:
+  - cmd/gofastr/internal/deploycmd/script.go
+docs:
+  - framework/docs/content/deploy.md
+on_change:
+  - Every path in a script starts with $ROOT, empty on a server, so the deploy tests run the real scripts on this machine with stubs for systemctl, useradd and journalctl; a path without it is a path the tests never touch.
+invariants:
+  - id: unit-keeps-the-app-up
+    rule: The unit runs the app as its own user and group, writable only under its state directory with HOME and XDG_STATE_HOME there, restarts it always with StartLimitIntervalSec=0, and sets GOFASTR_ENV=production before the release's env file so the env file can override it.
+    enforced_by:
+      - test: cmd/gofastr/internal/deploycmd.TestUnitKeepsTheAppUpAndInProduction
+  - id: health-is-a-2xx-answer
+    rule: A release passes only when systemd reports it active and it answers the health path with a 2xx status within --wait seconds, each probe cut off after two seconds.
+    enforced_by:
+      - test: cmd/gofastr/internal/deploycmd.TestHealthCheckReadsTheAnswer
+      - test: cmd/gofastr/internal/deploycmd.TestProbeDoesNotWaitForEver
+      - test: cmd/gofastr/internal/deploycmd.TestWaitIsElapsedSeconds
+  - id: failed-release-recovers
+    rule: A release that fails activation or its health check is marked failed and replaced by the newest ready release before it, reported ROLLED-BACK only when that one passes its check and DOWN otherwise.
+    enforced_by:
+      - test: cmd/gofastr/internal/deploycmd.TestDeployLifecycle
+      - test: cmd/gofastr/internal/deploycmd.TestFirstReleaseThatFails
+      - test: cmd/gofastr/internal/deploycmd.TestRollbackThatDoesNotComeUpIsNotCalledARollback
+      - test: cmd/gofastr/internal/deploycmd.TestActivationFailureRecoversTheRunningRelease
+  - id: one-script-at-a-time
+    rule: Install and rollback run under an exclusive flock on <app>/.deploy.lock, so a second waits for the first.
+    enforced_by:
+      - test: cmd/gofastr/internal/deploycmd.TestDeployAndRollbackWaitForTheAppLock
+  - id: release-dir-is-new
+    rule: Install refuses a release directory that already exists, and removes the upload.
+    enforced_by:
+      - test: cmd/gofastr/internal/deploycmd.TestInstallRefusesAnExistingReleaseDirectory
+  - id: retention-by-server-order
+    rule: The server's .release-order file, reconciled with the ready release directories, decides rollback and pruning, and install keeps the running release and the --keep releases before it.
+    enforced_by:
+      - test: cmd/gofastr/internal/deploycmd.TestOldReleasesArePruned
+      - test: cmd/gofastr/internal/deploycmd.TestRollbackFollowsServerOrderForEqualClientTimestamps
+      - test: cmd/gofastr/internal/deploycmd.TestRetentionFollowsServerOrderForEqualClientTimestamps
+      - test: cmd/gofastr/internal/deploycmd.TestDeployReconcilesUnrecordedReleases
+      - test: cmd/gofastr/internal/deploycmd.TestDeployRetainsLastActivatedReleaseAfterInterruption
+  - id: release-carries-its-settings
+    rule: Each release keeps its own env file, health settings and units, and activating it, by deploy or rollback, installs those.
+    enforced_by:
+      - test: cmd/gofastr/internal/deploycmd.TestHealthSettingsFollowEachRelease
+      - test: cmd/gofastr/internal/deploycmd.TestEnvironmentFollowsEachRelease
+      - test: cmd/gofastr/internal/deploycmd.TestRollbackRestoresTheReleasesOwnUnits
+      - test: cmd/gofastr/internal/deploycmd.TestLegacyReleaseUsesInvocationHealth
+  - id: socket-held-for-the-app
+    rule: For a binary that takes a socket, the release carries a socket unit on the app's port and the service Requires and starts After it.
+    enforced_by:
+      - test: cmd/gofastr/internal/deploycmd.TestPortIsHeldBySystemdWhenTheAppCanTakeIt
+decisions:
+  - id: systemd-holds-the-port
+    date: 2026-11-28
+    status: accepted
+    decision: A binary that can take a socket from systemd gets its port from a socket unit systemd keeps open.
+    rejected:
+      - option: Let every app open its own port.
+        why: Between two releases and after a crash the port is closed and connections are refused, where a held socket queues them for the app that starts next.
+    upholds: [socket-held-for-the-app]
+  - id: no-start-limit
+    date: 2026-11-28
+    status: accepted
+    decision: The unit sets StartLimitIntervalSec=0 and Restart=always.
+    rejected:
+      - option: systemd's default start limit.
+        why: An app that failed five times in ten seconds is left stopped until someone logs in.
+    upholds: [unit-keeps-the-app-up]
+  - id: production-unless-the-env-says
+    date: 2026-11-28
+    status: accepted
+    decision: The unit sets GOFASTR_ENV=production ahead of the env file.
+    rejected:
+      - option: Leave the environment to the env file.
+        why: An env file copied from a laptop often carries GOFASTR_DEV, which would turn on the ungated MCP tools and livereload on a public server.
+    upholds: [unit-keeps-the-app-up]
