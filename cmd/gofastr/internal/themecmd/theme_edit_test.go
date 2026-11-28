@@ -1,6 +1,7 @@
 package themecmd
 
 import (
+	"encoding/hex"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -161,13 +162,13 @@ func TestThemeEditWritebackProducesParseableGo(t *testing.T) {
 	}
 }
 
-// A theme carrying dark overrides (the compiled style.Theme.DarkColors
-// the editor works in) must survive the write-back intact: the emitted
-// file re-declares the dark palette key for key, so an app that saves
-// keeps its dark mode. This is the round-trip for a theme built with
-// theme.Overrides{Dark: &theme.Overrides{…}} — the typed dark config.
 func TestThemeEditWritebackIsByteStable(t *testing.T) {
 	th := uitheme.Default()
+	th.DarkCode, th.Components, th.Knobs = map[string]string{}, map[string]string{}, map[string]string{}
+	for i := range 16 {
+		k := "key" + strconv.Itoa(i)
+		th.DarkCode[k], th.Components[k], th.Knobs[k] = "a", "b", "c"
+	}
 	first, err := emitThemeGoSource(th, "theme")
 	if err != nil {
 		t.Fatal(err)
@@ -179,6 +180,11 @@ func TestThemeEditWritebackIsByteStable(t *testing.T) {
 	}
 }
 
+// A theme carrying dark overrides (the compiled style.Theme.DarkColors
+// the editor works in) must survive the write-back intact: the emitted
+// file re-declares the dark palette key for key, so an app that saves
+// keeps its dark mode. This is the round-trip for a theme built with
+// theme.Overrides{Dark: &theme.Overrides{…}} — the typed dark config.
 func TestThemeEditWritebackRoundTripsDarkPalette(t *testing.T) {
 	th := uitheme.Default(uitheme.Overrides{
 		Primary: "#0F766E",
@@ -555,6 +561,16 @@ func TestThemeEditWritebackHTTP(t *testing.T) {
 	}
 }
 
+func TestThemeEditTokenIs32RandomBytes(t *testing.T) {
+	tok, err := NewThemeEditToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw, err := hex.DecodeString(tok); err != nil || len(raw) != 32 {
+		t.Fatalf("token %q is not 32 hex-encoded bytes (err %v)", tok, err)
+	}
+}
+
 // The Host guard rejects a request whose Host header is not one of the
 // pinned loopback authorities, the DNS-rebinding defence.
 func TestThemeEditHostGuard(t *testing.T) {
@@ -871,6 +887,9 @@ func TestThemeEditApplyMalformedBody(t *testing.T) {
 }
 
 func TestThemeEditApplyCapsTheBody(t *testing.T) {
+	if maxThemeEditBody != 64<<10 {
+		t.Fatalf("maxThemeEditBody = %d, the rule says 64 KiB", maxThemeEditBody)
+	}
 	srv := newTestServer(t)
 	rec := httptest.NewRecorder()
 	body := `{"key":"color-primary","value":"` + strings.Repeat("a", maxThemeEditBody) + `"}`
@@ -1034,8 +1053,8 @@ func TestThemeEditControlsPageShowsTheWorkingTheme(t *testing.T) {
 	if got := rec.Header().Get("X-Frame-Options"); got != "DENY" {
 		t.Errorf("X-Frame-Options = %q, want DENY — otherwise any page the developer has open can clickjack Write", got)
 	}
-	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'none'") {
-		t.Errorf("Content-Security-Policy = %q, want frame-ancestors 'none'", csp)
+	if csp := rec.Header().Get("Content-Security-Policy"); csp != "frame-ancestors 'none'; base-uri 'none'" {
+		t.Errorf("Content-Security-Policy = %q, want exactly frame-ancestors 'none'; base-uri 'none'", csp)
 	}
 }
 

@@ -19,15 +19,20 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/themecmd.TestThemeEditHostGuard
   - id: api-needs-the-session-token
-    rule: Every /__theme/ endpoint needs the session's bearer token, compared in constant time, and apply and writeback are POST only and refuse a foreign Origin, while a request with no Origin passes.
+    rule: Every /__theme/ endpoint needs the session's bearer token, and apply and writeback are POST only and refuse a foreign Origin, while a request with no Origin passes.
     enforced_by:
       - test: cmd/gofastr/internal/themecmd.TestThemeEditApplyRequiresBearerToken
       - test: cmd/gofastr/internal/themecmd.TestThemeEditCheckOriginRejectsForeignOrigin
       - test: cmd/gofastr/internal/themecmd.TestThemeEditWritebackMethodGuard
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditWritebackHTTP
+  - id: token-compared-in-constant-time
+    rule: checkBearer compares the Authorization header with the expected bearer value through subtle.ConstantTimeCompare.
+    judge: Does this change compare the bearer token, or anything derived from it, with ==, !=, bytes.Equal or another comparison that returns at the first differing byte?
   - id: token-is-per-session
     rule: The bearer token is 32 fresh random bytes per run, never the harness signing key, and reaches the page only in a meta tag.
     enforced_by:
       - test: cmd/gofastr.TestThemeEditTokenIsNotTheHarnessSigningKey
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditTokenIs32RandomBytes
   - id: apply-boundary
     rule: An apply reads at most 64 KiB of strict JSON, refuses duplicate or case-folded keys, and changes the working theme only when the whole edited theme passes Validate, the check app.WithTheme runs at boot.
     enforced_by:
@@ -103,6 +108,14 @@ decisions:
       - option: Reuse the harness's derived listener secret.
         why: With GOFASTR_HARNESS_MACHINE_KEY set it is the key that signs every harness control-plane token, and the unauthenticated controls page would publish it.
     upholds: [token-is-per-session]
+  - id: token-in-a-meta-tag
+    date: 2026-11-28
+    status: accepted
+    decision: The controls page carries the bearer token in a meta tag, and its script sends it as Authorization Bearer on every call.
+    rejected:
+      - option: Put the token in the page URL's query string.
+        why: A query string leaks through the Referer header, browser history and server logs.
+    upholds: [token-is-per-session, api-needs-the-session-token]
   - id: refuse-explicit-lan-bind
     date: 2026-11-28
     status: accepted
@@ -118,6 +131,17 @@ decisions:
     rejected:
       - option: Serve it as a separate asset.
         why: It is per-session glue between the controls and the preview iframe, and an asset route for it costs more than it saves on a loopback dev tool.
+      - option: Move the script into a .js file in the repository.
+        why: It would put a dev tool's page under the shipped-JS lints (no var, own-property reads, reserved-key writes, Trusted Types sinks, host fetch) that exist for the runtime apps load.
+  - id: csp-frames-and-base-only
+    date: 2026-11-28
+    status: accepted
+    decision: The controls page's Content-Security-Policy is exactly frame-ancestors 'none' and base-uri 'none', beside X-Frame-Options DENY.
+    rejected:
+      - option: Add a default-src policy.
+        why: It would block the page's one inline bootstrap script and break the tool, while framing, which the Host and Origin pins do not stop, is the threat that was open.
+    revisit_if: The bootstrap script leaves the page, so a script-src policy could forbid inline script.
+    upholds: [page-shows-the-working-theme]
   - id: check-runs-in-the-browser
     date: 2026-11-28
     status: accepted
