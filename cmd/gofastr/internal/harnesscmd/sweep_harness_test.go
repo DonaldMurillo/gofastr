@@ -65,7 +65,7 @@ func TestChatJSEscapeDenies(t *testing.T) {
 }
 
 // The listener's guards are pinned to the authority it bound: the chat page,
-// the REST API and its Origin check all refuse another host.
+// the REST API, its Origin check and the WebSocket all refuse another host.
 func TestHTTPListenerPinsTheBoundAuthority(t *testing.T) {
 	t.Setenv("GOFASTR_HARNESS_MACHINE_KEY", "")
 	prof, err := profile.Embedded("default")
@@ -121,5 +121,29 @@ func TestHTTPListenerPinsTheBoundAuthority(t *testing.T) {
 	}
 	if code, _ := get("/v1/sessions", bound, "http://evil.example"); code != http.StatusForbidden {
 		t.Errorf("REST with a cross-site Origin: %d, want 403", code)
+	}
+	upgrade := func(host string) int {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, url+"/v1/ws?session="+string(sess)+"&token="+token, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Host = host
+		req.Header.Set("Connection", "Upgrade")
+		req.Header.Set("Upgrade", "websocket")
+		req.Header.Set("Sec-WebSocket-Version", "13")
+		req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = res.Body.Close()
+		return res.StatusCode
+	}
+	if code := upgrade(bound); code != http.StatusSwitchingProtocols {
+		t.Errorf("WebSocket on the bound Host: %d, want 101", code)
+	}
+	if code := upgrade("rebound.example:" + strings.Split(bound, ":")[1]); code != http.StatusForbidden {
+		t.Errorf("WebSocket on a rebound Host: %d, want 403", code)
 	}
 }
