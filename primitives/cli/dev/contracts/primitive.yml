@@ -1,6 +1,59 @@
 primitive: cli.dev.contracts
-summary: The dev loop's contract report - after each reload it runs the contract pipeline in the background and prints the findings in the files that changed, once per distinct report.
+summary: The dev loop's contract report - after each reload it runs the contract pipeline over the whole tree in the background and prints the findings in the files that changed, once per distinct report.
 code:
   - cmd/gofastr/internal/devcmd/dev_contracts.go
 docs:
   - framework/docs/content/cli.md
+on_change:
+  - "`gofastr verify` prints the full report with reasons and fixes; this one stays a compact pointer to it."
+invariants:
+  - id: one-pass-at-a-time
+    rule: Run returns at once and never starts a second analysis while one runs; any number of calls during it queue exactly one trailing pass, which reads the latest source.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestDevWatchRunsTrailingSave
+      - test: cmd/gofastr/internal/devcmd.TestDevWatchDoesNotOverlapRuns
+      - test: cmd/gofastr/internal/devcmd.TestDevWatchIsConcurrencySafe
+  - id: report-only-what-changed
+    rule: The pipeline runs over the whole tree, and the report keeps only findings in the files contracts.ChangedFiles names; outside a repository nothing narrows, and when the changed set cannot be computed the whole tree is shown with a line saying so.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestWatcherNarrowsToChangedFiles
+      - test: cmd/gofastr/internal/devcmd.TestWatcherSaysWhenTheChangedSetIsUnavailable
+  - id: print-a-change-once
+    rule: A report, an analysis failure, or the move to clean after findings is printed once; the same report or failure on the next save prints nothing, and a clean tree is announced only when the last report had findings.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestWatcherPrintsAReportOnceAndAnnouncesClean
+      - test: cmd/gofastr/internal/devcmd.TestWatcherReportsAnUnreadableTree
+  - id: analysis-failure-is-reported
+    rule: A failure of the analysis itself (scan, config, run or baseline, the baseline read from contracts.BaselineFileName under the root) is printed as a warning and no findings are shown, never a silent return.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestWatcherReportsAnUnreadableTree
+      - test: cmd/gofastr/internal/devcmd.TestWatcherReportsACorruptBaseline
+  - id: compact-scrubbed-summary
+    rule: Summarise prints at most devContractMaxLines findings as rule ID, location and message, location and message through textsafe.ScrubTerminal, then how many more, the --explain hint, and a --rule --fix hint only for the first finding that carries a fix.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestDevSummaryIsCompactAndActionable
+      - test: cmd/gofastr/internal/devcmd.TestDevSummaryCapsTheWall
+      - test: cmd/gofastr/internal/devcmd.TestDevSummaryOffersTheFixOnlyWhenOneExists
+      - test: cmd/gofastr/internal/devcmd.TestDevSummaryScrubsRepoText
+  - id: a-panic-is-a-warning
+    rule: A panic during an analysis pass is recovered and printed as a contracts warning, and the watch can run again.
+    judge: Does this change let a panic in analyse escape the goroutine Run starts, or leave running set after one?
+decisions:
+  - id: after-the-reload
+    date: 2026-11-28
+    status: accepted
+    decision: The dev loop runs the contract analysis after the app has restarted, in the background, and prints when it is ready.
+    rejected:
+      - option: Analyse before the restart, as a gate.
+        why: Analysis takes about a second on a large tree, and a second added to every save makes a loop people turn off.
+    upholds: [one-pass-at-a-time]
+  - id: narrow-the-report-not-the-run
+    date: 2026-11-28
+    status: accepted
+    decision: The analysis covers the whole tree and only the report is limited to the changed files.
+    rejected:
+      - option: Analyse only the changed files.
+        why: Route tables and entity lists mean something only over the whole tree.
+      - option: Report the whole tree.
+        why: Findings in code nobody touched are noise in a loop that asks what the last save broke.
+    upholds: [report-only-what-changed]
