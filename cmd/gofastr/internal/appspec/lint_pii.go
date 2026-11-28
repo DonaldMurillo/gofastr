@@ -13,7 +13,7 @@ type piiFinding struct {
 	Fields []string
 }
 
-// Message names the entity, its PII-shaped fields and every remedy; enabling auth alone is not one.
+// Message names the entity, its PII-shaped fields and every remedy.
 func (f piiFinding) Message() string {
 	return fmt.Sprintf(
 		"entity %q exposes PII-shaped field(s) %s via auto-CRUD/MCP with no scoping. Set owner_field: <column> for per-user rows, require a permission in access.read (RBAC), or set multi_tenant: true",

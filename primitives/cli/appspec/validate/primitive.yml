@@ -214,6 +214,6 @@ decisions:
   - id: static-dir-dot-directories-are-served
     date: 2026-11-28
     status: accepted
-    decision: Kept for now as an open security finding awaiting the maintainers' decision; staticDirProblem refuses no dot-directory, so app.static_dir .git, or any other directory whose name starts with a dot, passes validate and the app would serve the repository's history and config to anyone.
-    revisit_if: The maintainers decide whether a static_dir with any segment starting with a dot is refused, as mount-paths-are-clean already does for app.auth.base_path and app.admin.path.
+    decision: Kept for now as an open security finding, tracked in issue 938; staticDirProblem refuses no dot-directory, so app.static_dir .git, or any other directory whose name starts with a dot, passes validate and the app would serve the repository's history and config to anyone.
+    revisit_if: Issue 938 is decided, on whether a static_dir with any segment starting with a dot is refused, as mount-paths-are-clean already does for app.auth.base_path and app.admin.path.
     upholds: [static-dir-serves-no-app-file]

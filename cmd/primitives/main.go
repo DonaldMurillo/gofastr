@@ -160,7 +160,9 @@ func printTwins(w io.Writer, twins []primitives.Twin) {
 			fmt.Fprintf(w, "  %s: %s\n", site.Path, site.Note)
 		}
 		fmt.Fprintf(w, "  Not one implementation yet because: %s\n", twin.Why)
-		fmt.Fprintln(w, "  In this repository a fix to one of these is not finished until every site has it. Fix them all, or say why a site is exempt. Better still, make them one.")
+		fmt.Fprintln(w, "  Read the applicable registry rules for each site. Probe related inputs against the shared rule.")
+		fmt.Fprintln(w, "  Fix reproducible violations in this change and cover valid behavior with regression tests.")
+		fmt.Fprintln(w, "  Explain any site that needs no change. Share the implementation when the sites can keep the same contract.")
 	}
 }
 

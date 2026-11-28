@@ -96,8 +96,8 @@ decisions:
   - id: livereload-has-no-host-pin
     date: 2026-11-28
     status: accepted
-    decision: On a loopback bind the hold's /__livereload answers whatever Host the request names; the Host pin covers only the build output on the page, an open finding from the review of PR 933 left as it was because that sweep changed no behaviour.
+    decision: On a loopback bind the hold's /__livereload answers whatever Host the request names; the Host pin covers only the build output on the page, an open finding from the review of PR 933, tracked in issue 941, left as it was because that sweep changed no behaviour.
     rejected:
       - option: Refuse /__livereload to a Host outside h.hosts, as the rest of the hold withholds its output.
         why: Not done yet; the stream carries only the hold's own IDs and no output, so a rebound page learns at most when the build state changes.
-    revisit_if: The hold's stream carries anything beyond an ID, or the next change to the hold's Host handling, which should pin /__livereload as well.
+    revisit_if: Issue 941 is decided, the hold's stream carries anything beyond an ID, or the next change to the hold's Host handling, which should pin /__livereload as well.

@@ -11,13 +11,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/notify"
 )
 
-// captureSender records the last email handed to it.
+// captureSender records whether Send ran and the last email it received.
 type captureSender struct {
-	last email.Email
-	err  error
+	called bool
+	last   email.Email
+	err    error
 }
 
 func (c *captureSender) Send(_ context.Context, e email.Email) error {
+	c.called = true
 	c.last = e
 	return c.err
 }
@@ -106,125 +108,74 @@ func TestMapTemplater_CapsInterpolatedOutput(t *testing.T) {
 func TestEmailChannel_RejectsUnsafeRenderedHeaders(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name       string
-		header     map[string]string
-		rejectedAs string // "<shape> was accepted. Attack: <attack>." failure text
-		despite    string // "<shape>" in the sender-invoked failure text
+		name   string
+		header map[string]string
 	}{
 		{
-			name:       "crlf_header_name",
-			header:     map[string]string{"X-Trace\r\nBcc: attacker@example.com": "1"},
-			rejectedAs: "custom header name with CR/LF was accepted. Attack: Bcc smuggling through rendered Extra.headers.",
-			despite:    "unsafe custom header name",
+			name:   "crlf_header_name",
+			header: map[string]string{"X-Trace\r\nBcc: attacker@example.com": "1"},
 		},
 		{
-			name:       "crlf_header_value",
-			header:     map[string]string{"X-Trace": "ok\r\nBcc: attacker@example.com"},
-			rejectedAs: "custom header value with CR/LF was accepted. Attack: forged SMTP headers through rendered Extra.headers.",
-			despite:    "unsafe custom header value",
+			name:   "crlf_header_value",
+			header: map[string]string{"X-Trace": "ok\r\nBcc: attacker@example.com"},
 		},
 		{
-			name:       "reserved_bcc_override",
-			header:     map[string]string{"Bcc": "attacker@example.com"},
-			rejectedAs: "reserved Bcc header override was accepted. Attack: hidden recipient smuggling from notification data.",
-			despite:    "reserved Bcc header override",
+			name:   "reserved_bcc_override",
+			header: map[string]string{"Bcc": "attacker@example.com"},
 		},
 		{
-			name:       "reserved_content_type_override",
-			header:     map[string]string{"Content-Type": "multipart/alternative; boundary=evil"},
-			rejectedAs: "reserved Content-Type override was accepted. Attack: caller-controlled MIME structure through rendered Extra.headers.",
-			despite:    "reserved Content-Type override",
+			name:   "reserved_content_type_override",
+			header: map[string]string{"Content-Type": "multipart/alternative; boundary=evil"},
 		},
 		{
-			name:       "reserved_from_override",
-			header:     map[string]string{"From": "ceo@company.example"},
-			rejectedAs: "reserved From header override was accepted. Attack: duplicate From header spoofing via rendered Extra.headers.",
-			despite:    "reserved From header override",
+			name:   "reserved_from_override",
+			header: map[string]string{"From": "ceo@company.example"},
 		},
 		{
-			name:       "reserved_reply_to_override",
-			header:     map[string]string{"Reply-To": "attacker@example.com"},
-			rejectedAs: "reserved Reply-To header override was accepted. Attack: reply-hijack / phishing through rendered Extra.headers.",
-			despite:    "reserved Reply-To header override",
+			name:   "reserved_reply_to_override",
+			header: map[string]string{"Reply-To": "attacker@example.com"},
 		},
 		{
-			name:       "reserved_sender_override",
-			header:     map[string]string{"sender": "ceo@company.example"},
-			rejectedAs: "reserved Sender header override was accepted. Attack: sender spoofing through rendered Extra.headers.",
-			despite:    "reserved Sender header override",
+			name:   "reserved_sender_override",
+			header: map[string]string{"sender": "ceo@company.example"},
 		},
 		{
-			name:       "esc_header_value",
-			header:     map[string]string{"X-Trace": "total:\x1b]0;pwned\x07"},
-			rejectedAs: "custom header value with an ESC control byte was accepted. Attack: terminal-title spoofing, the byte pair the SMTP battery's header rule refuses.",
-			despite:    "ESC control byte in custom header value",
+			name:   "esc_header_value",
+			header: map[string]string{"X-Trace": "total:\x1b]0;pwned\x07"},
 		},
 		{
-			name:       "bidi_header_value",
-			header:     map[string]string{"X-Trace": "user\u202Eadmin.com"},
-			rejectedAs: "custom header value with a bidi override (U+202E) was accepted. Attack: display spoofing — the value reads as another in every MUA.",
-			despite:    "bidi override in custom header value",
+			name:   "bidi_header_value",
+			header: map[string]string{"X-Trace": "user\u202Eadmin.com"},
 		},
 		{
-			name:       "reserved_resent_bcc_override",
-			header:     map[string]string{"Resent-Bcc": "attacker@example.com"},
-			rejectedAs: "reserved Resent-Bcc header override was accepted. Attack: blind-recipient smuggling through the resent copy of the message.",
-			despite:    "reserved Resent-Bcc header override",
+			name:   "reserved_resent_bcc_override",
+			header: map[string]string{"Resent-Bcc": "attacker@example.com"},
 		},
 		{
-			name:       "empty_header_name",
-			header:     map[string]string{"": "custom"},
-			rejectedAs: "an empty header name was accepted",
-			despite:    "an empty header name",
+			name:   "empty_header_name",
+			header: map[string]string{"": "custom"},
 		},
 		{
-			name:       "space_in_header_name",
-			header:     map[string]string{" X-Trace": "custom"},
-			rejectedAs: "a header name with a leading space was accepted",
-			despite:    "a header name with a leading space",
+			name:   "space_in_header_name",
+			header: map[string]string{" X-Trace": "custom"},
 		},
 		{
-			name:       "non_ascii_header_name",
-			header:     map[string]string{"X-Café": "custom"},
-			rejectedAs: "a non-ASCII header name was accepted",
-			despite:    "a non-ASCII header name",
+			name:   "non_ascii_header_name",
+			header: map[string]string{"X-Café": "custom"},
 		},
 		{
-			name:       "duplicate_header_name",
-			header:     map[string]string{"X-Trace": "first", "x-trace": "second"},
-			rejectedAs: "case-insensitive duplicate headers were accepted",
-			despite:    "case-insensitive duplicate headers",
+			name:   "duplicate_header_name",
+			header: map[string]string{"X-Trace": "first", "x-trace": "second"},
 		},
 		{
-			name:       "unfoldable_header_value",
-			header:     map[string]string{"X-Trace": strings.Repeat("x", 998)},
-			rejectedAs: "an overlong header with no fold point was accepted",
-			despite:    "an overlong header with no fold point",
+			name:   "unfoldable_header_value",
+			header: map[string]string{"X-Trace": strings.Repeat("x", 998)},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			sender := &captureSender{}
-			ch := notify.NewEmailChannel(sender, "from@example.com")
-			err := ch.Send(context.Background(), notify.Notification{
-				To: notify.Recipient{Email: "alice@example.com"},
-			}, notify.Rendered{
-				Subject:  "hi",
-				TextBody: "body",
-				Extra: map[string]any{
-					"headers": tc.header,
-				},
-			})
-			if err == nil {
-				t.Fatalf("SECURITY: [notify-email] %s", tc.rejectedAs)
-			}
-			if !errors.Is(err, notify.ErrUnsafeHeader) {
-				t.Fatalf("SECURITY: [notify-email] %s refused with %v, want ErrUnsafeHeader", tc.despite, err)
-			}
-			if len(sender.last.To) != 0 || sender.last.Subject != "" || len(sender.last.Headers) != 0 {
-				t.Fatalf("SECURITY: [notify-email] sender invoked despite %s: %#v", tc.despite, sender.last)
-			}
+			assertEmailExtraRejected(t, map[string]any{"headers": tc.header})
 		})
 	}
 }
@@ -233,40 +184,26 @@ func TestEmailChannel_RejectsUnsafeRenderedHeaders(t *testing.T) {
 // a rendered copy is refused with the other structure headers.
 func TestEmailChannel_RejectsTransferEncodingOverride(t *testing.T) {
 	t.Parallel()
-	sender := &captureSender{}
-	ch := notify.NewEmailChannel(sender, "from@example.com")
-	err := ch.Send(context.Background(), notify.Notification{
-		To: notify.Recipient{Email: "alice@example.com"},
-	}, notify.Rendered{
-		Subject:  "hi",
-		TextBody: "body",
-		Extra: map[string]any{
-			"headers": map[string]string{"Content-Transfer-Encoding": "base64"},
-		},
-	})
-	if !errors.Is(err, notify.ErrUnsafeHeader) {
-		t.Fatalf("Content-Transfer-Encoding override: %v, want ErrUnsafeHeader", err)
-	}
+	assertEmailExtraRejected(t, map[string]any{"headers": map[string]string{"Content-Transfer-Encoding": "base64"}})
 }
 
 func TestEmailChannel_RejectsRenderedFromOverride(t *testing.T) {
 	t.Parallel()
+	assertEmailExtraRejected(t, map[string]any{"from": "ceo@company.example"})
+}
+
+func assertEmailExtraRejected(t *testing.T, extra map[string]any) {
+	t.Helper()
 	sender := &captureSender{}
 	ch := notify.NewEmailChannel(sender, "from@example.com")
 	err := ch.Send(context.Background(), notify.Notification{
 		To: notify.Recipient{Email: "alice@example.com"},
-	}, notify.Rendered{
-		Subject:  "hi",
-		TextBody: "body",
-		Extra: map[string]any{
-			"from": "ceo@company.example",
-		},
-	})
-	if err == nil {
-		t.Fatalf("SECURITY: [notify-email] rendered from override was accepted. Attack: sender spoofing via templated notification data.")
+	}, notify.Rendered{Subject: "hi", TextBody: "body", Extra: extra})
+	if !errors.Is(err, notify.ErrUnsafeHeader) {
+		t.Errorf("rendered Extra: err = %v, want ErrUnsafeHeader", err)
 	}
-	if len(sender.last.To) != 0 || sender.last.Subject != "" || sender.last.From != "" {
-		t.Fatalf("SECURITY: [notify-email] sender invoked despite rendered from override: %#v", sender.last)
+	if sender.called {
+		t.Error("sender invoked despite unsafe rendered Extra")
 	}
 }
 
