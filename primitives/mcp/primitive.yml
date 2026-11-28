@@ -94,6 +94,11 @@ invariants:
       - test: core/mcp.TestVersionHeaderLeavesInitializeToNegotiation
       - test: core/mcp.TestVersionHeaderRefusesNotification
       - test: core/mcp.TestVersionHeaderRefusesStream
+  - id: transport-refusals-null-invalid-ids
+    rule: A refusal the HTTP transports answer before HandleRequest (an unsupported MCP-Protocol-Version header, a modern header mismatch) answers under the request's id when it is a string, a number or null, and under a null id otherwise.
+    enforced_by:
+      - test: core/mcp.TestVersionHeaderRefusalNullsInvalidID
+      - test: core/mcp.TestModernHeaderMismatchNullsInvalidID
   - id: modern-requests-are-stateless
     rule: A request whose params._meta carries io.modelcontextprotocol/protocolVersion is served without initialize under that revision; a non-string value answers -32602 and a revision outside the modern list (2026-07-28) answers -32022 with data.supported listing SupportedProtocolVersions and data.requested echoing at most 64 bytes of the request.
     enforced_by:
