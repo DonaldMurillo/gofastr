@@ -127,3 +127,17 @@ func TestJSONOutputIsScrubbed(t *testing.T) {
 		}
 	}
 }
+
+func TestTornJSONLineEscapesUnsafeRunes(t *testing.T) {
+	torn := "{\"msg\":\"a\u009b2Jb‮c⁦d‏e torn"
+	got := string(jsonLine([]byte(torn)))
+	for _, r := range got {
+		if r >= 0x20 && textsafe.IsUnsafe(r) {
+			t.Fatalf("U+%04X reached the output: %q", r, got)
+		}
+	}
+	var text string
+	if err := json.Unmarshal([]byte(got), &text); err != nil || text != torn {
+		t.Errorf("the torn line reads as %q (err %v), want %q", text, err, torn)
+	}
+}
