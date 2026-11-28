@@ -1,0 +1,6 @@
+primitive: cli.dev.watch
+summary: The dev loop's file watch - it reads the build target's package graph with go list, polls the project's source and embedded-asset files every 500ms and reports a change, telling a save from the graph moving files into or out of the walk.
+code:
+  - cmd/gofastr/internal/devcmd/dev_watch.go
+docs:
+  - framework/docs/content/cli.md

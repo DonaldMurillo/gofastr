@@ -1,0 +1,6 @@
+primitive: cli.dev.contracts
+summary: The dev loop's contract report - after each reload it runs the contract pipeline in the background and prints the findings in the files that changed, once per distinct report.
+code:
+  - cmd/gofastr/internal/devcmd/dev_contracts.go
+docs:
+  - framework/docs/content/cli.md

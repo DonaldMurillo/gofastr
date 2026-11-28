@@ -1,0 +1,6 @@
+primitive: cli.dev.hold
+summary: The dev hold - a server on the dev address while no app serves it (during a build, after a failed build, after the app exits) that answers 503 with what is going on and a livereload stream, and lets go of the address right before the app starts.
+code:
+  - cmd/gofastr/internal/devcmd/dev_hold.go
+docs:
+  - framework/docs/content/dev-livereload.md

@@ -1,0 +1,8 @@
+primitive: cli.dev.process
+summary: The dev loops' child processes - the private directory and path of the rebuilt binary, the go build with its heartbeat and interrupt, and how the app is stopped and tied to the loop's life.
+code:
+  - cmd/gofastr/internal/devcmd/dev_process.go
+  - cmd/gofastr/internal/devcmd/buildproc_*.go
+  - cmd/gofastr/internal/devcmd/serverproc_*.go
+docs:
+  - framework/docs/content/cli.md

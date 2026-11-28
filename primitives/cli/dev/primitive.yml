@@ -1,7 +1,9 @@
-primitive: devcmd
-summary: The `gofastr dev` loop - it watches the app's package graph, rebuilds the dev server binary on save and restarts it.
+primitive: cli.dev
+summary: "`gofastr dev`: RunDev parses the flags, builds the child's environment and runs the loop that gates, builds and starts the app and rebuilds it on every change the watch reports; children own the watch, the build and process control, the hold page and the contract report."
 code:
   - cmd/gofastr/internal/devcmd/dev.go
+  - cmd/gofastr/internal/devcmd/doc.go
+  - cmd/gofastr/internal/devcmd/subcommand_usage.go
 docs:
   - framework/docs/content/cli.md
 invariants:
