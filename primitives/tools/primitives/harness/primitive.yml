@@ -1,0 +1,90 @@
+primitive: tools.primitives.harness
+summary: The Claude Code hooks behind primitives hook and primitives stop - the same-job notice after a tool call, and the stop check that runs vet and tests over changed packages and asks what else a change needs.
+code:
+  - cmd/primitives/harness.go
+  - cmd/primitives/run_test.go
+docs:
+  - primitives/README.md
+on_change:
+  - The hooks are wired in .claude/settings.json and again in evals/primitives/cmd/primitives-eval/tasks.go for the hook and harness conditions; a change to how they are invoked, or to the stop timeout, changes both.
+invariants:
+  - id: stop-speaks-through-stdout
+    rule: stop always exits 0 and sends an agent back only by printing a block decision as JSON on stdout, because the hook runs through go run, which reports every failing exit as 1, and Claude Code blocks only on 2.
+    enforced_by:
+      - test: cmd/primitives.TestStop
+      - test: cmd/primitives.TestStopBlocksOnARegistryThatCannotBeRead
+      - test: cmd/primitives.TestStopBlocksWhenGeneratedFilesCannotBeChecked
+  - id: a-session-is-sent-back-once
+    rule: An event with stop_hook_active set is let go without a check, including when the registry cannot be read, so a failure the agent cannot fix does not hold the session forever.
+    enforced_by:
+      - test: cmd/primitives.TestStop
+      - test: cmd/primitives.TestStopBlocksOnARegistryThatCannotBeRead
+  - id: broken-registry-blocks
+    rule: stop blocks on a registry that cannot be read, that does not parse, whose lint has findings, or whose generated files are stale or cannot be checked.
+    enforced_by:
+      - test: cmd/primitives.TestStopBlocksOnARegistryThatCannotBeRead
+      - test: cmd/primitives.TestStopBlocksOnARegistryThatDoesNotParse
+      - test: cmd/primitives.TestStopBlocksWhenGeneratedFilesCannotBeChecked
+  - id: comment-only-edits-skip-the-check
+    rule: "A Go file whose token stream, ordinary comments dropped, equals its base version is left out of the check; //go:, //gofastr: and // +build comments count as code, and a new, gone or unreadable file is never comment-only."
+    enforced_by:
+      - test: cmd/primitives.TestStop
+  - id: each-module-runs-its-own-packages
+    rule: Changed packages are vetted and tested grouped by the nearest go.mod above them, each group from its own module directory.
+    enforced_by:
+      - test: cmd/primitives.TestStopRunsNestedModuleInItsOwnModule
+  - id: changed-module-builds-whole
+    rule: A changed go.mod or go.sum makes the stop check run go build ./... in that module and block on a package there that no longer builds, changed or not.
+    enforced_by:
+      - test: cmd/primitives.TestStop
+      - test: cmd/primitives.TestStopDoesNotBuildTestdataModule
+      - test: cmd/primitives.TestStopBuildsAChangedModuleWhole
+  - id: testdata-is-skipped
+    rule: No package or module under a testdata directory is built, vetted or tested by the stop check.
+    enforced_by:
+      - test: cmd/primitives.TestStopSkipsTestdataPackages
+      - test: cmd/primitives.TestStopDoesNotBuildTestdataModule
+  - id: a-passed-tree-is-not-retested
+    rule: A tree whose state, the base commit and every changed file's content, was recorded as passing skips vet, tests and module builds; the same changes over another base, or an empty file in place of a deleted one, are another state.
+    enforced_by:
+      - test: cmd/primitives.TestStopDoesNotRetestATreeThatPassed
+      - test: cmd/primitives.TestTheSameChangeOverAnotherBaseIsAnotherTree
+      - test: cmd/primitives.TestStop
+  - id: time-out-is-a-warning
+    rule: A check that runs past stopBudget yields a warning, and what the earlier checks found still blocks.
+    enforced_by:
+      - test: cmd/primitives.TestStopKeepsWhatItFoundWhenACheckRunsOutOfTime
+  - id: failures-keep-what-failed
+    rule: A failing go vet or go test run is reported by its failing-test, message, package and diagnostic lines, capped, or by its tail when it names none.
+    enforced_by:
+      - test: cmd/primitives.TestFailuresKeepsWhatFailed
+  - id: questions-come-once-per-session
+    rule: Once the code passes, a nameable session is asked the siblings question once, and shown each changed primitive's on_change lines, its untouched docs and each rule applied to a changed file once; a session it cannot name is asked nothing.
+    enforced_by:
+      - test: cmd/primitives.TestStop
+      - test: cmd/primitives.TestAppliedRulesReachForAndStop
+  - id: hook-tells-each-twin-once
+    rule: hook prints the same-job notice for a changed twins site once per session and file, says nothing for a file in no twins entry, and says nothing on input it cannot read.
+    enforced_by:
+      - test: cmd/primitives.TestHook
+  - id: hook-state-only-for-a-nameable-session
+    rule: Hook state is read and written only for a session name matching [A-Za-z0-9_-]{1,80}, as a 0600 file under .gofastr/primitives-hook; any other name is told every time.
+    enforced_by:
+      - test: cmd/primitives.TestHookStateIsKeptOnlyForANameableSession
+decisions:
+  - id: block-decision-on-stdout
+    date: 2026-11-26
+    status: accepted
+    decision: stop blocks with a JSON decision on stdout and exit 0.
+    rejected:
+      - option: Exit 2 to block.
+        why: The hook runs through go run, which turns every non-zero exit of the program into 1, and Claude Code treats 1 as non-blocking.
+    upholds: [stop-speaks-through-stdout]
+  - id: let-a-sent-back-session-go
+    date: 2026-11-26
+    status: accepted
+    decision: A session the stop hook has already sent back once may finish.
+    rejected:
+      - option: Block until the check passes.
+        why: A failure the agent cannot fix, such as a flaky test elsewhere in the package, would hold the session forever.
+    upholds: [a-session-is-sent-back-once]

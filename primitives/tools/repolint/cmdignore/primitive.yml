@@ -1,0 +1,22 @@
+primitive: tools.repolint.cmdignore
+summary: The cmd-binary-not-ignored rule, which checks that the root .gitignore names every cmd/<name>, since go build ./cmd/<name> from the root writes /<name>.
+code:
+  - cmd/repolint/cmdignore.go
+invariants:
+  - id: every-command-is-ignored
+    rule: Each directory under cmd/ needs a .gitignore line naming it, with or without a leading slash, unless a top-level directory of that name exists; a missing .gitignore flags every command, and a stray file under cmd/ is not a command.
+    enforced_by:
+      - test: cmd/repolint.TestLintCommandBinariesIgnored
+  - id: unreadable-is-an-error
+    rule: An unreadable cmd/ or .gitignore is an error, not a clean result.
+    enforced_by:
+      - test: cmd/repolint.TestUnreadableCommandInputsAreErrors
+decisions:
+  - id: enumerate-cmd
+    date: 2026-11-26
+    status: accepted
+    decision: The rule lists cmd/ and demands an entry per command.
+    rejected:
+      - option: Trust the hand-written .gitignore list.
+        why: .gitignore cannot glob a directory listing and the list rotted twice, letting a 12 MB embed-demo binary and a 3.4 MB /mutate reach the tree.
+    upholds: [every-command-is-ignored]

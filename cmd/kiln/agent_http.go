@@ -9,31 +9,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
-// maxAgentBody caps an inbound body: an agent name and an optional command line. Past this, the
-// request is refused rather than buffered.
 const maxAgentBody = 64 << 10
 
-// mountAgentRoutes registers the runtime agent-control endpoints on r.
-//
-//	GET  /kiln/agent          → current adapter + available list
-//	POST /kiln/agent          → switch the active adapter at runtime
-//
-// Used by the panel's config modal so the user can pick a harness
-// (omp, claude-code, pi, codex, custom) without restarting kiln serve. The
-// adapter watcher reads the store at turn-spawn time, so any switch
-// takes effect on the next chat_user event. An in-flight turn is
-// cancelled when its adapter is replaced.
-//
-// notify is called after a successful POST switch so the panel's
-// header chip updates without a refresh; pass nil to disable.
 func mountAgentRoutes(r *router.Router, store *AdapterStore, notify func(kind, summary string)) {
 	r.Get("/kiln/agent", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, agentState(store))
 	}))
 	r.Post("/kiln/agent", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		var args struct {
-			Name   string `json:"name"`             // "omp" | "claude-code" | "pi" | "codex" | "auto" | "none" | "custom"
-			Custom string `json:"custom,omitempty"` // freeform command if name == "custom"
+			Name   string `json:"name"`
+			Custom string `json:"custom,omitempty"`
 		}
 		req.Body = http.MaxBytesReader(w, req.Body, maxAgentBody)
 		if err := handler.DecodeStrict(req.Body, &args); err != nil {
@@ -41,17 +26,10 @@ func mountAgentRoutes(r *router.Router, store *AdapterStore, notify func(kind, s
 			return
 		}
 
-		// Validate name. Anything not in the registry / sentinel set
-		// must use the explicit "custom" form to avoid silent
-		// misroutes when a caller typoes an adapter name.
 		value := args.Name
 		switch args.Name {
 		case "", "none", "auto":
-			// sentinels: pass through
 		case "custom":
-			// The custom form lets the request body choose the entire
-			// argv of a process kiln will spawn: request-borne code
-			// execution. It stays off unless the operator opted in.
 			if !allowCustomAgent {
 				writeJSON(w, map[string]any{
 					"ok": false,
@@ -98,8 +76,6 @@ func mountAgentRoutes(r *router.Router, store *AdapterStore, notify func(kind, s
 		})
 	}))
 
-	// Cancel-in-flight: panel's stop button. Lets the user kill a
-	// runaway turn without dropping the configured adapter.
 	r.Post("/kiln/agent/cancel", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		cancelled := store.CancelInFlight()
 		if cancelled && notify != nil {
@@ -109,10 +85,6 @@ func mountAgentRoutes(r *router.Router, store *AdapterStore, notify func(kind, s
 	}))
 }
 
-// agentState returns the structure consumed by both the GET endpoint
-// and the panel's config modal. Each available adapter carries its
-// `installed` flag so the UI can disable rows for binaries the user
-// doesn't have.
 func agentState(store *AdapterStore) map[string]any {
 	cur := store.Get()
 	available := []map[string]any{}
@@ -148,13 +120,9 @@ func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Cache-Control", "no-store")
 	b, err := json.Marshal(v)
 	if err != nil {
-		// A body that cannot encode would answer 200 with no body;
-		// answer 500 instead.
 		http.Error(w, "encode failed", http.StatusInternalServerError)
 		return
 	}
-	// no-store: these bodies are per-session agent/runtime state, the
-	// same discipline kiln/chat's status endpoints carry.
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(b)
 	w.Write([]byte("\n"))

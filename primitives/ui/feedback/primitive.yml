@@ -138,7 +138,7 @@ invariants:
       - test: framework/ui.TestTooltipsGetDistinctIDs
       - test: framework/ui.TestTooltipsWithoutAScopeGetDistinctIDs
   - id: tooltip-splices-the-first-open-tag
-    rule: Tooltip uses registry.InjectAttribute to splice aria-describedby into the trigger's first open tag, past leading comments and before a self-closing slash, leaving text-only triggers and an existing root attribute intact and ignoring tag delimiters and attribute-like text inside quotes.
+    rule: Tooltip adds its pop's id to the aria-describedby list on the trigger's first open tag with registry.AddAttributeToken, past leading comments and before a self-closing slash, keeping the ids already listed, naming the pop once, leaving text-only triggers intact (headless.Tooltip logs one warning per id for such a trigger, which cannot carry the link) and ignoring tag delimiters and attribute-like text inside quotes.
     enforced_by:
       - test: framework/ui.TestTooltipWiresTheRootWhenADescendantCarriesDescribedBy
       - test: framework/ui.TestTooltipSplicesPastAGtInsideAQuotedValue
@@ -147,6 +147,8 @@ invariants:
       - test: framework/ui.TestTooltipKeepsTextOnlyTrigger
       - test: framework/ui.TestSweepFeedbackTooltipSkipsLeadingComments
       - test: framework/ui.TestSweepFeedbackTooltipSplicesBeforeASelfClose
+      - test: framework/headless.TestTooltipJoinsTheTriggersDescription
+      - test: framework/headless.TestTooltipWarnsWhenItsTriggerCannotBeDescribed
 decisions:
   - id: tooltip-unscoped-id-takes-a-counter
     date: 2026-11-16
@@ -246,11 +248,23 @@ decisions:
         why: A strict CSP drops inline styles.
   - id: tooltip-is-css-only
     date: 2026-11-16
-    status: accepted
+    status: superseded
+    superseded_by: tooltip-css-then-top-layer
     decision: The tooltip pop is always in the DOM and shown by hover and focus rules on its wrapper.
     rejected:
       - option: A runtime module that positions and toggles the pop.
         why: It needs script, and the pop flashes on mount.
+  - id: tooltip-css-then-top-layer
+    date: 2026-11-26
+    status: accepted
+    decision: The pop is shown by the sheet's hover and focus rules until headless-tooltip upgrades it, on the wrapper's first hover or focus, to a manual popover in the top layer that the module shows, keeps open while hovered and closes on Escape.
+    rejected:
+      - option: Stay CSS-only.
+        why: A pop under pointer-events none cannot be hovered, nothing dismisses it without moving the pointer or focus (WCAG 1.4.13), and any ancestor that clips its overflow cuts it off.
+      - option: Render the pop with the popover attribute from the server.
+        why: A popover is hidden until script opens it, so a page without the module would never show the tooltip.
+      - option: Upgrade every tooltip when the module loads.
+        why: The upgrade rewrites markup the reader may never point at; on first hover or focus it costs nothing, and the pop is invisible on both sides of it, so nothing flashes.
   - id: tooltip-splices-caller-markup
     date: 2026-11-16
     status: accepted

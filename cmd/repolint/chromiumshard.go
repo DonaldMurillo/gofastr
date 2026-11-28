@@ -16,16 +16,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// lintChromiumShard checks that CI's chromium-ui shard runs every package
-// that has tests behind the chromium build tag. A plain `go test` compiles
-// those files out and passes, so a package left off the shard's list has
-// browser guards that never run anywhere. Three were found that way in
-// #598: core-ui/interactive and both siteheader packages had shipped
-// chromium tests the shard did not name.
-//
-// The shard runs only the tests the tag adds (scripts/tagged-tests.sh);
-// the main test job runs the rest of each package. Nested modules are out
-// of scope: CI tests battery/print/chromepdf on its own.
 func lintChromiumShard(root string) ([]finding, error) {
 	const ciPath = ".github/workflows/ci.yml"
 	body, err := os.ReadFile(filepath.Join(root, ciPath))
@@ -89,7 +79,6 @@ func lintChromiumShard(root string) ([]finding, error) {
 		return append(out, finding{File: ciPath, Line: line, Rule: "chromium-shard",
 			Message: "the chromium-ui pkg is not a regexp: " + err.Error()}), nil
 	}
-	// Split on quotes and '=' too, so pkgs="./a/ ./b/" yields ./a/.
 	fields := strings.FieldsFunc(run, func(r rune) bool {
 		return unicode.IsSpace(r) || r == '"' || r == '\'' || r == '='
 	})
@@ -106,8 +95,7 @@ func lintChromiumShard(root string) ([]finding, error) {
 	return out, nil
 }
 
-// shardNames reports whether the run's package arguments name dir, either
-// as ./dir or ./dir/ or under a ./prefix/... pattern.
+// shardNames reports whether the run names dir as ./dir, ./dir/ or under ./prefix/....
 func shardNames(fields []string, dir string) bool {
 	for _, f := range fields {
 		if f == "./..." || dir == "." && (f == "." || f == "./") {
@@ -130,9 +118,7 @@ func shardNames(fields []string, dir string) bool {
 	return false
 }
 
-// chromiumTestDirs lists the root module's package dirs, slash-separated
-// and relative to root, holding a _test.go file whose //go:build line
-// names the chromium tag.
+// chromiumTestDirs lists the root module's package dirs, relative to root, holding a chromium-tagged _test.go file.
 func chromiumTestDirs(root string) ([]string, error) {
 	seen := map[string]bool{}
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -178,8 +164,7 @@ func chromiumTestDirs(root string) ([]string, error) {
 	return dirs, nil
 }
 
-// namesBuildTag reports whether the file's //go:build constraint, read
-// from the header before the package clause, mentions tag.
+// namesBuildTag reports whether the file's //go:build header line names tag positively.
 func namesBuildTag(body []byte, tag string) bool {
 	sc := bufio.NewScanner(bytes.NewReader(body))
 	for sc.Scan() {
@@ -199,10 +184,6 @@ func namesBuildTag(body []byte, tag string) bool {
 	return false
 }
 
-// exprNames walks the whole constraint for a positive mention of tag: a
-// `!chromium` file builds without the tag, so the main job runs it.
-// Expr.Eval would not do: && and || short-circuit, so `linux && chromium`
-// never visits chromium.
 func exprNames(e constraint.Expr, tag string, negated bool) bool {
 	switch e := e.(type) {
 	case *constraint.TagExpr:

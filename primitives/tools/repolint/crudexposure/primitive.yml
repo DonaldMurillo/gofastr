@@ -1,0 +1,24 @@
+primitive: tools.repolint.crudexposure
+summary: The crud-exposure-rederived rule, which keeps code from deciding whether an entity's CRUD routes exist by reading Exposure.CRUD.
+code:
+  - cmd/repolint/crudexposure.go
+invariants:
+  - id: unclassified-reads-fail
+    rule: A read of Exposure.CRUD in the code of a non-test .go file outside testdata, cmd/repolint and crudExposureClassified is a finding; a mention in a comment or a string is not.
+    enforced_by:
+      - test: cmd/repolint.TestLintRepoFlagsRederivedCRUDExposure
+      - test: cmd/repolint.TestLintRepoAcceptsClassifiedCRUDExposure
+      - test: cmd/repolint.TestCRUDExposureSeenPastAURLString
+      - test: cmd/repolint.TestCRUDExposureExclusions
+  - id: classified-entries-have-reasons
+    rule: Each crudExposureClassified entry says why its read is not a decision about whether routes exist.
+    judge: Does this change add a crudExposureClassified entry whose reason is not why that read cannot advertise routes a DB-less app does not mount?
+decisions:
+  - id: mounted-predicate-not-the-flag
+    date: 2026-11-26
+    status: accepted
+    decision: Surfaces that advertise CRUD routes take a mounted predicate such as framework.App.EntityCRUDMounted.
+    rejected:
+      - option: Read Exposure.CRUD.
+        why: App mounts auto-CRUD only with a DB, while every entity still reads nil ("auto"), so openapi, the startup banner, /api/llm.md and sdkdocs each documented routes the server did not serve.
+    upholds: [unclassified-reads-fail]

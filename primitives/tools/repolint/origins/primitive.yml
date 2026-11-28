@@ -1,0 +1,29 @@
+primitive: tools.repolint.origins
+summary: The example-dead-origin rule, which keeps example apps from naming https origins that nobody serves.
+code:
+  - cmd/repolint/origins.go
+invariants:
+  - id: examples-name-live-or-reserved-hosts
+    rule: An https URL in the code of a non-test .go file under examples/ or internal/testapps/ is a finding unless allowedExampleHost accepts its host exactly as written (only the https scheme is matched case-insensitively), and each host is reported once per file.
+    enforced_by:
+      - test: cmd/repolint.TestLintExampleOrigins
+      - test: cmd/repolint.TestExampleOriginsReadTestApps
+      - test: cmd/repolint.TestExampleOriginReportedOncePerFile
+  - id: allowed-hosts
+    rule: allowedExampleHost accepts the RFC 2606 example names and the .example TLD, loopback by name or IPv4 address (the URL pattern matches names and IPv4 hosts only, so a bracketed IPv6 literal is not checked), the listed spec and schema hosts, and the hosts the project serves from, and nothing else.
+    enforced_by:
+      - test: cmd/repolint.TestLintExampleOrigins
+  - id: comments-are-prose
+    rule: A URL inside a comment is not scanned; one inside a string is.
+    enforced_by:
+      - test: cmd/repolint.TestLintExampleOrigins
+      - test: cmd/repolint.TestExampleOriginsRespectsMultiLineContexts
+decisions:
+  - id: enumerate-by-the-invariant
+    date: 2026-11-26
+    status: accepted
+    decision: The rule checks every host an example names against what is reserved or served.
+    rejected:
+      - option: Fix the dead domain in the one file where it was found.
+        why: The same bug survived one directory over in examples/meridian on a sibling of the dead domain.
+    upholds: [examples-name-live-or-reserved-hosts]

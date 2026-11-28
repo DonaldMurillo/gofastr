@@ -1,18 +1,11 @@
-// Command check-embed is the build-time gate for server actions on embeddable
-// surfaces. It fails (exit 1) when an embed.Surface's screen renders a
-// component whose registered ClientJS calls G.serverAction, the one thing that
-// does not work inside a frame, because the action registry is app-global with
-// no relationship to any surface.
-//
-// Usage:
+// Command check-embed fails when an embed.Surface's screen renders a component
+// whose ClientJS calls G.serverAction.
 //
 //	go run ./cmd/check-embed             # scans ./...
-//	go run ./cmd/check-embed ./pkg/...   # scans a specific pattern
+//	go run ./cmd/check-embed ./pkg/...   # scans the given patterns
 //
-// Exits 0 when clean, 1 when a surface registers a server action, and 2 on
-// infrastructure error (a package failed to parse or type-check). Mirrors the
-// check-csp exit-code convention; see framework/uihost/embed_actions.go for the
-// boot-time backstop that catches whatever this static pass cannot reach.
+// It exits 0 when clean, 1 on a finding or a blocking note, and 2 when a
+// package fails to load.
 package main
 
 import (
@@ -28,13 +21,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(2)
 	}
-	// Printed before the verdict, and printed even when the verdict is clean:
-	// "found nothing" and "could not look" must not read the same.
-	//
-	// Advisory notes do not change the exit code. The boot walk in
-	// framework/uihost covers the shapes they describe. A BLOCKING note does,
-	// and must, or this CLI prints a green tick for a tree `gofastr build`
-	// refuses to build.
 	var blocking int
 	for _, u := range unresolved {
 		fmt.Fprintf(os.Stderr, "%s: %s\n", fset.Position(u.Pos), u.Format())

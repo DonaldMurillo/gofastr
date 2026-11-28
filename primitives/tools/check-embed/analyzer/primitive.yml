@@ -1,0 +1,137 @@
+primitive: tools.check-embed.analyzer
+summary: The static walk from each embed.Surface to the component tree its screen renders, reporting every reachable G.serverAction as a finding and every place it could not follow as a note, down to maxReachDepth levels of type nesting, where it stops without one.
+code:
+  - cmd/check-embed/embedcheck/analyzer.go
+  - cmd/check-embed/embedcheck/analyzer_test.go
+  - cmd/check-embed/embedcheck/analyzer_unresolved_test.go
+  - cmd/check-embed/embedcheck/fixture_deps_test.go
+  - cmd/check-embed/embedcheck/fixtures_test.go
+  - cmd/check-embed/embedcheck/giveups_test.go
+  - cmd/check-embed/embedcheck/lookalike_test.go
+  - cmd/check-embed/embedcheck/reach_test.go
+  - cmd/check-embed/embedcheck/scan_corpus_test.go
+  - cmd/check-embed/embedcheck/tools_regression_test.go
+  - cmd/check-embed/embedcheck/wrapper_not_noted_test.go
+  - cmd/check-embed/testdata/
+docs:
+  - framework/docs/content/embed.md
+on_change:
+  - A note is advisory because uihost.embed's boot walk (framework/uihost/embed_actions.go) reads the shape it describes as a live value; when the walk learns or drops a shape, check that every advisory note still names one the boot walk covers.
+invariants:
+  - id: framework-types-by-package
+    rule: Only a composite literal of framework/embed's Surface type is a surface, and only core-ui/app's NewScreen and core-ui/component's On and WithClientJS are read as the framework's, however a same-named stand-in is spelled.
+    enforced_by:
+      - test: cmd/check-embed/embedcheck.TestLookalikesAreNotTheFramework
+  - id: screen-follows-in-package-initializers
+    rule: A Screen given as an in-package identifier is followed to its var or := initializer and through method chains on app.NewScreen, and a component held in an interface-typed identifier is followed to its initializer's concrete type.
+    enforced_by:
+      - test: cmd/check-embed/embedcheck.TestAnalyzerResolvesSupportedScreenShapes
+      - test: cmd/check-embed/embedcheck.TestAnalyzerAnalysistest
+  - id: walk-reaches-whole-tree
+    rule: Up to maxReachDepth (12) levels of type nesting, where it stops without a note, the walk reaches every same-package component held in a field of the root or of a reached component (through pointers, slices, arrays, maps and nested plain structs), passed to the expression that built the root, or named in a Render or RenderCtx body or in a same-package component-returning helper that body calls.
+    enforced_by:
+      - test: cmd/check-embed/embedcheck.TestEachReachRouteFindsItsChild
+      - test: cmd/check-embed/embedcheck.TestNotesIslandCrossPackageChild
+      - test: cmd/check-embed/embedcheck.TestSeesRenderBuiltChild
+      - test: cmd/check-embed/embedcheck.TestNotesHelperIndirectBuiltChild
+  - id: walk-terminates
+    rule: The type walk ends on a self-referential type graph and visits each type once, so what the graph holds is reported once, not once per path to it.
+    enforced_by:
+      - test: cmd/check-embed/embedcheck.TestEachReachRouteFindsItsChild
+      - test: cmd/check-embed/embedcheck.TestEachGiveUpIsOneNote
+  - id: no-silent-give-up
+    rule: Apart from the silent stop at maxReachDepth, each place the walk cannot follow yields exactly one note naming it - a Screen that is not an in-package app.NewScreen, a component with no visible concrete type, an interface- or function-typed field, a field of another package's component type, a child of another package built in Render, a server action inside a function literal, and a WithClientJS argument that is not a string literal.
+    enforced_by:
+      - test: cmd/check-embed/embedcheck.TestEachGiveUpIsOneNote
+      - test: cmd/check-embed/embedcheck.TestAnalyzerNotesUnfollowableChild
+      - test: cmd/check-embed/embedcheck.TestNotesCrossPackageRenderBuiltChild
+      - test: cmd/check-embed/embedcheck.TestIndirectOptionsAreNotSilentlyClean
+      - test: cmd/check-embed/embedcheck.TestLookalikesAreNotTheFramework
+      - test: cmd/check-embed/embedcheck.TestAnalyzerAnalysistest
+  - id: only-unseen-children-block
+    rule: A note is Blocking only when no gate can cover its place - a child of another package built in Render, or an undecidable action on a component the boot walk cannot reach as a value - and every other note is advisory.
+    enforced_by:
+      - test: cmd/check-embed/embedcheck.TestOnlyRenderBuiltCrossPackageBlocks
+      - test: cmd/check-embed/embedcheck.TestRenderComputedActionsBlock
+      - test: cmd/check-embed/embedcheck.TestRenderComputedActionsNeedBootValueEvidence
+      - test: cmd/check-embed/embedcheck.TestStoredComponentVariablesRemainBootVisible
+      - test: cmd/check-embed/embedcheck.TestReassignedComponentVariablesDoNotProveBootVisibility
+  - id: wrappers-are-not-noted
+    rule: A component from core-ui/island, core-ui/component or core-ui/app built in Render, and a component.Component-typed value read there, add no note of their own.
+    enforced_by:
+      - test: cmd/check-embed/embedcheck.TestCleanIslandSurfaceIsNotNoted
+      - test: cmd/check-embed/embedcheck.TestEachGiveUpIsOneNote
+  - id: resolved-tree-is-silent
+    rule: A surface whose whole tree the walk followed gets no note, whether or not it has a finding.
+    enforced_by:
+      - test: cmd/check-embed/embedcheck.TestAnalyzerSilentWhenFullyResolved
+      - test: cmd/check-embed/embedcheck.TestInterfaceFieldNoteIsNotFatalMaterial
+  - id: one-server-action-scanner
+    rule: Whether ClientJS calls G.serverAction is decided by internal/actionscan.ServerActionCall, the function the boot walk asks, so the analyzer agrees with the shared corpus and flags a call with whitespace before its parenthesis under the canonical spelling.
+    enforced_by:
+      - test: cmd/check-embed/embedcheck.TestAnalyzerScanAgreesWithCorpus
+      - test: cmd/check-embed/embedcheck.TestAnalyzerFlagsWhitespaceServerActionCall
+      - test: cmd/check-embed/embedcheck.TestMemberSpellingsFlagged
+  - id: only-executed-registrations-count
+    rule: Only a component.On call executed by an Actions body is a finding; G.serverAction in an event name, a handler string or a JS comment, or in a registration inside a function literal, is not.
+    enforced_by:
+      - test: cmd/check-embed/embedcheck.TestAnalyzerIgnoresNonClientJSAndDeadRegistrations
+      - test: cmd/check-embed/embedcheck.TestAnalyzerAnalysistest
+decisions:
+  - id: signal-is-the-clientjs-call
+    date: 2026-11-26
+    status: accepted
+    decision: The analyzer reads the G.serverAction call in the literal ClientJS a registration passes.
+    rejected:
+      - option: A marker interface a component implements when it registers a server action (issue 150).
+        why: A marker can drift from the code that runs.
+    upholds: [one-server-action-scanner]
+  - id: walk-the-tree-not-the-root
+    date: 2026-11-26
+    status: accepted
+    decision: The walk checks every component reachable from the surface's root, not the root alone.
+    rejected:
+      - option: Inspect only the root component's actions.
+        why: Every compiled registry ships to the frame in one bundle, so a root that renders a child passed while the child's button failed in the customer's page.
+    upholds: [walk-reaches-whole-tree]
+  - id: advisory-notes-do-not-fail
+    date: 2026-11-26
+    status: accepted
+    decision: Only a Blocking note fails a build; every other note is printed and passes.
+    rejected:
+      - option: Fail on every note.
+        why: It was tried and reverted - it rejected clean island surfaces, the shape the app generator emits for every island block, interface-typed fields the walk had already resolved and the false-positives fixture, and its advertised remedy, holding the child in a field, is impossible for a wrapper.
+    upholds: [only-unseen-children-block, wrappers-are-not-noted]
+  - id: walk-helper-bodies
+    date: 2026-11-26
+    status: accepted
+    decision: A Render body's call to a same-package component-returning helper is walked as if the helper's body were inline.
+    rejected:
+      - option: Treat the helper's component.Component-typed result like an interface field held elsewhere.
+        why: The child is built there, one frame down, and a cross-package child reached through a helper produced neither a finding nor a note.
+    upholds: [walk-reaches-whole-tree, no-silent-give-up]
+  - id: component-means-a-render-method
+    date: 2026-11-26
+    status: accepted
+    decision: A type is a component when it or its pointer has a Render method with no parameters and one result.
+    rejected:
+      - option: types.Implements against component.Component.
+        why: A package that declares a component without importing core-ui/component would not be followed.
+  - id: literal-clientjs-only
+    date: 2026-11-26
+    status: accepted
+    decision: Only a string literal passed directly to component.WithClientJS is scanned; any other ClientJS argument or option shape is noted.
+    rejected:
+      - option: Evaluate identifiers, concatenations, wrapper options and helper-returned options.
+        why: Partial evaluation risks reporting code that never registers, and a note already stops the surface passing silently.
+    upholds: [no-silent-give-up]
+  - id: function-literals-are-noted
+    date: 2026-11-26
+    status: accepted
+    decision: A registration inside a function literal is not a finding, and a literal holding a server action is noted.
+    rejected:
+      - option: Treat every function literal's body as executed.
+        why: A literal that is declared and never called registers nothing.
+      - option: Skip function literals silently.
+        why: An immediately invoked literal does run, and the walk cannot tell the two apart.
+    upholds: [only-executed-registrations-count, no-silent-give-up]

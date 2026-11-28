@@ -249,7 +249,50 @@ task reads `battery/` (`2026-11-20-replay-battery-sweep.md`).
 `dup-column-key` reads an entry that names its sibling sites and went
 from 1 of 4 to 4 of 4 (`2026-11-20-dup-column-key-twin.md`).
 
-Next: `cmd/`, `internal/`. The repository as a whole is at 10.4%.
+`cmd/` is under way. Its nine small tools are swept, 22.4% to 2.7%, their
+tests 13.6% to 11.9%. `cmd/` as a whole is at 15.4%, nearly all of it in
+`cmd/gofastr`, which is next, in PRs split by job. Every tool directory is in
+`TestCoveredPackagesHaveNoUnownedFile`. Per tool (before, after):
+
+| Tool | Before | After | | Tool | Before | After |
+|---|---|---|---|---|---|---|
+| affected | 26.2% | 3.1% | | mutate | 34.6% | 4.9% |
+| bench-resources | 14.5% | 2.4% | | primitives | 9.7% | 2.9% |
+| check-csp | 37.0% | 10.5% * | | repolint | 18.3% | 2.0% |
+| check-embed | 22.9% | 2.6% | | vettool | 42.9% | 20.0% * |
+| kiln | 25.7% | 2.0% | | | | |
+
+The two starred tools are files under 40 lines whose remaining comment is
+a two-line package doc (and, in `check-csp`, the reason on its ignore
+marker). A new `tools` primitive owns `cmd/vettool` and has one child per
+tool; `cmd/kiln` is `kiln.cli` under `kiln`. The sweep added 25
+primitives, 177 invariants (6 judged only) and 51 decisions, plus 62 tests
+for rules that had none, and recorded 2 twins (`check-embed`'s gate and
+`buildcmd`'s, `kiln`'s capped stdout buffer and `codegen`'s).
+`cmd/repolint` and `cmd/primitives` were split into files by job. One bug
+was fixed: `primitives hook` read the process's stdin, not the stream it
+was handed. Mutations that changed nothing removed two dead clauses in
+repolint. Every proof is in the description of #918. Left judged only after
+#924: in
+`kiln`, that `run` waits for the agent watcher before closing the journal;
+in `mutate`, that a written mutant is reread; in `repolint`, that each
+classified CRUD exposure carries a real reason.
+
+The replay eval after it held every number but one cell of
+`index-name-collision`, which fixed its four sibling paths and missed the
+reported one; both reruns fixed all of it
+(`2026-11-26-replay-cmd-tools-sweep.md`).
+
+Review bots skipped the PR for their usage limits, so four agents that did
+not write it reviewed it adversarially: no blocker and no behaviour
+change, but about 35 rules whose named tests pass with the code broken,
+among them kiln's Host and Origin guard wiring and affected's `-tags`. The
+follow-up (#923, with the three items a post-merge review of #918 added)
+gave each a test watched failing, or narrowed the rule to what the code
+does (#924, its proofs in the PR).
+
+Next: `cmd/gofastr`, then `internal/`. The repository as a whole is at
+10.1%.
 
 ### 3. Bring the known twins in, and merge them
 

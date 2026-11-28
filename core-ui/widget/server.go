@@ -483,6 +483,22 @@ func widgetCSS(def Definition) string {
 	ss.Rule(".cui-widget[hidden]").
 		Set("display", "none").
 		End()
+	// A widget the runtime raises into the top layer (the toast stack's,
+	// as a manual popover) keeps its mount position: the browser's
+	// popover defaults (inset 0, auto margin, border, padding, canvas
+	// background) would centre and frame it. :where keeps the reset below
+	// every position class.
+	ss.Rule(":where(.cui-widget[popover])").
+		Set(
+			"inset", "auto",
+			"margin", "0",
+			"padding", "0",
+			"border", "0",
+			"background", "transparent",
+			"overflow", "visible",
+			"color", "inherit",
+		).
+		End()
 	ss.Rule(".cui-widget *, .cui-widget *::before, .cui-widget *::after").
 		Set("box-sizing", "border-box").
 		End()

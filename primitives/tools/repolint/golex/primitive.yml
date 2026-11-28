@@ -1,0 +1,36 @@
+primitive: tools.repolint.golex
+summary: The line-at-a-time Go lexer repolint's source rules share, which strips comments and string contents while carrying block-comment and raw-string state across lines.
+code:
+  - cmd/repolint/golex.go
+invariants:
+  - id: one-pass-lexing
+    rule: stripGoComments recognises line comments, block comments and string literals in one left-to-right pass, so a "/*" or "//" inside a string or comment opens nothing and the scan never stops reading the file.
+    enforced_by:
+      - test: cmd/repolint.TestExampleOriginsKeepsScanningPastAFalseBlockComment
+      - test: cmd/repolint.TestLintExampleOrigins
+  - id: escaped-quote-keeps-the-string
+    rule: A backslash-escaped quote inside an interpreted string or rune literal does not close it.
+    enforced_by:
+      - test: cmd/repolint.TestExampleOriginsEscapedQuoteKeepsTheString
+      - test: cmd/repolint.TestStringEscapesHideAClosingQuote
+  - id: multiline-state-carries
+    rule: A block comment and a raw string literal left open at a line's end carry into the next line; an interpreted string left open does not, and neither does a raw string closed before a line comment.
+    enforced_by:
+      - test: cmd/repolint.TestLexStateAfterALine
+      - test: cmd/repolint.TestCRUDExposureSeenPastAURLString
+      - test: cmd/repolint.TestExampleOriginsRespectsMultiLineContexts
+  - id: strings-are-not-code
+    rule: outsideGoStrings drops the contents of every string and rune literal, including a raw string carried in from the line before.
+    enforced_by:
+      - test: cmd/repolint.TestCRUDExposureSeenPastAURLString
+decisions:
+  - id: urls-are-protected-by-string-state
+    date: 2026-11-26
+    status: accepted
+    decision: A "//" inside a URL is kept because it sits in a string literal, which the lexer tracks.
+    rejected:
+      - option: Keep any "//" preceded by a colon, as a URL scheme.
+        why: "`default:// note` is valid Go, so labels, case and default clauses kept their comments and prose in them read as code."
+      - option: Scan for "/*", "//" and quotes one after another.
+        why: Each context turns the others' delimiters into text; looking for "/*" first opened block comments inside strings and line comments that never closed, and the rule went silent for the rest of the file.
+    upholds: [one-pass-lexing]
