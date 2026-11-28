@@ -121,3 +121,18 @@ decisions:
       - option: Clean through it like a real directory.
         why: os.Root follows a link that stays in the project, so with agents -> .agents the cleanup would delete the files just written.
     upholds: [legacy-folder-cleanup]
+  - id: replace-through-a-temporary-file
+    date: 2026-11-28
+    status: accepted
+    decision: Sync replaces AGENTS.md and every detail file through a temporary file renamed into place inside the project root.
+    rejected:
+      - option: Truncate and write the file in place.
+        why: A crash mid-write empties AGENTS.md, which holds the project's own text, and leaves a detail file without its header, which the next sync then refuses as hand-written.
+    upholds: [detail-file-header, hand-written-detail-is-refused, writes-stay-in-the-project]
+  - id: blank-agents-md-is-a-warning
+    date: 2026-11-28
+    status: accepted
+    decision: agents init and sync print a warning for every entry registered with an empty agents.md and still exit 0.
+    rejected:
+      - option: Panic in agentsinv.Register when an entry's agents.md is blank.
+        why: Register runs from a package init, so the panic killed every binary importing that package, gofastr build included, not just the agents command.

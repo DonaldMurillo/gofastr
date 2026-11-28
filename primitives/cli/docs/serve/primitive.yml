@@ -40,16 +40,19 @@ invariants:
     rule: The static server and the --full site listen on 127.0.0.1 at --port, and the --full site runs with GOFASTR_ISOLATION=off.
     enforced_by:
       - test: cmd/gofastr/internal/docscmd.TestDocsListenAddrIsLoopback
+      - test: cmd/gofastr/internal/docscmd.TestStaticDocsServerListensOnLoopbackAtPort
       - test: cmd/gofastr/internal/docscmd.TestDocsServeFullInstallsOnce
   - id: static-server-isolation-off
-    rule: serveDocsDir turns worktree isolation off before it starts, so the static site listens on the --port asked for rather than a worktree remap.
-    judge: Does this change let docs serve's static server start with worktree isolation on, so it can listen on a port other than --port?
+    rule: The static server turns worktree isolation off before it starts, so the static site listens on the --port asked for rather than a worktree remap.
+    enforced_by:
+      - test: cmd/gofastr/internal/docscmd.TestStaticDocsServerListensOnLoopbackAtPort
   - id: full-preconditions
-    rule: --full needs a fixed --port, a release at or after v0.82.0 and a free port, all checked before go install runs; --dir combines with none of --full, --release and --refresh.
+    rule: --full needs a fixed --port, a release at or after v0.82.0 and a free port, all checked before go install runs, and the port is checked again after an install, which takes minutes; --dir combines with none of --full, --release and --refresh.
     enforced_by:
       - test: cmd/gofastr/internal/docscmd.TestDocsServeFullNeedsFixedPort
       - test: cmd/gofastr/internal/docscmd.TestDocsServeFullRefusesOldRelease
       - test: cmd/gofastr/internal/docscmd.TestDocsServeFullRefusesBusyPort
+      - test: cmd/gofastr/internal/docscmd.TestDocsServeFullRechecksThePortAfterInstall
       - test: cmd/gofastr/internal/docscmd.TestDocsServeDirRejectsDownloadFlags
   - id: usage-streams
     rule: docs serve --help prints to stdout and exits 0, and a usage error prints only to stderr and exits 2.
@@ -65,3 +68,21 @@ decisions:
       - option: Always go install examples/site.
         why: It needs a Go toolchain and minutes of build on first run, for demos most readers never use.
     upholds: [checksum-before-extract]
+  - id: archive-caps-sized-from-a-real-export
+    date: 2026-11-28
+    status: accepted
+    decision: The archive caps (128 MiB download, 512 MiB extracted, 50,000 entries) are about ten times the v0.86.0 export, which is 6 MB compressed and 32 MB on disk across about 1,000 files.
+    rejected:
+      - option: No caps, trusting the checksum.
+        why: The checksum comes from the same release as the archive, so a hostile or corrupt release passes it and can still fill the disk.
+      - option: Caps sized to the current export.
+        why: Every docs page added would bring the export closer to a cap and break docs serve for a release that is fine.
+    revisit_if: A release's export comes within a factor of two of a cap.
+    upholds: [archive-is-plain-files, downloads-are-capped]
+  - id: parent-waits-for-the-full-site
+    date: 2026-11-28
+    status: accepted
+    decision: With --full the parent catches Ctrl-C and SIGTERM, forwards an interrupt to the child site and waits up to ten seconds for its drain.
+    rejected:
+      - option: Leave signals to the terminal's process group.
+        why: The parent would exit before the site drained, and a SIGTERM sent to the parent alone would never reach the site.
