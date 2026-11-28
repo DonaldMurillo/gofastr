@@ -9,6 +9,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
 func TestAriaParseEntryShapes(t *testing.T) {
@@ -481,5 +482,22 @@ func TestA11ySnapshotSizeCap(t *testing.T) {
 	}
 	if _, err := a11yScreenBody(path, "/x", true); err == nil || !strings.Contains(err.Error(), "larger") {
 		t.Errorf("err = %v, want the size cap", err)
+	}
+}
+
+func TestA11yJSONModeKeepsWarningsOffStdout(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "snap.yml")
+	if err := os.WriteFile(path, []byte("- heading \"Hi\" [level=1]\n- textbox \"Email\": ada@example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, jsonMode := range []bool{false, true} {
+		out := clitest.CovT_capStdout(t, func() {
+			if _, err := a11yScreenBody(path, "/x", jsonMode); err != nil {
+				t.Fatal(err)
+			}
+		})
+		if got := strings.Contains(out, "ada@example.com"); got == jsonMode {
+			t.Errorf("json=%v: warning on stdout = %v:\n%s", jsonMode, got, out)
+		}
 	}
 }
