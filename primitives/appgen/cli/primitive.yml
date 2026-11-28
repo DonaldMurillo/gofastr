@@ -59,6 +59,10 @@ invariants:
       - test: cmd/gofastr/internal/generatecmd.TestCLIRefusesEditedLegacyFile
       - test: cmd/gofastr/internal/generatecmd.TestCLIUnmarkedLegacyNeedsForce
       - test: cmd/gofastr/internal/generatecmd.TestCLIRefusesSymlinkedClientDir
+  - id: openapi-json-refuses-only-body-flags
+    rule: A --from-openapi command refuses --json beside one of its body-field flags and accepts it beside a query flag.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPICLI_RoundTripLiveServer
   - id: invisible-runes-come-from-textsafe
     rule: The generated CLI's terminal scrub drops exactly the runes core/textsafe.IsInvisible names, read at generation time, beside C0, DEL and C1.
     enforced_by:
@@ -88,3 +92,11 @@ decisions:
       - option: Rely on the caller's check alone and drop the inner one.
         why: A file created between the check and the rename would be replaced by the rename, destroying the earlier backup the rule says is never overwritten.
     upholds: [custom-go-is-owned]
+  - id: openapi-runner-builds-its-own-body
+    date: 2026-11-28
+    status: accepted
+    decision: A --from-openapi command's runner builds its request body itself rather than through buildBody.
+    rejected:
+      - option: Build the body through buildBody, as the entity commands do.
+        why: buildBody counts every flag set besides --url, --json and -o as a body field, so it would refuse --json with a query or header flag.
+    upholds: [openapi-json-refuses-only-body-flags]
