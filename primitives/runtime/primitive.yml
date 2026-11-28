@@ -111,6 +111,12 @@ invariants:
     enforced_by:
       - test: core-ui/runtime.TestHeldClickNeverLandsAfterALaterClick
       - test: examples/site/tracker.TestTrackerSupersedingPointerClicksKeepRingOff
+  - id: anchored-popover-is-on-the-top-layer
+    rule: An anchored popover widget's root is a manual popover while open, so it shows above whatever is already in the top layer, still placed beside its trigger by the module; it leaves the top layer when the widget closes, so a hydrated root that is only re-hidden rises above later layers when it reopens, and a root a page swap re-attaches rises again on its next placement.
+    enforced_by:
+      - test: core-ui/runtime.TestAnchoredPopoverOpensAboveTheTopLayer
+      - test: core-ui/runtime.TestHydratedPopoverReopensAboveALaterPopover
+      - test: core-ui/runtime.TestReattachedPopoverRisesAgain
   - id: escape-waits-for-widgetfocus
     rule: An Escape pressed while a modal or popover is open and the demand-loaded widgetfocus module has not registered yet is handed to that module once it loads, so it closes the top layer instead of being lost, unless a layer opened or closed in between; an Escape that belongs to an IME is never forwarded.
     enforced_by:
@@ -156,6 +162,16 @@ invariants:
       - test: core-ui/runtime.TestAutogrowUsesFieldSizing
       - test: core-ui/runtime.TestHiddenTextareaGrowsOnReveal
 decisions:
+  - id: anchored-popover-placement-stays-in-script
+    date: 2026-11-28
+    status: accepted
+    decision: The anchored popover joins the top layer as a manual popover but keeps the module's script placement and arrow; CSS anchor positioning waits until anchored container queries ship in Safari and Firefox, and then replaces the script outright.
+    rejected:
+      - option: position-area and position-try-fallbacks now, the script kept for browsers without them.
+        why: The arrow points at the trigger from the side the popover took, and only anchored container queries tell CSS which fallback the browser chose; with them in Chromium alone, two placers would have to agree on every side and clamp.
+      - option: Leave the popover out of the top layer.
+        why: A menu, toast stack or tooltip already in the top layer covered it, and the top layer is the part that changes what a reader can see and reach.
+    upholds: [anchored-popover-is-on-the-top-layer]
   - id: pass-through-trusted-types-policy
     date: 2026-11-21
     status: accepted
