@@ -129,7 +129,7 @@ func TestJSONOutputIsScrubbed(t *testing.T) {
 }
 
 func TestTornJSONLineEscapesUnsafeRunes(t *testing.T) {
-	torn := "{\"msg\":\"a\u009b2Jb‮c⁦d‏e torn"
+	torn := "{\"msg\":\"a\u009b2Jb\u202ec\u2066d\u200fe torn"
 	got := string(jsonLine([]byte(torn)))
 	for _, r := range got {
 		if r >= 0x20 && textsafe.IsUnsafe(r) {
