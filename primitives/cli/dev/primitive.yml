@@ -16,6 +16,65 @@ invariants:
     judge: Does this change make the gofastr dev or gofastr desktop watch loop run a go build of its own instead of calling devcmd.BuildCommand?
     applies:
       - cmd/gofastr/internal/desktopcmd/desktop.go
+  - id: child-env-is-platform-independent
+    rule: BuildDevChildEnv puts GOFASTR_DEV=1 first and drops every other GOFASTR_DEV entry, and, when addr is set, drops the parent's PORT and adds PORT=addr once; with no addr PORT is left as it was.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestBuildDevChildEnvOverridesParentDisable
+      - test: cmd/gofastr/internal/devcmd.TestBuildDevChildEnvInjectsResolvedPort
+      - test: cmd/gofastr/internal/devcmd.TestBuildDevChildEnvNoAddrLeavesPortUntouched
+      - test: cmd/gofastr/internal/devcmd.TestDesktopRunEnvConstruction
+  - id: flags-in-both-forms
+    rule: Every dev flag takes its value as --flag=v or --flag v; -p <port> means --addr localhost:<port>, and giving both -p and --addr is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestParseDevFlagsAcceptsEqualsAndSpaceForms
+      - test: cmd/gofastr/internal/devcmd.TestParseDevFlagsRefusesTypos
+  - id: bad-addr-or-dir-refused-up-front
+    rule: An address with no port or one that is not a number from 0 to 65535, and a --dir that is missing or not a directory, end gofastr dev before the loop starts; a bare port is taken as :port.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestParseDevFlagsRefusesBadAddr
+      - test: cmd/gofastr/internal/devcmd.TestDevRefusesMissingDir
+  - id: pkg-builds-dir-runs
+    rule: --pkg names the package built, while the watch root, the build's working directory and the app's working directory stay --dir, so internal/ is watched and relative paths resolve against the project.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestBuildAndServeWithPkgKeepsProjectRootAsCwd
+      - test: cmd/gofastr/internal/devcmd.TestScanModTimesWatchesInternalForCmdLayout
+      - test: cmd/gofastr/internal/devcmd.TestBuildAndServePkgDefaultsToDir
+  - id: gates-before-the-build
+    rule: Every rebuild runs the static accessibility lint, which --no-a11y skips, and the .ui.go sandbox lint, which it does not; a failing gate is a failed build whose output the hold shows.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestDevRebuildBlocksOnA11yFindings
+      - test: cmd/gofastr/internal/devcmd.TestDevA11yGateSkippedWithNoA11y
+      - test: cmd/gofastr/internal/devcmd.TestDevSandboxGateIgnoresNoA11y
+      - test: cmd/gofastr/internal/devcmd.TestBuildAndServeHoldShowsA11yFindings
+      - test: cmd/gofastr/internal/devcmd.TestBuildAndServeHoldShowsCompileError
+  - id: the-app-runs-as-by-hand
+    rule: The app is started from the built binary with --addr, in --dir, with BuildDevChildEnv over the isolation environment, tied to the loop with TieToParent, after the hold lets go of the address.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestBuildAndServeBuildsAndStarts
+      - test: cmd/gofastr/internal/devcmd.TestBuildAndServeTiesTheAppToTheLoop
+      - test: cmd/gofastr/internal/devcmd.TestBuildAndServeHandsThePortToTheApp
+  - id: a-non-main-package-is-named
+    rule: When the built package is not package main, the start failure says so and names --pkg instead of the exec error.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestDevNamesANonMainPackage
+  - id: only-the-current-app-exits-onto-the-hold
+    rule: The app's exit puts the address back on the hold only while that app is still the current one, checked and shown under the same lock KillServer takes, so a stale exit never takes the address from a newer app.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestBuildAndServeKillIsNotAnExit
+      - test: cmd/gofastr/internal/devcmd.TestBuildAndServeHoldShowsAppExit
+  - id: hangup-is-a-shutdown
+    rule: SIGINT, SIGTERM and SIGHUP each end the loop through its cleanup.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestDevShutsDownOnHangup
+  - id: one-signal-reaches-everything
+    rule: The first shutdown signal closes one channel that the build in progress, the main loop and the watch's go list all see, and the loop's exit stops the app, releases the hold and removes DevServerBinDir.
+    judge: Does this change let a shutdown signal miss a build in progress or a running go list, or leave RunDev's exit without stopping the app, releasing the hold or removing the binary directory?
+  - id: reload-then-refresh-then-report
+    rule: After a successful rebuild the loop restarts the app first, then refreshes the package graph and runs the contract report behind it, never before the restart.
+    judge: Does this change put the package-graph refresh or the contract analysis in front of the app's restart in RunDev?
+  - id: windows-addr-in-use
+    rule: addrInUse treats WSAEADDRINUSE (10048) as address in use, which syscall.EADDRINUSE does not match on Windows.
+    judge: Does this change drop the 10048 errno from addrInUse, so a busy port on Windows is no longer reported as in use?
 decisions:
   - id: no-vcs-stamp-in-dev
     date: 2026-11-19
@@ -33,3 +92,19 @@ decisions:
       - option: Keep the desktop loop's own go build.
         why: It was the same build written twice, and it kept stamping VCS info after the dev loop stopped.
     upholds: [one-dev-build-command]
+  - id: port-through-the-environment
+    date: 2026-11-28
+    status: accepted
+    decision: The resolved address reaches the app as PORT in its environment as well as --addr.
+    rejected:
+      - option: Pass --addr only.
+        why: The generated scaffold binds getEnv("PORT", ...) and never parses argv, so the app bound the committed .env default while the banner named the requested address; dotenv never overrides a set variable, so PORT wins over .env.
+    upholds: [child-env-is-platform-independent]
+  - id: gofastr-dev-first-and-once
+    date: 2026-11-28
+    status: accepted
+    decision: GOFASTR_DEV=1 is the first entry and the only GOFASTR_DEV one.
+    rejected:
+      - option: Append GOFASTR_DEV=1.
+        why: glibc getenv returns the first entry, so a parent GOFASTR_DEV=0 won on Linux while macOS takes the last.
+    upholds: [child-env-is-platform-independent]
