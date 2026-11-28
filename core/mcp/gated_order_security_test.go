@@ -38,8 +38,8 @@ func TestGatedValidationOrderAndIdentity(t *testing.T) {
 			t.Fatalf("valid call = %v (%v), callbacks %v; want gate chain and handler once", got, err, calls)
 		}
 		calls = nil
-		_, err = s.CallTool(context.Background(), "denied", map[string]any{})
-		if !errors.As(err, &rpc) || rpc.Code != ErrInvalidParams || len(calls) != 0 {
+		_, err = s.CallTool(context.Background(), "denied", map[string]any{"secret": "valid"})
+		if !errors.As(err, &rpc) || rpc.Code != ErrInvalidParams || rpc.Message != `tool "denied" not found` || len(calls) != 0 {
 			t.Fatalf("refused wrapper = %v, callbacks %v; confused distinct wrappers", err, calls)
 		}
 		// Tool.Handler remains a gated callable for hosts reading ListTools.
@@ -63,9 +63,9 @@ func TestGatedToolOptionReplacement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.CallTool(context.Background(), "replaced", nil)
+	_, err = s.CallTool(context.Background(), "replaced", map[string]any{"secret": "valid"})
 	var rpc *RPCError
-	if !errors.As(err, &rpc) || rpc.Code != ErrInvalidParams {
+	if !errors.As(err, &rpc) || rpc.Code != ErrInvalidParams || rpc.Message != `tool "replaced" not found` {
 		t.Fatalf("replacement gate = %v, want unknown tool", err)
 	}
 }
