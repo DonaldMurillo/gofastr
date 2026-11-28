@@ -59,3 +59,29 @@ func TestPWAAppGetsAStaticDirAndItsMountsDenied(t *testing.T) {
 		t.Errorf("a custom api_prefix must join the PWA deny list:\n%s", lit)
 	}
 }
+
+// A css2 answer naming another font host leaves the font out and names its path, and the app still renders.
+func TestFontFromAMovedCDNIsReportedMissing(t *testing.T) {
+	var hosts []string
+	prevFetch, prevRT := FontFetcher, appSpecFontHTTPClient.Transport
+	t.Cleanup(func() { FontFetcher, appSpecFontHTTPClient.Transport = prevFetch, prevRT })
+	FontFetcher = fetchGoogleFontWoff2
+	appSpecFontHTTPClient.Transport = fontRoundTrip(func(r *http.Request) (*http.Response, error) {
+		hosts = append(hosts, r.URL.Host)
+		css := "/* latin */\n@font-face { src: url(https://fonts.moved.example/s/x.woff2) format('woff2'); }"
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(css)), Request: r}, nil
+	})
+	bp := appspec.AppSpec{App: appspec.AppSpecApp{Name: "Fonts", Module: "example.com/fonts", Theme: map[string]string{"font_heading": "Test Sans"}}}
+	files := mustRenderAppSpecFiles(t, bp)
+	if got := appSpecMissingFontSlugs(bp, files); len(got) != 1 || got[0] != "static/fonts/test-sans.woff2" {
+		t.Errorf("missing fonts = %v, want static/fonts/test-sans.woff2 for generate to warn about", got)
+	}
+	if len(hosts) == 0 {
+		t.Fatal("generation fetched no font")
+	}
+	for _, h := range hosts {
+		if h != "fonts.googleapis.com" {
+			t.Errorf("fetched from %s, want only the css2 request", h)
+		}
+	}
+}

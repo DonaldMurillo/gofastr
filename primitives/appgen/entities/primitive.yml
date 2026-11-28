@@ -42,6 +42,10 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestDuplicateDeclsSeeStructFields
       - test: cmd/gofastr/internal/appgen.TestSDKDerivedNamesMustNotCollide
+  - id: repo-write-shapes-keep-hidden-fields
+    rule: The typed repository's <Entity>Input and <Entity>Patch keep a hidden field, the opposite of appgen.client/hidden-fields-never-leave, because the repo is server code that crud.WithServerWrites lets write hidden columns.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestRepoWriteShapesKeepHiddenFields
 decisions:
   - id: integer-id-is-int
     date: 2026-11-28
@@ -53,3 +57,11 @@ decisions:
       - option: int64.
         why: The other int fields and framework.IntColumn are int.
     upholds: [model-types-follow-the-wire]
+  - id: repo-keeps-hidden-fields
+    date: 2026-11-28
+    status: accepted
+    decision: The repo's write shapes drop only what writeShapeDrops drops, the set the HTTP client also drops, and keep hidden fields.
+    rejected:
+      - option: Drop hidden fields from the repo shapes, as the HTTP client does.
+        why: The client crosses the wire, where a hidden field must never appear, but the repo runs in the server, and dropping the field would leave server code no typed way to write a column only WithServerWrites may set.
+    upholds: [repo-write-shapes-keep-hidden-fields]

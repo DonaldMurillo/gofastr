@@ -131,6 +131,11 @@ few lines, and link the PR or the docs page for the rest.
   an `access.read` permission
   ([#939](https://github.com/DonaldMurillo/gofastr/issues/939)).
 
+- **`gofastr generate`'s unscoped-read warning no longer suggests
+  `multi_tenant: true`**, which `gofastr validate` refuses for a generated
+  app. It names `owner_field` and an `access.read` permission
+  ([#939](https://github.com/DonaldMurillo/gofastr/issues/939)).
+
 - **`gofastr release --url` no longer prints the credentials in a URL it
   refuses.** The error shows `https://REDACTED@host/...`, so a token in
   the URL stays out of the terminal and CI logs

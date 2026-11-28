@@ -65,12 +65,18 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestFontFamilyCannotInjectCSS
       - test: cmd/gofastr/internal/appgen.TestThemeValueCannotInjectCSS
+      - test: cmd/gofastr/internal/appgen.TestEmitterDropsUnsafeThemeColor
   - id: font-fetch-trusts-only-gstatic
     rule: Generation fetches a font only from an https URL whose host is exactly fonts.gstatic.com and whose path ends in .woff2, whatever the css2 response names, and follows no redirect that leaves https or the host it asked.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestFontFetchRefusesARedirectOffTheHost
       - test: cmd/gofastr/internal/appgen.TestFontFetchOnlyTrustsGstatic
       - test: cmd/gofastr/internal/appgen.TestFontFetchChecksThePathNotTheQuery
+  - id: font-fetch-failure-is-soft
+    rule: A theme font whose fetch fails, offline or because the css2 answer names no fonts.gstatic.com woff2, is left out of the files and reported missing, and the app still renders.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestFontsOfflineReportedMissing
+      - test: cmd/gofastr/internal/appgen.TestFontFromAMovedCDNIsReportedMissing
   - id: pwa-follows-the-app
     rule: A PWA app gets a static dir for its icons, and its deny list carries a custom api_prefix and auth base path so the service worker never caches or intercepts the API.
     enforced_by:
@@ -109,3 +115,13 @@ decisions:
         why: The declared engine is the one the spec ships against, so a SQLite run would not test it.
       - option: Fail when Postgres is unreachable.
         why: CI with no Postgres would fail every Postgres spec's test; it stays green by skipping.
+  - id: missing-font-is-a-warning
+    date: 2026-11-28
+    status: accepted
+    decision: A theme font that cannot be fetched is a warning from gofastr generate, and the generated app falls back to system fonts until the woff2 is supplied.
+    rejected:
+      - option: Fail generation when a font cannot be fetched.
+        why: An offline run, or Google moving its font CDN away from fonts.gstatic.com, would stop every app with a theme font from generating.
+      - option: Fetch the woff2 from whatever host the css2 answer names.
+        why: The answer is network input, and font-fetch-trusts-only-gstatic keeps generation from fetching anywhere else.
+    upholds: [font-fetch-failure-is-soft, font-fetch-trusts-only-gstatic]

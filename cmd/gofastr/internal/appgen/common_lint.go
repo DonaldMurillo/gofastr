@@ -6,6 +6,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
 )
 
+// LintOrder selects the position of module collision warnings.
 type LintOrder uint8
 
 const ModuleCollisionsFirst LintOrder = 1

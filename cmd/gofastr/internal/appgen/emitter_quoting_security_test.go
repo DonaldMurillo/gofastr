@@ -580,6 +580,21 @@ func TestSDKSpecRefusesHostileDeclarations(t *testing.T) {
 			assertIRStayedData(t, "sdk."+label, f.Name, f.Content)
 		}
 	}
+	// Each of these must be refused at spec build, by the gate for its own slot:
+	// a later gate or the parse gate refusing it too would hide a gate that let it through.
+	for table, want := range map[string]string{
+		`x(1)`: "valid JavaScript identifier",
+		`x\y`:  "cannot survive the Go string literals",
+	} {
+		opts := SdkOptions{name: "app"}
+		_, err := buildSDKSpec([]framework.EntityDeclaration{{
+			Name: "events", Table: table,
+			Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
+		}}, &opts)
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("SECURITY: [injection] table %q: want a refusal naming %q, got %v", table, want, err)
+		}
+	}
 	// Control: the plain declarations real apps generate still pass both
 	// layers.
 	opts := SdkOptions{name: "app"}

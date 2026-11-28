@@ -17,6 +17,8 @@ func TestCLISpecRefusals(t *testing.T) {
 		want   string
 	}{
 		{"binary newline", []framework.EntityDeclaration{sdkDecl("posts", "posts")}, "my\napp", "control character"},
+		{"binary carriage return", []framework.EntityDeclaration{sdkDecl("posts", "posts")}, "my\rapp", "control character"},
+		{"binary DEL", []framework.EntityDeclaration{sdkDecl("posts", "posts")}, "my\x7fapp", "control character"},
 		{"struct collision", []framework.EntityDeclaration{sdkDecl("events", "events_a"), sdkDecl("Events", "events_b")}, "myapp", "both derive the Go struct name"},
 		{"states", []framework.EntityDeclaration{badStates}, "myapp", "orders"},
 	} {

@@ -31,6 +31,7 @@ func (f localeRouteFinding) Message() string {
 		f.What, f.Route, f.Segment, f.Segment, f.Segment)
 }
 
+// LintLocaleRoutes flags each screen, entity API, auth or admin route whose first segment is shaped like a locale tag when app.locale_prefixes is on.
 func LintLocaleRoutes(bp appspec.AppSpec) []localeRouteFinding {
 	app := bp.RouteApp()
 	if !app.LocalePrefixes {

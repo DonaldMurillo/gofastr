@@ -300,6 +300,25 @@ func TestGenerateStylesTokensFiles(t *testing.T) {
 		}
 	})
 
+	t.Run("a failed file's tokens still count", func(t *testing.T) {
+		dir, code, printed := runStylesCase(t, map[string]string{
+			"ui/acme.tokens.css": "@property --color-highlight { syntax: \"<color>\"; inherits: true; initial-value: #0F766E; }\n" +
+				"@property --size-x { syntax: \"<color>\"; inherits: true; initial-value: red; }\n",
+			"ui/hero.style.css": ":scope { color: var(--color-highlight); }\n",
+			"ui/ui.go":          "package ui\n",
+		}, "ui/acme_tokens.gen.go")
+		if code != 1 || strings.Contains(printed, "GOFASTR1806") {
+			t.Fatalf("exit %d, want 1 with no GOFASTR1806 on the sheet:\n%s", code, printed)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "ui", "hero_style.gen.go")); err != nil {
+			t.Errorf("the sheet using a parsed token generated no Go: %v", err)
+		}
+		completion, _ := os.ReadFile(filepath.Join(dir, ".gofastr", "tokens.css"))
+		if !strings.Contains(string(completion), "--color-highlight: #0F766E;") {
+			t.Errorf("completion file dropped the failed file's parsed token:\n%s", completion)
+		}
+	})
+
 	t.Run("a built-in name is refused", func(t *testing.T) {
 		_, code, printed := runStylesCase(t, map[string]string{
 			"ui/acme.tokens.css": "@property --color-primary { syntax: \"<color>\"; inherits: true; initial-value: #000; }\n",
