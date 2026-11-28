@@ -105,3 +105,13 @@ decisions:
         why: The three are separate directories, possibly on separate filesystems, so no one rename commits them, and the refusal already keeps a half install from being overwritten.
     revisit_if: Users report half-installed apps that uninstall refuses and they must remove by hand.
     upholds: [install-rolls-back-its-own]
+  - id: icon-checked-before-and-after-open
+    date: 2026-11-28
+    status: accepted
+    decision: The archive's --icon is refused unless it is a regular file both before it is opened and once it is open.
+    rejected:
+      - option: Check only the opened file.
+        why: Opening a FIFO for reading blocks until something writes to it, so the build would hang before the check ran.
+      - option: Check only before opening.
+        why: The check does not stop a process of the same user swapping the path between the check and the open, so the opened file is checked again.
+    upholds: [archive-icon-is-a-regular-png]

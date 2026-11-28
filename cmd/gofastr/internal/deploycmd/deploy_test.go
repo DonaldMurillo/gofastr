@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -634,9 +635,11 @@ func TestDeployCleansFailedUploads(t *testing.T) {
 // deploy before anything is built or sent.
 func TestServersThatCannotBeDeployedTo(t *testing.T) {
 	s := newServer(t)
-	s.arch = "riscv64"
-	if _, err := s.run(t0, "deploy@example.com", "--name", "shop"); err == nil || !strings.Contains(err.Error(), "riscv64") || len(s.built) != 0 {
-		t.Errorf("a riscv64 server: %v, built %v", err, s.built)
+	for _, arch := range []string{"riscv64", "i686", "armv7l"} {
+		s.arch = arch
+		if _, err := s.run(t0, "deploy@example.com", "--name", "shop"); err == nil || !strings.Contains(err.Error(), arch) || len(s.built) != 0 {
+			t.Errorf("a %s server: %v, built %v", arch, err, s.built)
+		}
 	}
 	s.arch = "aarch64"
 	if _, err := s.run(t0, "deploy@example.com", "--name", "shop"); err != nil || s.built[0] != ". arm64" {
@@ -927,6 +930,12 @@ func TestProbeDoesNotWaitForEver(t *testing.T) {
 	case <-time.After(20 * time.Second):
 		t.Fatal("the health check is still waiting on a connection nothing answers")
 	}
+	p := plan{root: s.dir, name: "shop", port: s.port, health: "/healthz", wait: 30}
+	start := time.Now()
+	out, stderr, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(p.preamble()+"probe \"$DEFAULT_PORT\" \"$DEFAULT_HEALTH\"\n"))
+	if elapsed := time.Since(start); err != nil || code == 0 || elapsed < 1500*time.Millisecond || elapsed > 3500*time.Millisecond {
+		t.Fatalf("one probe of a port that never answers: exit %d after %s, want a failure after about two seconds, err %v\n%s", code, elapsed, err, out+stderr)
+	}
 }
 
 func TestHealthSettingsFollowEachRelease(t *testing.T) {
@@ -1105,12 +1114,18 @@ func TestWaitIsElapsedSeconds(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(s.dir, "always-active"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	p := plan{root: s.dir, name: "shop", port: ln.Addr().(*net.TCPAddr).Port, health: "/healthz", wait: 1}
+	p := plan{root: s.dir, name: "shop", port: ln.Addr().(*net.TCPAddr).Port, health: "/healthz", wait: 3}
+	// A 30-second probe is still running at the deadline, so the deadline
+	// must cut it off; the bounds leave room for a loaded runner.
+	script := regexp.MustCompile(`timeout( --foreground)? 2 bash`).ReplaceAllString(p.preamble(), "timeout$1 30 bash")
+	if script == p.preamble() {
+		t.Fatal("the preamble has no two-second probe timeout to lengthen")
+	}
 	start := time.Now()
-	out, stderr, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(p.preamble()+"read_health ''; healthy\n"))
+	out, stderr, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(script+"read_health ''; healthy\n"))
 	elapsed := time.Since(start)
-	if err != nil || code == 0 || elapsed < 800*time.Millisecond || elapsed > 2*time.Second {
-		t.Fatalf("one-second health deadline: exit %d after %s, err %v\n%s", code, elapsed, err, out+stderr)
+	if err != nil || code == 0 || elapsed < 2800*time.Millisecond || elapsed > 5500*time.Millisecond {
+		t.Fatalf("three-second health deadline: exit %d after %s, err %v\n%s", code, elapsed, err, out+stderr)
 	}
 }
 

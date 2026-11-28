@@ -9,7 +9,7 @@ code:
 docs:
   - framework/docs/content/desktop.md
 on_change:
-  - Every test here but TestWindowsVersionsUseCoreNumbers is built for Windows only; run them on Windows, or with GOOS=windows go vet at least, before calling a change here done.
+  - Every test here but TestWindowsVersionsUseCoreNumbers is built for Windows only, and the Windows job in .github/workflows/windows-init.yml runs each one an invariant here names; a new Windows-only enforcer joins that job's desktopcmd step in the same change, and GOOS=windows go vet checks the package builds.
 invariants:
   - id: version-resource-from-core
     rule: windowsVersionParts takes up to four numeric components from the version's core, dropping a valid semver pre-release, and refuses an invalid suffix, a fifth component or a version over 256 characters.
