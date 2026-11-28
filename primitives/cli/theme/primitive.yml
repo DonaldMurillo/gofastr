@@ -39,6 +39,7 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/themecmd.TestThemeEditWritebackInjectionSafety
       - test: cmd/gofastr/internal/themecmd.TestThemeEditWritebackProducesParseableGo
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditWritebackIsByteStable
   - id: emitter-keeps-every-token
     rule: The emitter writes every token set of style.Theme, the dark palette, component options, knobs and type scale, leaves unset strokes, leadings, trackings and opacities unset, and writes durations as literals that round-trip exactly; token names come from AutoFillNames in the emitted init.
     enforced_by:
@@ -71,3 +72,11 @@ decisions:
       - option: Emit each Name.
         why: It repeats what AutoFillNames derives from the field path and gives a value one more place to reach.
     upholds: [emitted-values-stay-data]
+  - id: starter-declares-no-components
+    date: 2026-11-28
+    status: accepted
+    decision: theme init's starter sets Components to nil, so the file declares no component options.
+    rejected:
+      - option: Emit the framework's default component options.
+        why: The complete default set is compiled into :root anyway, so a host declares Components only to deviate from it, and a copied set would hide which options the app chose.
+    upholds: [starter-is-the-default-theme]

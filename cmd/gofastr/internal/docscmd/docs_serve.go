@@ -425,6 +425,10 @@ func serveDocsDir(dir string, opts docsServeOptions) error {
 	if err != nil {
 		return err
 	}
+	return startDocsSite(app, opts)
+}
+
+func startDocsSite(app *framework.App, opts docsServeOptions) error {
 	app.OnReady(func(addr string) {
 		url := "http://" + displayAddr(addr)
 		cli.Success("Docs at %s (Ctrl-C to stop)", url)
