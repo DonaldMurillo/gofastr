@@ -65,7 +65,12 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 		// breakpoint) closes and lets the page go, watched by a
 		// ResizeObserver per armed trap and asked again at each Tab:
 		// 3255 measured + 2. The trap and its release are one posture.
-		"framework/headless/disclosure.js": 3257,
+		// TestDropdownPanelEscapesAClippingBox (#706): a panel the sheet
+		// anchors opens as a manual popover in the top layer and leaves
+		// it on close, the other half of keeping a popup on screen, and
+		// a popup open on arrival is raised the same way (+95). 3352
+		// measured + 2.
+		"framework/headless/disclosure.js": 3354,
 		// core-ui/localdb's on-request API module, 3637 measured (2
 		// clearance). 3420 at landing; the second review round added
 		// the late-body rejection in tx, closing a connection a failed
