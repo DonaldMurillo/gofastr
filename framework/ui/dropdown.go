@@ -197,6 +197,25 @@ func dropdownCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-dropdown"].fui-dropmenu--start > .fui-dropmenu__panel { inset-inline-start: 0; }
 [data-cui-comp="ui-dropdown"].fui-dropmenu--end > .fui-dropmenu__panel { inset-inline-end: 0; }
+/* Where the browser has anchor positioning, the panel is anchored to
+   its trigger, and headless-disclosure opens a panel so anchored in
+   the top layer: no clipping box cuts it, and the browser flips it
+   when its side has no room. */
+@supports (anchor-scope: --x) and (position-area: top) {
+  [data-cui-comp="ui-dropdown"] { anchor-scope: --hui-disclosure; }
+  [data-cui-comp="ui-dropdown"] > summary { anchor-name: --hui-disclosure; }
+  [data-cui-comp="ui-dropdown"] > .fui-dropmenu__panel { position-anchor: --hui-disclosure; }
+  [data-cui-comp="ui-dropdown"] > .fui-dropmenu__panel[popover] {
+    position: fixed;
+    inset: auto;
+    margin: var(--spacing-sm, 4px) 0;
+    overflow: visible;
+    translate: none;
+    position-area: block-end span-inline-end;
+    position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+  }
+  [data-cui-comp="ui-dropdown"].fui-dropmenu--end > .fui-dropmenu__panel[popover] { position-area: block-end span-inline-start; }
+}
 @keyframes fui-dropmenu-in {
   from { opacity: 0; transform: translateY(-4px) scale(0.98); }
 }
