@@ -16,7 +16,7 @@ type piiFinding struct {
 // Message names the entity, its PII-shaped fields and every remedy.
 func (f piiFinding) Message() string {
 	return fmt.Sprintf(
-		"entity %q exposes PII-shaped field(s) %s via auto-CRUD/MCP with no scoping. Set owner_field: <column> for per-user rows, require a permission in access.read (RBAC), or set multi_tenant: true",
+		"entity %q exposes PII-shaped field(s) %s via auto-CRUD/MCP with no scoping. Set owner_field: <column> for per-user rows or require a permission in access.read (RBAC)",
 		f.Entity, strings.Join(f.Fields, ", "))
 }
 
