@@ -11,7 +11,7 @@ invariants:
       - test: cmd/gofastr/internal/appgen.TestGenerateStylesPerProgram
       - test: cmd/gofastr/internal/appgen.TestGenerateStylesErrorCases
   - id: one-bad-file-stops-only-itself
-    rule: Every diagnostic of every file is printed, a file with an unwaived error-severity finding gets no Go, the others still generate, and the run exits non-zero at the end; a gofastr:allow marker waives a finding as it does in verify, and repeated-literal warnings never fail the run.
+    rule: Every diagnostic of every file is printed, a file with an unwaived error-severity finding gets no Go, the others still generate, and the run exits non-zero at the end; the tokens a failed tokens file parsed still count for the sheets and .gofastr/tokens.css, a gofastr:allow marker waives a finding as it does in verify, and repeated-literal warnings never fail the run.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestGenerateStylesErrorCases
       - test: cmd/gofastr/internal/appgen.TestGenerateStylesTokensFiles
@@ -34,3 +34,12 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestGenerateStylesWritesTokensCSS
       - test: cmd/gofastr/internal/appgen.TestGenerateStylesGolden
+decisions:
+  - id: failed-tokens-still-count
+    date: 2026-11-28
+    status: accepted
+    decision: A tokens file that fails its checks writes no Go, but every token it parsed stays in the program's token set and in .gofastr/tokens.css.
+    rejected:
+      - option: Drop a failed file's tokens with its Go.
+        why: One typo in a tokens file would then turn every var() of its other tokens into a GOFASTR1806 across the program, burying the one real error.
+    upholds: [one-bad-file-stops-only-itself]
