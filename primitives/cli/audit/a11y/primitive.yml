@@ -33,12 +33,13 @@ invariants:
       - test: cmd/gofastr/internal/auditcmd.TestAxeReportShowsCoverage
       - test: cmd/gofastr/internal/auditcmd.TestAxeReportFlagsLoginOnly
   - id: sitemap-discovery
-    rule: With no --pages, pages come from /sitemap.xml, a URL set or an index whose parts are each read once and must be URL sets, and each page location, an http or https URL with a host or a root-relative path, is reduced to its path; a missing sitemap means /, while any other read failure, a redirected sitemap, or a sitemap with no page location fails the run.
+    rule: With no --pages, pages come from /sitemap.xml, a URL set or an index whose parts are each read once and must be URL sets, and each page location, an http or https URL with a host or a root-relative path, is reduced to its path whatever its origin; a missing sitemap means /, while any other read failure, a redirected sitemap, or a sitemap with no page location fails the run.
     enforced_by:
       - test: cmd/gofastr/internal/auditcmd.TestA11ySitemapDiscoversURLSet
       - test: cmd/gofastr/internal/auditcmd.TestA11ySitemapFallsBackToRoot
       - test: cmd/gofastr/internal/auditcmd.TestA11ySitemapRootFailuresFailDiscovery
       - test: cmd/gofastr/internal/auditcmd.TestA11ySitemapRejectsNonPageLocations
+      - test: cmd/gofastr/internal/auditcmd.TestA11ySitemapReadsAnotherOriginAsALocalPath
       - test: cmd/gofastr/internal/auditcmd.TestA11ySitemapIndexDoesNotScanPartURLs
       - test: cmd/gofastr/internal/auditcmd.TestA11ySitemapMissingPartFailsDiscovery
       - test: cmd/gofastr/internal/auditcmd.TestA11ySitemapIndexReadsEachPartOnce
@@ -66,12 +67,12 @@ decisions:
       - option: Count a redirected page as a scanned page with no violations.
         why: A login redirect would then read as a clean page, and an audit of a signed-out app would pass.
     upholds: [coverage-gaps-fail]
-  - id: sitemap-origin-not-compared
+  - id: sitemap-locations-read-as-paths
     date: 2026-11-28
     status: accepted
-    decision: "Open finding, tracked in issue #940: discoverA11yPages is not given the --url origin, so a sitemap location or index part on another origin, such as https://other.example/private, is scanned or read as its path on the configured origin."
+    decision: A sitemap location or index part on any origin is read as its path on the --url origin.
     rejected:
       - option: Compare each location's origin with --url and drop or refuse a foreign one.
-        why: Not built yet; this sweep changes no behaviour, and the index parts are read the same way.
-    revisit_if: "Issue #940 is decided, a sitemap that lists another origin's URLs is audited, or the a11y scan is pointed at sitemaps the app does not generate."
+        why: uihost writes every location with the app's production BaseURL while the audit usually runs against a local server, so every local audit of an app with a sitemap would find no page; nothing is fetched from another origin either way.
+    revisit_if: The audit is pointed at sitemaps the app does not generate, or uihost writes locations relative to the request.
     upholds: [sitemap-discovery]
