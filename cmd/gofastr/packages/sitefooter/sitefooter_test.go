@@ -29,7 +29,7 @@ func TestRenderFooterLandmarks(t *testing.T) {
 		`class="inner"`, `class="top"`, `class="columns"`, `class="note"`,
 		// The brand links home; the columns are titled lists.
 		`class="brand"`, `href="/"`, "Example",
-		`class="title"`, "Product", `class="links"`, `href="/about"`,
+		`<h2 class="title"`, "Product", `class="links"`, `href="/about"`,
 		"© 2026 Example",
 	} {
 		if !strings.Contains(html, want) {
