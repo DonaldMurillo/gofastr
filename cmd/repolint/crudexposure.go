@@ -8,7 +8,7 @@ var crudExposureClassified = map[string]string{
 	"framework/app.go":                        "defines the predicate (entityCRUDEnabled) and ANDs a.DB != nil at every other read",
 	"framework/entity/entity.go":              "marshals the declaration; not an exposure decision",
 	"framework/entity/declaration.go":         "merges the declaration; not an exposure decision",
-	"cmd/gofastr/internal/appgen/generate.go": "emits the declared flag back into generated source; not an exposure decision",
+	"cmd/gofastr/internal/appgen/generate_entities.go": "emits the declared flag back into generated source; not an exposure decision",
 	"cmd/gofastr/internal/packcmd/pack.go":    "serializes the declared flag back to YAML; not an exposure decision",
 	"framework/openapi/openapi.go":            "takes a crudMounted predicate; the bare read is its documented nil fallback for direct callers",
 	"framework/sdkdocs/sdkdocs.go":            "takes a CRUDMounted predicate; the bare read is the Exposure-only prefilter",
