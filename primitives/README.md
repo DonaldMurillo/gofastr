@@ -118,6 +118,15 @@ prints how many are left. Until a twin is merged, `primitives for` on
 any of its sites prints every other site. A site need not be owned by
 the primitive that lists it.
 
+### Changes to shared rules
+
+Before editing, use `primitives for` on the related sites it lists.
+Read the rules that apply there and test related inputs against the
+shared rule. Fix reproducible violations of that rule as part of the
+change. Include regression tests for the fixes and for valid behavior
+that must still work. In the change summary, explain why any listed
+site needs no change.
+
 ## What the harness enforces
 
 `.claude/settings.json` holds what must happen whatever an agent decides.
