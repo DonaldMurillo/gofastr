@@ -25,15 +25,34 @@ Call `SetServerName(name)` to override only the name, `SetInstructions(text)` (o
 
 ## Supported JSON-RPC methods & protocol versions
 
-`Server.HandleRequest` handles `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list`, `resources/read`, `resources/templates/list`, `resources/subscribe`, `resources/unsubscribe`, `prompts/list`, and `prompts/get`.
+`Server.HandleRequest` handles `server/discover`, `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list`, `resources/read`, `resources/templates/list`, `resources/subscribe`, `resources/unsubscribe`, `prompts/list`, and `prompts/get`.
 
-- **Protocol negotiation:** Supports `2025-11-25` (`mcp.LatestProtocolVersion`), `2025-06-18` and `2025-03-26` (`mcp.SupportedProtocolVersions()`). Unknown or omitted client versions receive `2025-11-25`. JSON-RPC batches return `-32600` (`ErrInvalidRequest`).
-- **`MCP-Protocol-Version` header:** On the HTTP transports (`ServeHTTP` and both `ServeSSE` methods), a request whose `MCP-Protocol-Version` header (`mcp.ProtocolVersionHeader`) names a revision the server does not speak, or that repeats the header, is answered `400` with `-32600` and `error.data` of `{"supported": [...], "requested": "..."}`. An absent header is served, as the spec allows for clients older than `2025-06-18`, and `initialize` is never refused for its header because it negotiates the version itself.
-- **Exported error codes:** `ErrParse` (-32700), `ErrInvalidRequest` (-32600), `ErrMethodNotFound` (-32601), `ErrInvalidParams` (-32602), `ErrInternalError` (-32603) and `ErrResourceNotFound` (-32002), carried on `*RPCError`.
+- **Protocol versions:** The server is dual-era. It speaks `2026-07-28` (`mcp.LatestProtocolVersion`), where every request names its own version and there is no handshake, and the handshake revisions `2025-11-25` (`mcp.LatestHandshakeVersion`), `2025-06-18` and `2025-03-26` (`mcp.HandshakeProtocolVersions()`). `mcp.SupportedProtocolVersions()` lists all four, newest first. See [Per-request protocol (2026-07-28)](#per-request-protocol-2026-07-28).
+- **Handshake negotiation:** `initialize` answers the client's version when it is a handshake revision, and `2025-11-25` for any other, missing or unknown version, including `2026-07-28`. JSON-RPC batches return `-32600` (`ErrInvalidRequest`).
+- **`MCP-Protocol-Version` header:** On the HTTP transports (`ServeHTTP` and both `ServeSSE` methods), a handshake-era request whose `MCP-Protocol-Version` header (`mcp.ProtocolVersionHeader`) names a revision `initialize` does not negotiate, or that repeats the header, is answered `400` with `-32600` and `error.data` of `{"supported": [...], "requested": "..."}`. An absent header is served, as the spec allows for clients older than `2025-06-18`, and `initialize` is never refused for its header because it negotiates the version itself.
+- **Exported error codes:** `ErrParse` (-32700), `ErrInvalidRequest` (-32600), `ErrMethodNotFound` (-32601), `ErrInvalidParams` (-32602), `ErrInternalError` (-32603), `ErrResourceNotFound` (-32002), and the 2026-07-28 codes `ErrHeaderMismatch` (-32020), `ErrMissingRequiredClientCapability` (-32021) and `ErrUnsupportedProtocolVersion` (-32022), carried on `*RPCError`.
 - **Not-found answers:** an unknown tool, or one a gate hides, answers `-32602` (`ErrInvalidParams`) with `tool "<name>" not found`; an unknown or hidden resource answers `-32002` (`ErrResourceNotFound`); an unknown or hidden prompt answers `-32602`. Only an unknown method answers `-32601`.
 - **Server details:** `SetServerDetails(mcp.ServerDetails{Title, Description, WebsiteURL, Icons})` fills the optional `serverInfo` fields. It returns an error and changes nothing when `WebsiteURL` is not `https` or an icon is invalid.
 - **Icons:** `WithToolIcons`, `WithResourceIcons`, `WithResourceTemplateIcons` and `WithPromptIcons` take `mcp.Icon{Src, MimeType, Sizes, Theme}` values and list them as `icons`. `Src` must be an `https` URL or a `data:` URI and `Theme` must be empty, `light` or `dark`; any other value panics at registration.
 - **Capabilities:** `initialize` advertises `tools` always, `resources` (with `subscribe: true`) once any resource or template is registered, and `prompts` once any prompt is registered—all with `listChanged: true`.
+
+## Per-request protocol (2026-07-28)
+
+A request whose `params._meta` carries `io.modelcontextprotocol/protocolVersion` (`mcp.MetaProtocolVersion`) is a modern request. It is served without `initialize`, on stdio and HTTP alike, beside handshake clients on the same endpoint:
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{
+  "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+  "io.modelcontextprotocol/clientCapabilities":{}}}}
+```
+
+- **Version check:** a version other than `2026-07-28` answers `-32022` with `error.data` of `{"supported": [...], "requested": "..."}`. A non-string version answers `-32602`.
+- **`server/discover`:** answers `supportedVersions`, the capabilities (`tools` always, `resources` and `prompts` once registered), `instructions` when set, and the result fields below. It answers with or without `_meta`, so a stdio client can probe with it, and it stays open under `SetGate`, like `initialize`.
+- **Result fields:** every successful result carries `resultType: "complete"` and `_meta["io.modelcontextprotocol/serverInfo"]`. The results of `server/discover`, `tools/list`, `prompts/list`, `resources/list`, `resources/templates/list` and `resources/read` also carry `ttlMs: 0` and `cacheScope: "private"`, because gates make listings vary per caller.
+- **Removed methods:** `initialize`, `ping`, `resources/subscribe` and `resources/unsubscribe` answer `-32601` to a modern request. An unknown resource answers `-32602` instead of `-32002`.
+- **HTTP headers:** a modern POST must carry one `MCP-Protocol-Version` equal to its `_meta` version and one `Mcp-Method` (`mcp.MethodHeader`) equal to its method. A `tools/call`, `resources/read` or `prompts/get` must also carry one `Mcp-Name` (`mcp.NameHeader`) equal to `params.name` or `params.uri`, either plain or as `=?base64?<base64>?=`. A missing, repeated, mismatched or non-ASCII header answers `400` with `-32020`, as does a request without `_meta` sent under a `2026-07-28` header (except `server/discover`).
+- **HTTP status:** `-32020`, `-32021` and `-32022` answer `400`, and a modern `-32601` answers `404` so a client can tell an unknown method from a server with no MCP endpoint. Every other answer, including handshake-era `-32601`, stays `200`. A `GET` under a `2026-07-28` header answers `405`, because that revision has no GET stream.
+- **Not yet served:** `subscriptions/listen`, multi round-trip requests (`InputRequiredResult`), and the tasks extension. Modern capabilities therefore advertise no `listChanged` or `subscribe`.
 
 ## Tools
 

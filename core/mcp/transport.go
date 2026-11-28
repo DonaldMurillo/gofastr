@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -112,15 +114,13 @@ func decodeEnvelope(raw []byte, req *Request) (notification bool, errResp *Respo
 // ProtocolVersionHeader is the HTTP header a client names its negotiated MCP revision in on every request after initialize.
 const ProtocolVersionHeader = "MCP-Protocol-Version"
 
-const maxEchoedVersionBytes = 64
-
 func refuseVersionHeader(w http.ResponseWriter, r *http.Request, req Request) bool {
 	values := r.Header.Values(ProtocolVersionHeader)
 	if len(values) == 0 || req.Method == "initialize" {
 		return false
 	}
 	requested := strings.TrimSpace(values[0])
-	if len(values) == 1 && slices.Contains(supportedProtocolVersions, requested) {
+	if len(values) == 1 && slices.Contains(handshakeProtocolVersions, requested) {
 		return false
 	}
 	if len(requested) > maxEchoedVersionBytes {
@@ -130,6 +130,119 @@ func refuseVersionHeader(w http.ResponseWriter, r *http.Request, req Request) bo
 	resp.Error.Data = map[string]any{"supported": SupportedProtocolVersions(), "requested": requested}
 	writeEnvelopeError(w, resp)
 	return true
+}
+
+// Standard request headers the 2026-07-28 Streamable HTTP transport mirrors from the body.
+const (
+	MethodHeader = "Mcp-Method"
+	NameHeader   = "Mcp-Name"
+)
+
+var nameHeaderMethods = map[string]bool{"tools/call": true, "resources/read": true, "prompts/get": true}
+
+func refuseHTTPHeaders(w http.ResponseWriter, r *http.Request, req Request, notification bool) bool {
+	if notification {
+		return refuseVersionHeader(w, r, req)
+	}
+	facts, rpcErr := readRequestFacts(req)
+	if rpcErr != nil {
+		return false
+	}
+	if !facts.modern {
+		values := r.Header.Values(ProtocolVersionHeader)
+		if len(values) == 1 && slices.Contains(modernProtocolVersions, strings.TrimSpace(values[0])) {
+			if req.Method == "server/discover" {
+				return false
+			}
+			writeEnvelopeError(w, headerMismatch(req.ID, ProtocolVersionHeader+" names a per-request revision but params._meta carries no "+MetaProtocolVersion))
+			return true
+		}
+		return refuseVersionHeader(w, r, req)
+	}
+	if msg := modernHeaderMismatch(r, req, facts); msg != "" {
+		writeEnvelopeError(w, headerMismatch(req.ID, msg))
+		return true
+	}
+	return false
+}
+
+func modernHeaderMismatch(r *http.Request, req Request, facts requestFacts) string {
+	version, msg := singleHeader(r, ProtocolVersionHeader)
+	if msg != "" {
+		return msg
+	}
+	if version != facts.version {
+		return ProtocolVersionHeader + " header does not match params._meta " + MetaProtocolVersion
+	}
+	method, msg := singleHeader(r, MethodHeader)
+	if msg != "" {
+		return msg
+	}
+	if method != req.Method {
+		return MethodHeader + " header does not match the request method"
+	}
+	if !nameHeaderMethods[req.Method] {
+		return ""
+	}
+	name, msg := singleHeader(r, NameHeader)
+	if msg != "" {
+		return msg
+	}
+	decoded, ok := decodeHeaderValue(name)
+	if !ok {
+		return NameHeader + " header is not valid base64 inside its =?base64?...?= sentinel"
+	}
+	if !facts.hasName || decoded != facts.name {
+		return NameHeader + " header does not match the request body"
+	}
+	return ""
+}
+
+func singleHeader(r *http.Request, name string) (string, string) {
+	values := r.Header.Values(name)
+	if len(values) == 0 {
+		return "", "missing " + name + " header"
+	}
+	if len(values) > 1 {
+		return "", "repeated " + name + " header"
+	}
+	for _, c := range []byte(values[0]) {
+		if (c < 0x20 || c > 0x7e) && c != '\t' {
+			return "", name + " header holds a character outside visible ASCII, space and tab"
+		}
+	}
+	return values[0], ""
+}
+
+func decodeHeaderValue(v string) (string, bool) {
+	const prefix, suffix = "=?base64?", "?="
+	if !strings.HasPrefix(v, prefix) || !strings.HasSuffix(v, suffix) || len(v) < len(prefix)+len(suffix) {
+		return v, true
+	}
+	b, err := base64.StdEncoding.DecodeString(v[len(prefix) : len(v)-len(suffix)])
+	if err != nil || !utf8.Valid(b) {
+		return "", false
+	}
+	return string(b), true
+}
+
+func headerMismatch(id any, msg string) Response {
+	return newErrorResponse(id, ErrHeaderMismatch, "Header mismatch: "+msg)
+}
+
+func httpStatusFor(resp Response) int {
+	if resp.Error == nil {
+		return http.StatusOK
+	}
+	switch resp.Error.Code {
+	case ErrUnsupportedProtocolVersion, ErrHeaderMismatch, ErrMissingRequiredClientCapability:
+		return http.StatusBadRequest
+	case ErrMethodNotFound:
+		if resp.modern {
+			return http.StatusNotFound
+		}
+	}
+	return http.StatusOK
 }
 
 func errorAsMaxBytes(err error, target **http.MaxBytesError) bool {
@@ -210,7 +323,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if refuseVersionHeader(w, r, req) {
+	if refuseHTTPHeaders(w, r, req, notification) {
 		return
 	}
 	if notification {
@@ -224,6 +337,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	resp := s.HandleRequest(ctx, req)
 
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(httpStatusFor(resp))
 	_, _ = w.Write(encodeResponse(resp))
 }
 
@@ -337,7 +451,7 @@ func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if refuseVersionHeader(w, r, req) {
+	if refuseHTTPHeaders(w, r, req, notification) {
 		return
 	}
 	if notification {
@@ -349,11 +463,12 @@ func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 	ctx = context.WithValue(ctx, contextKey{}, r)
 
 	if mediatype.Fold(r.Header.Get("Accept")) == "text/event-stream" {
+		resp := s.HandleRequest(ctx, req)
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Connection", "keep-alive")
-		w.WriteHeader(http.StatusOK)
+		w.Header().Set("X-Accel-Buffering", "no")
+		w.WriteHeader(httpStatusFor(resp))
 
-		resp := s.HandleRequest(ctx, req)
 		data := bytes.TrimSuffix(encodeResponse(resp), []byte("\n"))
 		StreamSSE(w, "message", string(data))
 		if f, ok := w.(http.Flusher); ok {
@@ -364,6 +479,7 @@ func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp := s.HandleRequest(ctx, req)
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(httpStatusFor(resp))
 	_, _ = w.Write(encodeResponse(resp))
 }
 
@@ -377,6 +493,10 @@ func (s *Server) sseStream(w http.ResponseWriter, r *http.Request, path string) 
 		return
 	}
 
+	if v := r.Header.Values(ProtocolVersionHeader); len(v) == 1 && slices.Contains(modernProtocolVersions, strings.TrimSpace(v[0])) {
+		i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
+		return
+	}
 	if refuseVersionHeader(w, r, Request{}) {
 		return
 	}
@@ -399,6 +519,7 @@ func (s *Server) sseStream(w http.ResponseWriter, r *http.Request, path string) 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
 	rc := http.NewResponseController(w)

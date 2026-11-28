@@ -76,23 +76,51 @@ invariants:
     enforced_by:
       - test: core/mcp.TestParamsDuplicateKeysRefused
   - id: server-gate-covers-data-surface
-    rule: The server-wide gate (SetGate) runs before tools/list, tools/call, resources/list, resources/read, resources/templates/list, resources/subscribe, resources/unsubscribe, prompts/list and prompts/get, and never before initialize or ping; its refusal answers through gateRefusal.
+    rule: The server-wide gate (SetGate) runs before tools/list, tools/call, resources/list, resources/read, resources/templates/list, resources/subscribe, resources/unsubscribe, prompts/list and prompts/get, and never before initialize, ping or server/discover; its refusal answers through gateRefusal.
     enforced_by:
+      - test: core/mcp.TestDiscoverStaysOpenUnderServerGate
       - test: core/mcp.TestServerGateClosesListAndCall
       - test: core/mcp.TestServerGateClosesResourceSubscribe
       - test: core/mcp.TestInitializeAndPingStayOpenUnderServerGate
   - id: version-negotiation
-    rule: initialize answers the client's protocolVersion when it is one of SupportedProtocolVersions (2025-11-25, 2025-06-18, 2025-03-26), and LatestProtocolVersion for any other, missing or non-string value.
+    rule: initialize answers the client's protocolVersion when it is one of HandshakeProtocolVersions (2025-11-25, 2025-06-18, 2025-03-26), and LatestHandshakeVersion for any other, missing or non-string value, 2026-07-28 included, because that revision has no handshake.
     enforced_by:
       - test: core/mcp.TestInitializeNegotiatesVersion
       - test: core/mcp.TestSupportedProtocolVersionsList
   - id: version-header-checked
-    rule: ServeHTTP and ServeSSE (POST and GET) answer 400 with -32600 under the request id and the SupportedProtocolVersions list in error data when the MCP-Protocol-Version header is repeated or names a revision the server does not speak; an absent header, or any header on initialize, is served.
+    rule: For a request whose params carry no _meta protocolVersion, ServeHTTP and ServeSSE (POST and GET) answer 400 with -32600 under the request id and the SupportedProtocolVersions list in error data when the MCP-Protocol-Version header is repeated or names a revision initialize does not negotiate; an absent header, or any header on initialize, is served.
     enforced_by:
       - test: core/mcp.TestVersionHeaderRefusesUnsupported
       - test: core/mcp.TestVersionHeaderLeavesInitializeToNegotiation
       - test: core/mcp.TestVersionHeaderRefusesNotification
       - test: core/mcp.TestVersionHeaderRefusesStream
+  - id: modern-requests-are-stateless
+    rule: A request whose params._meta carries io.modelcontextprotocol/protocolVersion is served without initialize under that revision; a non-string value answers -32602 and a revision outside the modern list (2026-07-28) answers -32022 with data.supported listing SupportedProtocolVersions and data.requested echoing at most 64 bytes of the request.
+    enforced_by:
+      - test: core/mcp.TestModernUnsupportedVersion
+      - test: core/mcp.TestModernOverStdio
+  - id: modern-result-fields
+    rule: Every successful modern result carries resultType complete and _meta io.modelcontextprotocol/serverInfo, and the results of server/discover, tools/list, prompts/list, resources/list, resources/templates/list and resources/read also carry ttlMs 0 and cacheScope private; a request served under an initialize-negotiated revision gets none of these fields.
+    enforced_by:
+      - test: core/mcp.TestModernResultFields
+  - id: server-discover
+    rule: server/discover answers, with or without _meta, supportedVersions (SupportedProtocolVersions), the modern capabilities (tools always, resources and prompts when registered), instructions when set, and the modern result fields.
+    enforced_by:
+      - test: core/mcp.TestServerDiscover
+  - id: modern-removed-methods
+    rule: A modern request for initialize, ping, resources/subscribe, resources/unsubscribe or any unknown method answers -32601, and a modern resources/read of an unknown or hidden resource answers -32602 instead of -32002.
+    enforced_by:
+      - test: core/mcp.TestModernRemovedMethodsAndCodes
+  - id: modern-http-headers
+    rule: Over ServeHTTP and ServeSSE, a modern request answers 400 with -32020 (ErrHeaderMismatch) unless it carries exactly one MCP-Protocol-Version equal to its _meta version, one Mcp-Method equal to its method, and for tools/call, resources/read and prompts/get one Mcp-Name equal to params.name or params.uri after decoding a =?base64?...?= sentinel, each in visible ASCII, space or tab; a request without _meta protocolVersion under a modern MCP-Protocol-Version header answers the same, except server/discover.
+    enforced_by:
+      - test: core/mcp.TestModernHTTPHeaders
+      - test: core/mcp.TestModernHTTPStatusMapping
+  - id: modern-http-status
+    rule: Over HTTP, -32020, -32021 and -32022 answer 400, a modern -32601 answers 404, and every other response, legacy -32601 included, answers 200; a GET under a modern MCP-Protocol-Version header answers 405.
+    enforced_by:
+      - test: core/mcp.TestModernHTTPStatusMapping
+      - test: core/mcp.TestModernGETRefused
   - id: capabilities-follow-registries
     rule: initialize always advertises tools, advertises resources (with subscribe) when a resource or a resource template is registered, and prompts only when a prompt is registered.
     enforced_by:
@@ -126,6 +154,28 @@ invariants:
     enforced_by:
       - test: core/mcp.TestInitializeServesInstructions
 decisions:
+  - id: dual-era-server
+    date: 2026-11-28
+    status: accepted
+    decision: The server speaks 2026-07-28 per request (chosen by params._meta protocolVersion) beside the initialize-negotiated 2025-11-25, 2025-06-18 and 2025-03-26 on the same endpoint and process, as the spec's dual-era server.
+    rejected:
+      - option: Move to 2026-07-28 only.
+        why: Every client released before mid-2026 speaks only the handshake revisions and has no fall-forward path, so a modern-only server would cut them off.
+      - option: Pick the era per connection or session.
+        why: The server keeps no sessions; the era of each request is decidable from its own body, which is what the spec prescribes for a dual-era server.
+    revisit_if: The spec removes the handshake revisions, or the clients that matter all speak 2026-07-28.
+    upholds: [modern-requests-are-stateless, version-negotiation]
+  - id: private-zero-ttl-cache-hints
+    date: 2026-11-28
+    status: accepted
+    decision: Cacheable modern results carry ttlMs 0 and cacheScope private, with no setting to change them.
+    rejected:
+      - option: cacheScope public for tools/list, prompts/list and resources/templates/list.
+        why: Gates make every listing per caller, and a public response may be shared across authorization contexts by a gateway.
+      - option: A positive default TTL.
+        why: Registries change at run time (RegisterTool, UnregisterTool) and 2026-07-28 change notifications arrive only on subscriptions/listen, so a client trusting a TTL could call a tool that is gone.
+    revisit_if: An app needs clients or gateways to cache listings, which needs a per-server setting that knows whether its gates vary by caller.
+    upholds: [modern-result-fields]
   - id: spec-error-codes
     date: 2026-11-28
     status: accepted
@@ -166,7 +216,7 @@ decisions:
   - id: handshake-outside-server-gate
     date: 2026-11-18
     status: accepted
-    decision: initialize and ping stay outside the server-wide gate.
+    decision: initialize, ping and server/discover stay outside the server-wide gate.
     rejected:
       - option: Gate the handshake too.
         why: It carries only the protocol version, capability booleans and the server name, and no MCP client can present credentials before it completes the handshake.
@@ -174,7 +224,7 @@ decisions:
   - id: protocol-versions
     date: 2026-11-18
     status: accepted
-    decision: The server negotiates 2025-11-25, 2025-06-18 and 2025-03-26 and leaves 2024-11-05 off.
+    decision: initialize negotiates 2025-11-25, 2025-06-18 and 2025-03-26 and leaves 2024-11-05 off; 2026-07-28 is served per request.
     rejected:
       - option: Also accept 2024-11-05.
         why: Its HTTP+SSE transport answers each POST with 202 and delivers the response on the stream, while this server answers in the POST body, so such a client would wait forever.
