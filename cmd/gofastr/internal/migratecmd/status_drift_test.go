@@ -66,3 +66,17 @@ func TestMigrateStatusDirtyNamesARunnableGroup(t *testing.T) {
 		t.Fatalf("a dirty default-group migration must name --group=default:\n%s", out)
 	}
 }
+
+func TestMigrateStatusShowsTheGroupOfAPendingMigration(t *testing.T) {
+	dir := covT_migrationsDir(t)
+	dbPath := filepath.Join(dir, "x.db")
+	clitest.CovT_capStdout(t, func() { runMigrateUp([]string{"--db-url=" + dbPath}) })
+	billing := "-- +migrate Version 2\n-- +migrate Name billing\n-- +migrate Group billing\n-- +migrate Up\nCREATE TABLE IF NOT EXISTS invoices (id TEXT PRIMARY KEY);\n-- +migrate Down\nDROP TABLE IF EXISTS invoices;\n"
+	if err := os.WriteFile(filepath.Join(dir, "migrations", "002_billing.sql"), []byte(billing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := clitest.CovT_capStdout(t, func() { runMigrateStatus([]string{"--db-url=" + dbPath}) })
+	if !strings.Contains(out, "2 billing [billing]") {
+		t.Fatalf("a pending migration in a named group must show its group:\n%s", out)
+	}
+}
