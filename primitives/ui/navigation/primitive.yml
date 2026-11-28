@@ -150,6 +150,15 @@ invariants:
     rule: A Dropdown is a native details disclosure with Dismiss set, so it opens without script and closes on an outside click, Escape and a client navigation.
     enforced_by:
       - test: framework/ui.TestDropdownIsADismissablePopup
+  - id: popup-panel-anchors-to-its-trigger
+    rule: Where the browser has anchor-scope and position-area, a Menu's top-level panel and a Dropdown's panel carry position-anchor --hui-disclosure scoped to their own root, and once raised sit 4px from their trigger (a TriggerElement menu's caller element) on the side and edge its Position or Align names, flip to the other side or edge when that one has no room, and keep the menu's text colour rather than the popover default; submenus stay inside their panel.
+    enforced_by:
+      - test: framework/ui.TestMenuPanelFlipsAboveNearTheBottom
+      - test: framework/ui.TestMenuEndPanelLinesUpWithTheTriggerEnd
+      - test: framework/ui.TestMenuTopEndPanelOpensAboveTheTriggerEnd
+      - test: framework/ui.TestCallerTriggerMenuPanelHangsFromTheElement
+      - test: framework/ui.TestDropdownPanelEscapesAClippingBox
+      - test: framework/ui.TestDropdownEndPanelLinesUpWithTheTriggerEnd
   - id: language-menu-links-this-page
     rule: "Each LanguageMenu row is a rel=alternate hreflang link to the current page in that locale: the locale prefix stripped, the path kept escaped, the query kept, and the language named in itself."
     enforced_by:
