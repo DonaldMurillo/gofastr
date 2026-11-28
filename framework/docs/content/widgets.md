@@ -9,7 +9,7 @@ Built-in presets in `core-ui/widget/preset`:
 - **`Modal`** — centered native `<dialog>` opened with `showModal()`, backdrop scrim, Escape & outside-click dismiss.
 - **`Drawer`** / **`BottomSheet`** — edge-sliding panel (`Edge` / `EdgeRight`, RTL-aware) or 75vh bottom sheet.
 - **`Popover`** — click-triggered anchored panel with auto-flip, no backdrop dim.
-- **`ToastStack`** — ephemeral notification stack (`uihost` mounts a default `uihost.DefaultToastStack` if your app hasn't mounted one, so `X-Gofastr-Toast` always works).
+- **`ToastStack`** — ephemeral notification stack (`uihost` mounts a default `uihost.DefaultToastStack` if your app hasn't mounted one, so `X-Gofastr-Toast` always works). While it holds a toast its widget is a manual popover in the top layer, in its corner; a toast raised while a modal is open waits until the modal closes.
 - **`Banner`** — top strip for status or build notices.
 
 ```go

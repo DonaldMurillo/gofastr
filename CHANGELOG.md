@@ -92,6 +92,14 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **Toasts show on the top layer and wait out a modal** (#706). The
+  toast stack's widget is a manual popover while it holds a toast, so a
+  toast shows above menus, popovers and tooltips already open, including
+  one opened after an earlier toast, and stays in its corner. A toast
+  raised while a modal dialog or widget modal is open, or while its stack
+  is inert, where it would never be announced, is held and shows once
+  none of those holds; `__gofastr.toast` still returns its id. See
+  [Widgets](framework/docs/content/widgets.md).
 - **`primitives hook` reads the event it is given** rather than the
   process's stdin, so a caller that passes its own reader gets that event
   ([#918](https://github.com/DonaldMurillo/gofastr/pull/918)).
