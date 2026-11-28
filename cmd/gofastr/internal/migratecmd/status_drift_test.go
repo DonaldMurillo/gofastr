@@ -1,6 +1,7 @@
 package migratecmd
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,5 +41,42 @@ func TestMigrateStatusShowsDrift(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("status output lacks %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestMigrateStatusDirtyNamesARunnableGroup(t *testing.T) {
+	dir := covT_migrationsDir(t)
+	md := filepath.Join(dir, "migrations")
+	billing := "-- +migrate Version 2\n-- +migrate Name billing\n-- +migrate Group billing\n-- +migrate Up\nCREATE TABLE IF NOT EXISTS invoices (id TEXT PRIMARY KEY);\n-- +migrate Down\nDROP TABLE IF EXISTS invoices;\n"
+	if err := os.WriteFile(filepath.Join(md, "002_billing.sql"), []byte(billing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(dir, "x.db")
+	clitest.CovT_capStdout(t, func() { runMigrateUp([]string{"--db-url=" + dbPath}) })
+	db, err := sql.Open("sqlite3", "file:"+dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE _migrations SET dirty = TRUE WHERE version = 1 AND group_name = ''`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	out := clitest.CovT_capStdout(t, func() { runMigrateStatus([]string{"--db-url=" + dbPath}) })
+	if !strings.Contains(out, "run `gofastr migrate force 1 --group=default`") {
+		t.Fatalf("a dirty default-group migration must name --group=default:\n%s", out)
+	}
+}
+
+func TestMigrateStatusShowsTheGroupOfAPendingMigration(t *testing.T) {
+	dir := covT_migrationsDir(t)
+	dbPath := filepath.Join(dir, "x.db")
+	clitest.CovT_capStdout(t, func() { runMigrateUp([]string{"--db-url=" + dbPath}) })
+	billing := "-- +migrate Version 2\n-- +migrate Name billing\n-- +migrate Group billing\n-- +migrate Up\nCREATE TABLE IF NOT EXISTS invoices (id TEXT PRIMARY KEY);\n-- +migrate Down\nDROP TABLE IF EXISTS invoices;\n"
+	if err := os.WriteFile(filepath.Join(dir, "migrations", "002_billing.sql"), []byte(billing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := clitest.CovT_capStdout(t, func() { runMigrateStatus([]string{"--db-url=" + dbPath}) })
+	if !strings.Contains(out, "2 billing [billing]") {
+		t.Fatalf("a pending migration in a named group must show its group:\n%s", out)
 	}
 }

@@ -292,6 +292,19 @@ var ownedPackages = []string{
 	"cmd/primitives",
 	"cmd/repolint",
 	"cmd/vettool",
+	// cmd/gofastr, scaffolding and project tools.
+	"cmd/gofastr/internal/agentscmd",
+	"cmd/gofastr/internal/auditcmd",
+	"cmd/gofastr/internal/docscmd",
+	"cmd/gofastr/internal/generatecmd",
+	"cmd/gofastr/internal/initcmd",
+	"cmd/gofastr/internal/migratecmd",
+	"cmd/gofastr/internal/newcmd",
+	"cmd/gofastr/internal/semanticcmd",
+	"cmd/gofastr/internal/themecmd",
+	"cmd/gofastr/internal/unmountcmd",
+	"cmd/gofastr/internal/upgradecmd",
+	"cmd/gofastr/internal/validatecmd",
 }
 
 //gofastr:test-reads primitives/ *.go

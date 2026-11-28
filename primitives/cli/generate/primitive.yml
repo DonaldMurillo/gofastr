@@ -1,0 +1,63 @@
+primitive: cli.generate
+summary: gofastr generate - dispatch to one named appgen generator, or with only flags run the derived generators and extensions in the codegen config, and with --watch rerun that on every change to their inputs.
+code:
+  - cmd/gofastr/internal/generatecmd/
+docs:
+  - framework/docs/content/cli.md
+  - framework/docs/content/codegen.md
+on_change:
+  - A new kind of generator input, such as a source type or a config key naming a file, is hashed in hashGenerateInputs, or --watch never sees it change.
+invariants:
+  - id: unknown-generator-exits-2
+    rule: An unknown generator name, and the removed ts and typescript generators, exit 2 naming the generators that exist.
+    enforced_by:
+      - test: cmd/gofastr/internal/generatecmd.TestRunGenerateTSRemovedExits
+      - test: cmd/gofastr/internal/generatecmd.TestRunGenerateUnknownResourceExits
+      - test: cmd/gofastr/internal/generatecmd.TestRunGenerateAllIsNotAGenerator
+  - id: help-lists-every-generator
+    rule: generate --help lists every registered generator under its kind, scaffold first, then derived.
+    enforced_by:
+      - test: cmd/gofastr/internal/generatecmd.TestGeneratorHelpListsEveryGenerator
+  - id: watch-hashes-every-input
+    rule: The watch hash moves when the --config file changes, even while it does not parse, and when the discovered settings file, the enclosing go.mod, a Go file directly in entities/, an owned style input, a path-named extension command, a cli or sdk from_openapi document, or a json_file or json_dir source changes.
+    enforced_by:
+      - test: cmd/gofastr/internal/generatecmd.TestHashGenerateInputsWithInvalidConfigDetectsConfigFix
+      - test: cmd/gofastr/internal/generatecmd.TestWatchTracksEnclosingModule
+      - test: cmd/gofastr/internal/generatecmd.TestWatchHashFollowsEntitiesOnly
+      - test: cmd/gofastr/internal/generatecmd.TestWatchTracksOwnedStyleInputs
+      - test: cmd/gofastr/internal/generatecmd.TestHashGenerateInputsWithConfigDetectsExtensionCommandChange
+      - test: cmd/gofastr/internal/generatecmd.TestWatchHashesCLIOpenAPIDoc
+      - test: cmd/gofastr/internal/generatecmd.TestHashEntitiesDir_DetectsContentChange
+      - test: cmd/gofastr/internal/generatecmd.TestHashEntitiesDir_DetectsFileLifecycle
+  - id: watch-ignores-its-output
+    rule: The watch hash ignores entities/ subdirectories, entities/client among them, non-Go files in entities/, and non-JSON files in a json_dir source, so a rebuild does not trigger another.
+    enforced_by:
+      - test: cmd/gofastr/internal/generatecmd.TestWatchHashFollowsEntitiesOnly
+      - test: cmd/gofastr/internal/generatecmd.TestHashEntitiesDir_IgnoresNonJSON
+      - test: cmd/gofastr/internal/generatecmd.TestHashEntitiesDir_MissingDirIsStable
+  - id: watch-json-stdout-is-results
+    rule: Under --watch --json, stdout carries only one JSON result per cycle; the watch banners and a failed cycle's exit go to stderr.
+    enforced_by:
+      - test: cmd/gofastr/internal/generatecmd.TestWatchJSONCyclesStayReadable
+      - test: cmd/gofastr/internal/generatecmd.TestWatchJSONFlagErrors
+  - id: watch-child-runs-once
+    rule: Each watch cycle runs the gofastr binary's generate with the same arguments minus --watch, so the child generates once and exits.
+    enforced_by:
+      - test: cmd/gofastr/internal/generatecmd.TestWatchJSONCyclesStayReadable
+decisions:
+  - id: watch-polls
+    date: 2026-11-28
+    status: accepted
+    decision: --watch polls a content hash of the inputs every 250ms.
+    rejected:
+      - option: fsnotify.
+        why: It adds a dependency to the gofastr binary for one loop that a hash poll serves.
+    upholds: [watch-hashes-every-input]
+  - id: watch-runs-derived-only
+    date: 2026-11-28
+    status: accepted
+    decision: --watch reruns only the plain generate, the derived generators and extensions; a named generator never enters the loop.
+    rejected:
+      - option: Rerun scaffold generators on each change too.
+        why: A scaffold writes code the developer owns, and rerunning it on every save would overwrite their edits.
+    upholds: [watch-child-runs-once]

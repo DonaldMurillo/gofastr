@@ -1,0 +1,30 @@
+primitive: cli.docs
+summary: gofastr docs - list, read and grep the framework docs embedded in the binary at build time; docs serve is its child.
+code:
+  - cmd/gofastr/internal/docscmd/docs.go
+  - cmd/gofastr/internal/docscmd/doc.go
+docs:
+  - framework/docs/content/cli.md
+invariants:
+  - id: grep-term-forms
+    rule: --grep and -g take the term as the next argument or after =, a next argument that is a flag is refused, and only the = form passes a term that starts with a dash; an empty term exits 2.
+    enforced_by:
+      - test: cmd/gofastr/internal/docscmd.TestRunDocsGrepRefusesFlagTerm
+      - test: cmd/gofastr/internal/docscmd.TestRunDocsGrepEqualsSpelling
+      - test: cmd/gofastr/internal/docscmd.TestRunDocsGrepShortFlag
+      - test: cmd/gofastr/internal/docscmd.TestRunDocsGrepEmptyTermExits
+  - id: grep-says-when-cut
+    rule: --grep prints at most 50 hits and says the list was cut only when the search found more than 50.
+    enforced_by:
+      - test: cmd/gofastr/internal/docscmd.TestDocsGrepSaysWhenCut
+      - test: cmd/gofastr/internal/docscmd.TestDocsGrepCountsAnUncutList
+  - id: highlight-is-rune-safe
+    rule: highlight scrubs the excerpt for the terminal and bolds case-folded matches by whole runes, so a term whose lower case changes byte length never slices mid-rune.
+    enforced_by:
+      - test: cmd/gofastr/internal/docscmd.TestHighlightSurvivesFoldingRunes
+      - test: cmd/gofastr/internal/docscmd.TestFoldMatchStillFindsTerms
+      - test: cmd/gofastr/internal/docscmd.TestPluralSAndHighlight
+  - id: unknown-topic-exits-2
+    rule: A topic the embedded docs do not hold exits 2 and points at gofastr docs.
+    enforced_by:
+      - test: cmd/gofastr/internal/docscmd.TestRunDocsUnknownTopicExits

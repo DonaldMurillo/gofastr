@@ -71,9 +71,6 @@ added or deleted file) and names the files. --force deletes the copy
 anyway, and the changes with it.`)
 }
 
-// parseUnmountArgs parses the flags unmount and remount share: one
-// optional positional, --dry-run, plus --out for unmount and --force for
-// remount.
 func parseUnmountArgs(cmd string, args []string) (pkg, outDir string, dryRun, force, ok bool) {
 	usage := "Usage: gofastr unmount [<package>] [--out=DIR] [--dry-run]"
 	if cmd == "remount" {
@@ -121,8 +118,6 @@ func parseUnmountArgs(cmd string, args []string) (pkg, outDir string, dryRun, fo
 	return pkg, outDir, dryRun, force, true
 }
 
-// unmountSourcePath turns the argument into the upstream import path:
-// a full path under the gofastr module, or the part after it.
 func unmountSourcePath(arg string) (string, error) {
 	p := strings.TrimSuffix(strings.TrimSpace(arg), "/")
 	if !strings.HasPrefix(p, project.GofastrModule+"/") {
@@ -147,16 +142,11 @@ func unmountSourcePath(arg string) (string, error) {
 
 func isGofastrPackage(p string) bool { return appgen.InTree(p, project.GofastrModule) }
 
-// inModule reports whether go list's package p belongs to the module at
-// modulePath, counting the external test package (p_test) and the test
-// main (p.test) that `go list -test` adds for a package of the module.
 func inModule(p, modulePath string) bool {
 	p = strings.TrimSuffix(strings.TrimSuffix(p, ".test"), "_test")
 	return appgen.InTree(p, modulePath)
 }
 
-// stripTestVariant drops the " [pkg.test]" suffix go list puts on a
-// package recompiled for a test.
 func stripTestVariant(p string) string {
 	if i := strings.Index(p, " ["); i >= 0 {
 		return p[:i]
@@ -164,17 +154,10 @@ func stripTestVariant(p string) string {
 	return p
 }
 
-// goListModule runs `go list -m -json <gofastr>` in dir. A var so tests
-// stand in a module.
 var goListModule = func(ctx context.Context, dir string) ([]byte, error) {
 	return runGoList(ctx, dir, "list", "-m", "-json", project.GofastrModule)
 }
 
-// goListDeps lists every package pattern's build needs, each with its
-// imports. With tests it is the app's own build, tests included, and an
-// error is an error. Without, it is an upstream tree the app may not
-// build yet (-e): a subpackage whose module go.sum lacks still lists what
-// it imports from gofastr. A var so tests stand in a build.
 var goListDeps = func(ctx context.Context, dir, pattern string, tests bool) ([]byte, error) {
 	mode := "-e"
 	if tests {
@@ -196,10 +179,6 @@ func runGoList(ctx context.Context, dir string, args ...string) ([]byte, error) 
 	return out, nil
 }
 
-// gofastrModuleSource finds the gofastr module the app builds against:
-// its directory and the version a copy records. A replace to a local
-// checkout, or to any other module, records dev: it is no release anyone
-// can compare against.
 func gofastrModuleSource(ctx context.Context, moduleRoot string) (dir, version string, err error) {
 	out, err := goListModule(ctx, moduleRoot)
 	if err != nil {
@@ -227,19 +206,11 @@ func gofastrModuleSource(ctx context.Context, moduleRoot string) (dir, version s
 	return dir, version, nil
 }
 
-// skipUnmountDir reports whether a module walk skips the directory:
-// vendor, testdata, node_modules, hidden and _-prefixed trees are not
-// part of what the app builds.
 func skipUnmountDir(name string) bool {
 	return name == "vendor" || name == "testdata" || name == "node_modules" ||
 		strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")
 }
 
-// readUnmountTree reads the package at source and every package under
-// it from the module directory, through an os.Root so nothing outside
-// the tree is read. Tests, testdata, vendor, hidden and _-prefixed
-// directories and nested modules are skipped: they are not part of what
-// the app builds. The root must be a Go package.
 func readUnmountTree(moduleDir, source, version string) (appgen.UnmountTree, error) {
 	rel := strings.TrimPrefix(source, project.GofastrModule+"/")
 	root, err := os.OpenRoot(filepath.Join(moduleDir, filepath.FromSlash(rel)))
@@ -294,10 +265,6 @@ func readUnmountTree(moduleDir, source, version string) (appgen.UnmountTree, err
 	return tree, nil
 }
 
-// embeddedDir reports whether a non-test Go file in dir embeds from its
-// subdirectory name (`//go:embed testdata/axe.min.js`, `all:_assets`).
-// The go tool skips such a directory as a package, but the package needs
-// its files to build. embeds caches each directory's embed patterns.
 func embeddedDir(root *os.Root, dir, name string, embeds map[string][]string) bool {
 	patterns, ok := embeds[dir]
 	if !ok {
@@ -328,9 +295,6 @@ func embeddedDir(root *os.Root, dir, name string, embeds map[string][]string) bo
 	return false
 }
 
-// checkUnmountInternal refuses a tree that imports a gofastr internal
-// package from outside itself: Go lets only gofastr import those, so the
-// copy would not build.
 func checkUnmountInternal(tree appgen.UnmountTree) error {
 	var found []string
 	for _, f := range tree.Files {
@@ -357,14 +321,6 @@ func checkUnmountInternal(tree appgen.UnmountTree) error {
 	return fmt.Errorf("%s imports gofastr internal packages, which only gofastr may import, so a copy would not build:\n  %s", tree.Source, strings.Join(found, "\n  "))
 }
 
-// unmountImporters returns the packages outside the app's module and
-// outside the tree that import a package in the tree, each with the tree
-// packages it imports: other gofastr packages, and third-party ones such
-// as plugins. It reads the app's build (tests included) and the tree's
-// own build, since a subpackage the app does not import yet can still
-// depend on a package that imports the tree's root. The rewire reaches
-// only the app's own files, so a copy alongside such an importer would put
-// two versions of the tree's types in one binary.
 func unmountImporters(ctx context.Context, moduleRoot, modulePath, source string) (map[string][]string, error) {
 	app, err := goListDeps(ctx, moduleRoot, "./...", true)
 	if err != nil {
@@ -380,9 +336,6 @@ func unmountImporters(ctx context.Context, moduleRoot, modulePath, source string
 	return importers, nil
 }
 
-// importersIn adds to importers each package of a goListDeps listing that
-// is outside the module and outside the tree at source and imports a
-// package in the tree, with the tree packages it imports, sorted.
 func importersIn(listing []byte, modulePath, source string, importers map[string][]string) {
 	for _, line := range strings.Split(string(listing), "\n") {
 		fields := strings.Split(line, "\t")
@@ -400,7 +353,6 @@ func importersIn(listing []byte, modulePath, source string, importers map[string
 	}
 }
 
-// readUnmountFiles reads the file sums back from a root hook file.
 func readUnmountFiles(hook string) map[string]string {
 	files := map[string]string{}
 	in := false
@@ -427,20 +379,12 @@ func readUnmountFiles(hook string) map[string]string {
 	return files
 }
 
-// importRewire is one Go file whose imports a rewire changes, with its
-// bytes before and after.
 type importRewire struct {
 	name     string
 	mode     fs.FileMode
 	old, new string
 }
 
-// planImportRewire finds every Go file in the module whose imports of from
-// (or a package under it) move to the same package under to. The copy's
-// own directory, vendor, testdata, hidden and _-prefixed directories and
-// nested modules are skipped. A file that was gofmt-clean is formatted
-// again after the rewrite, since import order follows the path; any other
-// file keeps its formatting.
 func planImportRewire(moduleRoot, skip, from, to string) ([]importRewire, error) {
 	root, err := os.OpenRoot(moduleRoot)
 	if err != nil {
@@ -490,11 +434,6 @@ func planImportRewire(moduleRoot, skip, from, to string) ([]importRewire, error)
 	return plan, err
 }
 
-// applyImportRewire writes a rewire plan (new over old, or old over new
-// to undo it) through an os.Root at the module root. It stops at the
-// first failure and returns how many files it touched, the failed one
-// included: its replacement may have landed before the error came back,
-// and undoing a file left as it was rewrites what is already there.
 func applyImportRewire(moduleRoot string, plan []importRewire, undo bool) (int, error) {
 	root, err := os.OpenRoot(moduleRoot)
 	if err != nil {
@@ -513,9 +452,6 @@ func applyImportRewire(moduleRoot string, plan []importRewire, undo bool) (int, 
 	return len(plan), nil
 }
 
-// checkUnmountRegistry refuses a gofastr version that predates
-// core/unmounted: every copy's unmounted.gen.go imports it from the
-// gofastr go.mod requires, so the copy would not build.
 func checkUnmountRegistry(moduleDir, version string) error {
 	rel := strings.TrimPrefix(appgen.UnmountRegistryImport, project.GofastrModule+"/")
 	if _, err := os.Stat(filepath.Join(moduleDir, filepath.FromSlash(rel), "unmounted.go")); err != nil {
@@ -729,8 +665,6 @@ func remountPackage(arg string, dryRun, force bool) error {
 		return err
 	}
 
-	// A copy already deleted holds no changes to lose: remount still
-	// rewires the imports back and drops the entry.
 	var changed []string
 	if _, err := os.Stat(filepath.Join(moduleRoot, filepath.FromSlash(entry.Path))); errors.Is(err, fs.ErrNotExist) {
 		cli.Info("The copy at %s is gone already; rewiring the imports back to %s and dropping its entry", entry.Path, entry.Source)
@@ -775,8 +709,6 @@ func remountPackage(arg string, dryRun, force bool) error {
 	root, err := os.OpenRoot(moduleRoot)
 	if err == nil {
 		err = root.RemoveAll(filepath.FromSlash(entry.Path))
-		// Parents the copy left empty (unmounted/battery/) go too; Remove
-		// refuses one that still holds anything.
 		for d := path.Dir(entry.Path); err == nil && d != "."; d = path.Dir(d) {
 			if root.Remove(filepath.FromSlash(d)) != nil {
 				break
@@ -791,10 +723,6 @@ func remountPackage(arg string, dryRun, force bool) error {
 	return nil
 }
 
-// checkRemountImporters refuses a remount that brings back framework
-// packages importing another package this app has unmounted: those would
-// import the framework's version while the app uses its copy, the same
-// two versions of one type unmount refuses.
 func checkRemountImporters(ctx context.Context, moduleRoot, modulePath string, entry settings.Unmounted, entries []settings.Unmounted) error {
 	if len(entries) < 2 {
 		return nil
@@ -820,10 +748,6 @@ func checkRemountImporters(ctx context.Context, moduleRoot, modulePath string, e
 	return nil
 }
 
-// findUnmounted finds the entry an argument names: its path from the
-// module root or the working directory, or its source (full or after the
-// gofastr module path). A source with several copies is ambiguous, and
-// the error lists their paths.
 func findUnmounted(arg, wd, moduleRoot string, entries []settings.Unmounted) (int, error) {
 	source, _ := unmountSourcePath(arg)
 	local := ""
@@ -852,11 +776,6 @@ func findUnmounted(arg, wd, moduleRoot string, entries []settings.Unmounted) (in
 	return found, nil
 }
 
-// unmountCopyChanges lists what changed in a copy since unmount wrote it,
-// against the sums the root hook recorded: an edited file, one the list
-// does not name (added), and one it names that is gone (deleted). The
-// root hook answers for itself through its marker; with it gone or
-// edited, the list cannot be trusted and every file counts as changed.
 func unmountCopyChanges(moduleRoot string, entry settings.Unmounted) ([]string, error) {
 	root, err := os.OpenRoot(filepath.Join(moduleRoot, filepath.FromSlash(entry.Path)))
 	if err != nil {

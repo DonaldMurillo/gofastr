@@ -63,11 +63,6 @@ func RunAgents(args []string) {
 	}
 }
 
-// agentsDirArg is the project directory an agents verb works in: the
-// one optional positional argument, "." when there is none. A flag or a
-// second argument is a usage error (exit 2): every verb used to take its
-// first argument as the directory whatever it was, so `agents init
-// --force` created a directory named "--force" and reported success.
 func agentsDirArg(args []string) string {
 	switch {
 	case len(args) == 0:
@@ -84,9 +79,6 @@ func agentsDirArg(args []string) string {
 	return ""
 }
 
-// runAgentsInit writes a fresh AGENTS.md in the current directory (or
-// the path given as the first argument). Errors if the file already
-// exists. Use `agents sync` to refresh.
 func runAgentsInit(args []string) {
 	dir := agentsDirArg(args)
 	target := filepath.Join(dir, "AGENTS.md")
@@ -107,10 +99,6 @@ func runAgentsInit(args []string) {
 	warnMissingMarkdown()
 }
 
-// createAgentsMD writes a fresh AGENTS.md in dir, refusing with
-// fs.ErrExist when anything, a dangling symlink included, already holds
-// the name: an exclusive create through the project root never follows
-// a link out of the project.
 func createAgentsMD(dir string) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -128,11 +116,6 @@ func createAgentsMD(dir string) error {
 	return f.Close()
 }
 
-// runAgentsSkill drops the gofastr-host Claude Code skill into the
-// current project's .claude/skills/ tree. Useful when a host that
-// pre-dates `gofastr init --skill` wants the skill retroactively. An
-// existing SKILL.md without the generated header is refused unless
-// --force says to clobber the hand-written copy.
 func runAgentsSkill(args []string) {
 	force := false
 	var dirArgs []string
@@ -151,9 +134,6 @@ func runAgentsSkill(args []string) {
 	cli.Success("Wrote %s/.claude/skills/gofastr-host/SKILL.md", dir)
 }
 
-// runAgentsSync refreshes the auto section between the markers without
-// touching anything outside them. Lets host apps refresh after a
-// framework upgrade.
 func runAgentsSync(args []string) {
 	dir := agentsDirArg(args)
 	target := filepath.Join(dir, "AGENTS.md")
@@ -177,9 +157,6 @@ func runAgentsSync(args []string) {
 		cli.Fail("Refresh failed: %v", err)
 		cli.OsExit(1)
 	}
-	// Always refresh the detail files. They're framework-owned and
-	// cheap to rewrite, and treating them as "changed" tracking would
-	// duplicate the marker-protection logic for ten more files.
 	if err := WriteAgentDetailFiles(dir); err != nil {
 		cli.Fail("Failed to write .agents/ details: %v", err)
 		cli.OsExit(1)
@@ -189,9 +166,6 @@ func runAgentsSync(args []string) {
 		warnMissingMarkdown()
 		return
 	}
-	// AGENTS.md holds the project's own text around the TOC: replace it
-	// through a temporary file, so a crash mid-write cannot empty it,
-	// and through the project root, so a link out of it is refused.
 	if err := replaceInRoot(root, "AGENTS.md", refreshed, 0o644); err != nil {
 		cli.Fail("Failed to write %s: %v", target, err)
 		cli.OsExit(1)
@@ -200,11 +174,6 @@ func runAgentsSync(args []string) {
 	warnMissingMarkdown()
 }
 
-// warnMissingMarkdown prints a non-fatal advisory for every battery
-// that registered itself with an empty agents.md. Surfaces here because
-// `agents` is the subcommand a developer hits when they ship a new
-// battery; the framework no longer panics at startup if Markdown is
-// blank (that would kill `gofastr build` too).
 func warnMissingMarkdown() {
 	miss := agentsinv.MissingMarkdown()
 	if len(miss) == 0 {
@@ -224,8 +193,8 @@ func pluralY(n int) string {
 	return "ies"
 }
 
-// BuildAgentsMD assembles a full AGENTS.md from preamble + auto section
-// + tail. Used by `agents init`.
+// BuildAgentsMD assembles a fresh AGENTS.md: preamble, the generated table
+// between the markers, and tail.
 func BuildAgentsMD() []byte {
 	var b bytes.Buffer
 	b.WriteString(agentsPreamble)
@@ -239,14 +208,9 @@ func BuildAgentsMD() []byte {
 	return b.Bytes()
 }
 
-// RefreshAgentsMD swaps the content between the two markers in
-// existing, leaving everything else untouched. Returns the new bytes
-// and a boolean indicating whether anything changed.
-//
-// Each marker must occur EXACTLY ONCE. A user who quotes the marker
-// literals inside the preamble (in an explanatory paragraph, say)
-// would otherwise have bytes.Index return their prose-mention, and
-// the regenerated content would clobber the user's intro.
+// RefreshAgentsMD replaces the text between the markers in existing and
+// reports whether anything changed. It errors unless each marker occurs
+// exactly once, start before end.
 func RefreshAgentsMD(existing []byte) ([]byte, bool, error) {
 	startCount := bytes.Count(existing, []byte(agentsAutoStart))
 	endCount := bytes.Count(existing, []byte(agentsAutoEnd))
@@ -270,34 +234,20 @@ func RefreshAgentsMD(existing []byte) ([]byte, bool, error) {
 	return out, !bytes.Equal(NormalizeMD(out), NormalizeMD(existing)), nil
 }
 
-// migrateLegacyAgentsRefs points the generator's own spellings of the
-// old visible agents/ folder at .agents/: a code span (`agents/ui.md`,
-// `agents/`) and a Markdown link target ((agents/battery-admin.md)).
-// AGENTS.md keeps everything outside its markers on sync, and an older
-// generator wrote those spellings into the preamble, so without this a
-// synced project would keep pointing at a folder the sync just
-// removed. Prose that merely names a folder called agents is left
-// alone.
 func migrateLegacyAgentsRefs(b []byte) []byte {
 	b = bytes.ReplaceAll(b, []byte("`"+LegacyAgentsDetailDir+"/"), []byte("`"+AgentsDetailDir+"/"))
 	return bytes.ReplaceAll(b, []byte("]("+LegacyAgentsDetailDir+"/"), []byte("]("+AgentsDetailDir+"/"))
 }
 
-// normalizeMD collapses runs of whitespace so the changed-check ignores
-// trailing newline jitter. Also folds CRLF → LF so Windows clones
-// (autocrlf=true) don't flap on every sync.
 var wsRun = regexp.MustCompile(`[ \t]+\n`)
 
+// NormalizeMD folds CRLF to LF and drops trailing blanks on each line, so a
+// compare ignores both.
 func NormalizeMD(b []byte) []byte {
 	b = bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n"))
 	return wsRun.ReplaceAll(b, []byte("\n"))
 }
 
-// writeAutoSection appends a TOC table linking every inventory entry
-// to its detail file under .agents/. The detail files themselves are
-// written by writeAgentDetailFiles, keeping AGENTS.md thin so an AI
-// agent can scan it in one pass and only load the detail when a row
-// matches its task.
 func writeAutoSection(b *bytes.Buffer) {
 	entries := agentsinv.All()
 	if len(entries) == 0 {
@@ -315,8 +265,6 @@ func writeAutoSection(b *bytes.Buffer) {
 	b.WriteString("\n")
 }
 
-// sectionTitle is "framework" for framework entries, "battery/<name>"
-// for battery entries. Matches how the existing agents.md files start.
 func sectionTitle(e agentsinv.Entry) string {
 	if e.Kind == agentsinv.KindBattery {
 		return "battery/" + e.Name
@@ -324,8 +272,6 @@ func sectionTitle(e agentsinv.Entry) string {
 	return e.Name
 }
 
-// agentDetailRelPath is the path to the per-entry detail file, relative
-// to the AGENTS.md that links to it (both live at project root).
 func agentDetailRelPath(e agentsinv.Entry) string {
 	if e.Kind == agentsinv.KindBattery {
 		return ".agents/battery-" + e.Name + ".md"
@@ -333,34 +279,20 @@ func agentDetailRelPath(e agentsinv.Entry) string {
 	return ".agents/" + e.Name + ".md"
 }
 
-// extractUseWhen pulls the **Use this when** paragraph out of a
-// battery's agents.md so the TOC row can show its full trigger-phrase
-// list. The paragraph extends until EITHER a blank line OR the next
-// `**Heading:**` on a fresh line. Markdown paragraphs canonically
-// end on a blank line, but a battery author who writes
-// `**Use this when** foo\n**Import:** pkg` (no blank line) shouldn't
-// have the trigger list slurp the **Import:** block too.
-//
-// Returns "—" when no such paragraph exists.
 func extractUseWhen(md string) string {
 	const marker = "**Use this when**"
 	start := strings.Index(md, marker)
 	if start < 0 {
 		return "—"
 	}
-	// Walk lines from the marker forward, accumulating until we hit
-	// a paragraph terminator.
 	rest := md[start+len(marker):]
 	lines := strings.Split(rest, "\n")
 	var collected []string
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		// Blank line ends the paragraph.
 		if i > 0 && trimmed == "" {
 			break
 		}
-		// A fresh **...:** heading on the next line ends the paragraph
-		// even without a blank separator.
 		if i > 0 && reBoldHeading.MatchString(trimmed) {
 			break
 		}
@@ -371,7 +303,6 @@ func extractUseWhen(md string) string {
 	s = strings.TrimPrefix(s, "the prompt mentions: ")
 	s = strings.TrimPrefix(s, "the prompt mentions:")
 	s = strings.TrimSuffix(s, ".")
-	// Markdown table cells can't contain a literal pipe. Escape any.
 	s = strings.ReplaceAll(s, "|", `\|`)
 	if s == "" {
 		return "—"
@@ -379,18 +310,12 @@ func extractUseWhen(md string) string {
 	return s
 }
 
-// reBoldHeading matches a line that BEGINS with `**Word:**`, the
-// next-heading terminator used by extractUseWhen.
 var reBoldHeading = regexp.MustCompile(`^\*\*[A-Za-z][^*]*:\*\*`)
 
-// autoGenSentinel is the string we look for at the top of an existing
-// detail file to decide it's safe to overwrite. Present ⇒ previous
-// generator output; absent ⇒ user-authored file we must not clobber.
 const autoGenSentinel = "<!-- AUTO-GENERATED by `gofastr agents sync`"
 
-// CheckOnboardingFiles checks an existing project directory for hand-written
-// detail-file collisions and unreadable or escaping onboarding paths. It writes
-// nothing; init uses it before replacing any scaffold or generated secret.
+// CheckOnboardingFiles errors when a detail file or the host skill in dir
+// is hand-written, unreadable or linked out of dir. It writes nothing.
 func CheckOnboardingFiles(dir string) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -420,22 +345,9 @@ func checkAgentDetailOverwrite(root *os.Root, dir, name string) error {
 	return nil
 }
 
-// WriteAgentDetailFiles writes one Markdown file per inventory entry
-// under <dir>/agents/. Each file leads with an HTML comment that
-// announces it's auto-generated AND names the upstream source, so a
-// user who finds it knows where to edit instead of clobbering the
-// local copy. Body = the entry's agents.md verbatim, followed by a
-// back-link to AGENTS.md so an agent that lands here can pivot to
-// the index.
-//
-// Refuses to overwrite an existing detail-file path that does NOT
-// carry the auto-gen sentinel. That would silently clobber a user
-// file (e.g. a hand-written `.agents/framework.md` they had before
-// running init). Other files in .agents/ are left untouched.
-//
-// Every read and write goes through an os.Root on dir (see confined.go):
-// a symlinked .agents/ or detail file that leads out of the project is
-// refused, never written through.
+// WriteAgentDetailFiles writes one generated file per inventory entry under
+// dir/.agents/, refuses to overwrite one without the generated header, and
+// removes the generated files an older release left in agents/.
 func WriteAgentDetailFiles(dir string) error {
 	root, err := openProjectRoot(dir)
 	if err != nil {
@@ -446,10 +358,9 @@ func WriteAgentDetailFiles(dir string) error {
 		return fmt.Errorf("create %s dir: %w", AgentsDetailDir, err)
 	}
 	for _, e := range agentsinv.All() {
-		name := agentDetailRelPath(e) // ".agents/battery-admin.md" etc.
+		name := agentDetailRelPath(e)
 		path := filepath.Join(dir, name)
 
-		// Refuse to clobber a non-generated file at the same path.
 		if err := checkAgentDetailOverwrite(root, dir, name); err != nil {
 			return err
 		}
@@ -461,8 +372,6 @@ func WriteAgentDetailFiles(dir string) error {
 		b.WriteString(strings.TrimRight(e.Markdown, "\n"))
 		b.WriteString("\n\n---\n\n")
 		b.WriteString("← Back to [AGENTS.md](../AGENTS.md)\n")
-		// Through a temporary file: one emptied by a crash mid-write lacks
-		// the header, and the next sync would refuse it as hand-written.
 		if err := replaceInRoot(root, name, b.Bytes(), 0o644); err != nil {
 			return fmt.Errorf("write %s: %w", path, err)
 		}
@@ -470,27 +379,14 @@ func WriteAgentDetailFiles(dir string) error {
 	return removeLegacyAgentDetailFiles(root)
 }
 
-// agentsDetailDir is the hidden folder at the project root that holds
-// the generated detail files. Earlier releases wrote them to a visible
-// agents/ folder beside the app's own packages (legacyAgentsDetailDir).
+// AgentsDetailDir holds the generated detail files; releases before it
+// wrote them to LegacyAgentsDetailDir.
 const (
 	AgentsDetailDir       = ".agents"
 	LegacyAgentsDetailDir = "agents"
 )
 
-// removeLegacyAgentDetailFiles cleans up the visible agents/ folder an
-// earlier release generated, once the same files exist under .agents/.
-// It deletes only files that carry the auto-gen sentinel, so a
-// hand-written doc in agents/ survives, and removes the folder only
-// when nothing else is left in it.
 func removeLegacyAgentDetailFiles(root *os.Root) error {
-	// The os.Root confines every read and delete to the project
-	// directory, so a symlinked agents/ or a symlinked .md cannot reach
-	// outside it.
-	//
-	// A symlinked agents/ (say, agents -> .agents, kept for old links)
-	// stays as it is: os.Root follows a link that stays inside the
-	// root, so cleaning through it would delete the files just written.
 	fi, err := root.Lstat(LegacyAgentsDetailDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {

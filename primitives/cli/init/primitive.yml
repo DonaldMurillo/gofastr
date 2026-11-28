@@ -1,0 +1,118 @@
+primitive: cli.init
+summary: gofastr init - scaffold a new GoFastr app, or one in the current directory with init ., from the Go templates embedded under scaffold/, and with --reinit refresh only its agent onboarding files.
+code:
+  - cmd/gofastr/internal/initcmd/
+docs:
+  - framework/docs/content/cli.md
+  - framework/docs/content/project-structure.md
+on_change:
+  - The files under scaffold/ are fmt.Sprintf formats where init passes arguments (main.go.tmpl, main_entities.go.tmpl, screens.go.tmpl), so a literal percent sign in them is written %%.
+invariants:
+  - id: flags-before-anything
+    rule: Every flag is checked before the project name, an unknown flag exits 2, and an invalid --module or --db value exits 1, all before any file is written.
+    enforced_by:
+      - test: cmd/gofastr/internal/initcmd.TestInitUnknownFlagRefusedBeforeMissingName
+      - test: cmd/gofastr/internal/initcmd.TestInitRefusesUnknownFlag
+      - test: cmd/gofastr/internal/initcmd.TestInitRefusesMalformedModuleBeforeWriting
+      - test: cmd/gofastr/internal/initcmd.TestInitRejectsUnknownDBDriver
+      - test: cmd/gofastr/internal/initcmd.TestInitAcceptsDBDriverAliases
+      - test: cmd/gofastr/internal/initcmd.TestInitModuleFlagSpaceForm
+      - test: cmd/gofastr/internal/initcmd.TestSplitInitArgs
+  - id: project-names
+    rule: A project name is lowercase letters, digits and hyphens and never a name Windows reserves; init . takes the directory's name, or the last element of its module path when the directory's name is not valid.
+    enforced_by:
+      - test: cmd/gofastr/internal/initcmd.TestValidateProjectName
+      - test: cmd/gofastr/internal/initcmd.TestInitRefusesWindowsDeviceNames
+      - test: cmd/gofastr/internal/initcmd.TestProjectNameWindowsDevices
+      - test: cmd/gofastr/internal/initcmd.TestInitDotModuleNamedAfterDir
+  - id: reinit-needs-a-project
+    rule: --reinit on a name that is not an existing directory exits 1 and creates nothing.
+    enforced_by:
+      - test: cmd/gofastr/internal/initcmd.TestInitReinitRefusesMissingProject
+  - id: init-dot-refusals
+    rule: Before writing, init . refuses a git-tracked .env, a go.mod or .git linked out of the directory, any symlink at .env or the settings file, a --module that differs from an existing go.mod, and existing scaffold files unless --force is given.
+    enforced_by:
+      - test: cmd/gofastr/internal/initcmd.TestInitRefusesTrackedEnv
+      - test: cmd/gofastr/internal/initcmd.TestInitRefusesGoModLinkedOutside
+      - test: cmd/gofastr/internal/initcmd.TestInitRefusesGitDirLinkedOutside
+      - test: cmd/gofastr/internal/initcmd.TestInitDotSecretFilesRefuseAnySymlink
+      - test: cmd/gofastr/internal/initcmd.TestInitDotRefusesOtherModule
+      - test: cmd/gofastr/internal/initcmd.TestInitDotKeepsExistingFiles
+      - test: cmd/gofastr/internal/initcmd.TestInitDotForceOverwrites
+  - id: existing-module-kept
+    rule: init . in a directory with a go.mod uses its module path for every generated import and keeps a higher go or toolchain requirement it already states.
+    enforced_by:
+      - test: cmd/gofastr/internal/initcmd.TestInitDotUsesExistingModule
+      - test: cmd/gofastr/internal/initcmd.TestInitKeepsHigherExistingGoRequirements
+  - id: onboarding-checked-first
+    rule: init checks the .agents detail files and the host skill before it writes any scaffold file, and refuses a hand-written or out-linked one.
+    enforced_by:
+      - test: cmd/gofastr/internal/initcmd.TestInitChecksAgentPathsBeforeWrites
+  - id: writes-stay-in-the-project
+    rule: Every file init writes or merges into goes through an os.Root on the project directory, so a link is followed only while it stays inside it.
+    enforced_by:
+      - test: cmd/gofastr/internal/initcmd.TestInitDotStaysInsideTheProject
+      - test: cmd/gofastr/internal/initcmd.TestOnboardingWritersRefuseLinksOutOfTheProject
+      - test: cmd/gofastr/internal/initcmd.TestInitRefusesALinkedScaffoldDir
+      - test: cmd/gofastr/internal/initcmd.TestScaffoldWriterFollowsALinkInsideTheProject
+      - test: cmd/gofastr/internal/initcmd.TestReinitStaysInsideTheProject
+  - id: secrets-owner-only
+    rule: .env is written 0600 through a temporary file whose mode is set before the secret is written, holds a fresh random JWT_SECRET, and is gitignored; main.go never inlines a DSN that carries a credential.
+    enforced_by:
+      - test: cmd/gofastr/internal/initcmd.TestEnvFileIsOwnerOnly
+      - test: cmd/gofastr/internal/initcmd.TestInitRewritesReplaceWhole
+      - test: cmd/gofastr/internal/initcmd.TestInitMainGoNeverInlinesDSN
+      - test: cmd/gofastr/internal/initcmd.TestInitIgnoresSQLiteSidecars
+  - id: gitignore-merged
+    rule: init . appends only the ignore rules an existing .gitignore lacks.
+    enforced_by:
+      - test: cmd/gofastr/internal/initcmd.TestInitDotMergesGitignore
+  - id: go-floor-matches-the-framework
+    rule: The generated go.mod states the framework's own go line and toolchain, no lower than 1.27.4, writes no toolchain line equal to the go line, and pins the gofastr release matching this CLI.
+    enforced_by:
+      - test: cmd/gofastr/internal/initcmd.TestFrameworkGoMatchesGoMod
+      - test: cmd/gofastr/internal/initcmd.TestInitGoDirectives
+      - test: cmd/gofastr/internal/initcmd.TestInitRaisesGoBelowFloor
+      - test: cmd/gofastr/internal/initcmd.TestRunInitPinsFrameworkToCLIRelease
+      - test: cmd/gofastr/internal/initcmd.TestInitReleaseWithoutGoModExits
+  - id: scaffold-builds-and-composes
+    rule: The scaffolded app builds, puts WithConfig first among the NewApp options, wires battery/auth and the /api prefix when it has entities, resolves its address through isolation, and composes framework/ui with no CSS of its own.
+    enforced_by:
+      - test: cmd/gofastr/internal/initcmd.TestRunInitGeneratesBuildableApp
+      - test: cmd/gofastr/internal/initcmd.TestInitScaffoldsWithConfigFirst
+      - test: cmd/gofastr/internal/initcmd.TestInitWiresAuthAndAPIPrefix
+      - test: cmd/gofastr/internal/initcmd.TestInitNoEntitySkipsAuth
+      - test: cmd/gofastr/internal/initcmd.TestInitGeneratedMainUsesIsolationHelpers
+      - test: cmd/gofastr/internal/initcmd.TestInitGeneratedUIIsFrameworkComposed
+      - test: cmd/gofastr/internal/initcmd.TestInitIsolationConfigOmitsDecorativeStrategy
+  - id: reinit-per-file
+    rule: --reinit rewrites .agents and a generated host skill, syncs AGENTS.md between its markers, replaces CLAUDE.md only when it is the stock text of this or an older release, creates DESIGN.md only when missing, and with --force replaces customized files.
+    enforced_by:
+      - test: cmd/gofastr/internal/initcmd.TestRunReinitFreshAndIdempotent
+      - test: cmd/gofastr/internal/initcmd.TestRunReinitPreservesDesignDirection
+      - test: cmd/gofastr/internal/initcmd.TestRunReinitModifiedClaude
+      - test: cmd/gofastr/internal/initcmd.TestReinitRefreshesLegacyStockClaudeMD
+      - test: cmd/gofastr/internal/initcmd.TestReinitBrokenAgentsMDAdvice
+decisions:
+  - id: templates-are-embedded-files
+    date: 2026-11-28
+    status: accepted
+    decision: The Go files init writes live as embedded files under scaffold/, read as fmt.Sprintf formats where init passes arguments.
+    rejected:
+      - option: Raw string literals inside init.go.
+        why: Their comments are the scaffolded app's own documentation, and inline they read as half of init.go's comment lines and could not be edited as Go.
+  - id: register-does-not-sign-in
+    date: 2026-11-28
+    status: accepted
+    decision: The scaffolded /register screen sends the user to /login with a notice rather than signing them in.
+    rejected:
+      - option: Set a session cookie for a new account.
+        why: battery/auth answers a new and an existing address with the same redirect so the form cannot reveal who has an account, and a cookie only for new accounts would.
+  - id: one-go-mod-edit
+    date: 2026-11-28
+    status: accepted
+    decision: init sets the go line, the toolchain line and the gofastr require in one go mod edit, for release and development CLIs alike.
+    rejected:
+      - option: One go mod edit per directive.
+        why: Once the go line changes, the next go invocation can switch to the minimum toolchain before it sees the preferred patch release in the toolchain line.
+    upholds: [go-floor-matches-the-framework]

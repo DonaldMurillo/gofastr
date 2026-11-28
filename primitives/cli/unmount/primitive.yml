@@ -1,0 +1,73 @@
+primitive: cli.unmount
+summary: gofastr unmount and gofastr remount - copy a gofastr package tree into the app, rewire the module's imports to the copy and record it in the settings file, and put it back.
+code:
+  - cmd/gofastr/internal/unmountcmd/
+docs:
+  - framework/docs/content/cli.md
+  - framework/docs/content/unmount.md
+invariants:
+  - id: arguments
+    rule: unmount and remount take at most one package, --dry-run, --out for unmount and --force for remount, and refuse any other flag, an --out whose value is a flag, or a flag without a package, exiting 2.
+    enforced_by:
+      - test: cmd/gofastr/internal/unmountcmd.TestParseUnmountArgs
+      - test: cmd/gofastr/internal/unmountcmd.TestParseUnmountArgsRefusesFlagLikeOutValue
+      - test: cmd/gofastr/internal/unmountcmd.TestUnmountUsageErrorsExitTwo
+  - id: what-can-be-copied
+    rule: The source is a package under the gofastr module, given in full or after the module path; an internal package, the unmounted registry itself and a package outside gofastr are refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/unmountcmd.TestUnmountSourcePathForms
+      - test: cmd/gofastr/internal/unmountcmd.TestUnmountSourcePathRefusals
+  - id: copy-is-the-build
+    rule: The copy holds the source package and its subpackages without tests, testdata, vendor, hidden or _ directories, unless a non-test file embeds from one, and without nested modules; a source with no Go files of its own, or one that already holds the hook file's name, is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/unmountcmd.TestReadUnmountTreeKeepsEmbeddedDirs
+      - test: cmd/gofastr/internal/unmountcmd.TestReadUnmountTreeSkipsNestedModules
+      - test: cmd/gofastr/internal/unmountcmd.TestReadUnmountTreeRefusals
+      - test: cmd/gofastr/internal/unmountcmd.TestUnmountRemountRoundTrip
+  - id: no-two-versions-of-a-type
+    rule: unmount refuses a tree that imports a gofastr internal package from outside itself, or that a package outside the module and the tree imports in the app's build, tests included, or in the tree's own build; remount refuses one whose packages import another copy the app holds.
+    enforced_by:
+      - test: cmd/gofastr/internal/unmountcmd.TestUnmountRefusals
+      - test: cmd/gofastr/internal/unmountcmd.TestUnmountImportersReadsTestVariants
+      - test: cmd/gofastr/internal/unmountcmd.TestCheckRemountImporters
+      - test: cmd/gofastr/internal/unmountcmd.TestRemountRefusesImporterOfCopy
+  - id: gofastr-source-and-version
+    rule: The copy is read from the gofastr module the app builds against, a replace records version dev, gofastr's own module is refused, and a gofastr that predates core/unmounted is refused before anything is written.
+    enforced_by:
+      - test: cmd/gofastr/internal/unmountcmd.TestUnmountRemountRoundTrip
+      - test: cmd/gofastr/internal/unmountcmd.TestGofastrModuleSourceRefusesGofastrItself
+      - test: cmd/gofastr/internal/unmountcmd.TestCheckUnmountRegistry
+      - test: cmd/gofastr/internal/unmountcmd.TestUnmountRefusesOldGofastr
+  - id: target-in-this-module
+    rule: The copy goes to an empty directory inside the app's own module, never into a nested module.
+    enforced_by:
+      - test: cmd/gofastr/internal/unmountcmd.TestUnmountRefusesATargetInANestedModule
+      - test: cmd/gofastr/internal/unmountcmd.TestUnmountRemountRoundTrip
+  - id: rewire-is-whole-or-undone
+    rule: A rewire replaces each file whole through an os.Root, refuses a leaf symlink, and reports how many files it touched, the failed one included.
+    enforced_by:
+      - test: cmd/gofastr/internal/unmountcmd.TestApplyImportRewireReplacesWhole
+      - test: cmd/gofastr/internal/unmountcmd.TestApplyImportRewireRefusesLeafSymlink
+      - test: cmd/gofastr/internal/unmountcmd.TestApplyImportRewireCountsFailedFile
+  - id: rewire-keeps-gofmt
+    rule: A file that was gofmt-clean before the import rewire is gofmt-clean after it, and any other file keeps its own formatting.
+    enforced_by:
+      - test: cmd/gofastr/internal/unmountcmd.TestPlanImportRewireKeepsGofmtCleanFilesClean
+  - id: failed-rewire-is-put-back
+    rule: When a rewire or the settings write fails, unmount and remount rewrite the files already rewired back, and unmount removes the copy, before returning the error.
+    judge: Does this change let unmount or remount return after a failed rewire or settings write without putting back the files already rewired, or, for unmount, the copy?
+  - id: remount-keeps-changes-safe
+    rule: remount lists every file of the copy that is edited, added, deleted or not regular since unmount, or every file when the hook is gone or edited, and refuses without --force; a copy already deleted is rewired back and dropped.
+    enforced_by:
+      - test: cmd/gofastr/internal/unmountcmd.TestUnmountCopyChanges
+      - test: cmd/gofastr/internal/unmountcmd.TestUnmountRemountRoundTrip
+      - test: cmd/gofastr/internal/unmountcmd.TestRemountDeletedCopy
+  - id: remount-target
+    rule: remount names a copy by its path or its source, refuses a source with several copies, and refuses when the gofastr version the app builds against has no such package.
+    enforced_by:
+      - test: cmd/gofastr/internal/unmountcmd.TestFindUnmountedAmbiguousSource
+      - test: cmd/gofastr/internal/unmountcmd.TestRemountRefusesMissingUpstream
+  - id: unmountable-batteries
+    rule: A battery that can be unmounted imports no gofastr internal package.
+    enforced_by:
+      - test: cmd/gofastr/internal/unmountcmd.TestUnmountableBatteriesImportNoInternal

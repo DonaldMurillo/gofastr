@@ -1,0 +1,8 @@
+primitive: cli
+summary: The gofastr command; this entry owns its entry point, which parses the subcommand and dispatches to the package under cmd/gofastr/internal that implements it, and each child owns one subcommand or shared part.
+code:
+  - cmd/gofastr/main.go
+docs:
+  - framework/docs/content/cli.md
+on_change:
+  - A new, renamed or removed subcommand or flag updates framework/docs/content/cli.md in the same commit.

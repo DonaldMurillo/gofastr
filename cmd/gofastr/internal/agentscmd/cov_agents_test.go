@@ -44,6 +44,30 @@ func TestRunAgentsInitAndSync(t *testing.T) {
 	}
 }
 
+func TestRunAgentsSyncRewritesDetailsWhenTOCUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	clitest.CovT_capStdout(t, func() { RunAgents([]string{"init", dir}) })
+	detail := filepath.Join(dir, agentDetailRelPath(agentsinv.All()[0]))
+	want, err := os.ReadFile(detail)
+	if err != nil {
+		t.Fatalf("init did not write the detail file: %v", err)
+	}
+	if err := os.WriteFile(detail, []byte(autoGenSentinel+" STALE\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := clitest.CovT_capStdout(t, func() { RunAgents([]string{"sync", dir}) })
+	if !strings.Contains(out, "already up to date") {
+		t.Fatalf("sync of an unchanged TOC should say so: %s", out)
+	}
+	got, err := os.ReadFile(detail)
+	if err != nil {
+		t.Fatalf("sync left no detail file behind an unchanged TOC: %v", err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("sync did not restore the generated detail file:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func TestRunAgentsInitExistingExits(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("x"), 0o644); err != nil {

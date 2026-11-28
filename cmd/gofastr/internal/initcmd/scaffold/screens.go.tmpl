@@ -1,0 +1,35 @@
+package main
+
+import (
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
+)
+
+type HomeScreen struct{}
+
+func (h *HomeScreen) Render() render.HTML {
+	return ui.Container(ui.ContainerConfig{Width: ui.ContainerNarrow},
+		ui.Stack(ui.StackConfig{Gap: ui.GapXL},
+			ui.PageHeader(ui.PageHeaderConfig{
+				Eyebrow:  "GoFastr",
+				Title:    "%[1]s",
+				Subtitle: "Your app is running. Replace this screen with a composition chosen from DESIGN.md.",%[3]s
+			}),
+			ui.Section(ui.SectionConfig{
+				Heading:     "Start with intent",
+				Description: "Complete DESIGN.md before selecting components, then use the composition recipes embedded in the GoFastr CLI.%[2]s",
+			}, ui.CodeBlock(ui.CodeBlockConfig{
+				Code:     "gofastr docs ui-composition-recipes\ngofastr theme init",
+				Language: "shell",
+			})),
+		),
+	)
+}
+
+// No ScreenTitle here on purpose: the page renderer composes
+// "<title>SCREEN — APP NAME</title>", so a home screen titled after the
+// app itself ships "myapp — myapp". Untitled, the tab reads exactly the
+// app name. Add ScreenTitle (and ScreenDescription) on inner pages,
+// where the screen name differs from the site's.
+func (h *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
