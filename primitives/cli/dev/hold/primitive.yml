@@ -28,11 +28,11 @@ invariants:
     rule: On an exposed bind /__livereload answers 404, which ends an EventSource, unless dev.LiveReloadExposeEnv is set.
     enforced_by:
       - test: cmd/gofastr/internal/devcmd.TestExposedHoldDropsLiveReload
+      - test: framework.TestLiveReloadOffOnExposedBind
   - id: livereload-only-to-this-machine
-    rule: On a loopback bind /__livereload answers 403 to a Host that is not one of the bind's loopback names, so a page on a rebound name cannot follow the hold's build state.
+    rule: On a loopback bind the hold's /__livereload answers 403 to a Host that is not one of the bind's loopback names, a port-less Host included, so a page on a rebound name cannot follow the hold's build state; the app's own /__livereload, served once the build is up, has no such pin.
     enforced_by:
       - test: cmd/gofastr/internal/devcmd.TestLoopbackHoldRefusesLiveReloadToAForeignHost
-      - test: framework.TestLiveReloadOffOnExposedBind
   - id: ready-only-with-something-to-show
     rule: The hold's /__livereload sends a ready event, with an ID no app build uses, only in the build-failed or exited phase and once per change, so a tab sitting through an ordinary rebuild never reloads into a building page.
     enforced_by:
