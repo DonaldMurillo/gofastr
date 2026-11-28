@@ -1,0 +1,151 @@
+package mcp
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+)
+
+func postWithVersionHeader(t *testing.T, h http.Handler, body string, versions ...string) *httptest.ResponseRecorder {
+	t.Helper()
+	r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	for _, v := range versions {
+		r.Header.Add(ProtocolVersionHeader, v)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	return w
+}
+
+// Every POST transport refuses an MCP-Protocol-Version it does not speak with 400 and the supported list, and serves a
+// supported or absent header.
+func TestVersionHeaderRefusesUnsupported(t *testing.T) {
+	s := NewServer()
+	const list = `{"jsonrpc":"2.0","id":7,"method":"tools/list"}`
+	for name, h := range map[string]http.Handler{"ServeHTTP": s, "ServeSSE": s.ServeSSE("/mcp")} {
+		t.Run(name, func(t *testing.T) {
+			for _, tc := range []struct {
+				name     string
+				versions []string
+				want     int
+			}{
+				{"absent", nil, http.StatusOK},
+				{"newest", []string{LatestProtocolVersion}, http.StatusOK},
+				{"older supported", []string{"2025-03-26"}, http.StatusOK},
+				{"unknown", []string{"2099-01-01"}, http.StatusBadRequest},
+				{"dropped revision", []string{"2024-11-05"}, http.StatusBadRequest},
+				{"empty", []string{""}, http.StatusBadRequest},
+				{"repeated", []string{LatestProtocolVersion, LatestProtocolVersion}, http.StatusBadRequest},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					w := postWithVersionHeader(t, h, list, tc.versions...)
+					if w.Code != tc.want {
+						t.Fatalf("status = %d, want %d; body %s", w.Code, tc.want, w.Body)
+					}
+					if tc.want != http.StatusBadRequest {
+						return
+					}
+					var resp struct {
+						ID    any `json:"id"`
+						Error struct {
+							Code int `json:"code"`
+							Data struct {
+								Supported []string `json:"supported"`
+							} `json:"data"`
+						} `json:"error"`
+					}
+					if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+						t.Fatalf("body is not JSON-RPC: %v: %s", err, w.Body)
+					}
+					if resp.Error.Code != ErrInvalidRequest || resp.ID != float64(7) {
+						t.Fatalf("error = %+v id = %v, want %d under id 7", resp.Error, resp.ID, ErrInvalidRequest)
+					}
+					if strings.Join(resp.Error.Data.Supported, ",") != strings.Join(SupportedProtocolVersions(), ",") {
+						t.Fatalf("supported = %v, want %v", resp.Error.Data.Supported, SupportedProtocolVersions())
+					}
+				})
+			}
+		})
+	}
+}
+
+// initialize is where the version is negotiated, so a header on it never refuses it.
+func TestVersionHeaderLeavesInitializeToNegotiation(t *testing.T) {
+	s := NewServer()
+	w := postWithVersionHeader(t, s, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2099-01-01"}}`, "2099-01-01")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"protocolVersion":"`+LatestProtocolVersion+`"`) {
+		t.Fatalf("initialize = %d %s, want 200 negotiating %s", w.Code, w.Body, LatestProtocolVersion)
+	}
+}
+
+// A notification POST with an unsupported header is refused, not accepted with 202.
+func TestVersionHeaderRefusesNotification(t *testing.T) {
+	w := postWithVersionHeader(t, NewServer(), `{"jsonrpc":"2.0","method":"notifications/initialized"}`, "2099-01-01")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
+	}
+}
+
+// The notification stream refuses to open under an unsupported header.
+func TestVersionHeaderRefusesStream(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	r := httptest.NewRequest(http.MethodGet, "/mcp", nil).WithContext(ctx)
+	r.Header.Set(ProtocolVersionHeader, "2099-01-01")
+	w := httptest.NewRecorder()
+	NewServer().ServeSSE("/mcp").ServeHTTP(w, r)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
+	}
+}
+
+// A refusal for the header answers under a null id when the request's id is not a valid scalar, as JSON-RPC requires.
+func TestVersionHeaderRefusalNullsInvalidID(t *testing.T) {
+	s := NewServer()
+	for name, h := range map[string]http.Handler{"ServeHTTP": s, "ServeSSE": s.ServeSSE("/mcp")} {
+		w := postWithVersionHeader(t, h, `{"jsonrpc":"2.0","id":{"x":1},"method":"tools/list"}`, "2099-01-01")
+		var resp map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("%s: %v: %s", name, err, w.Body)
+		}
+		if id, ok := resp["id"]; w.Code != http.StatusBadRequest || !ok || id != nil {
+			t.Fatalf("%s = %d %s, want 400 under a null id", name, w.Code, w.Body)
+		}
+	}
+}
+
+// A repeated header is refused as repeated, not as unsupported: each copy may name a revision the server speaks.
+func TestVersionHeaderRepeatedSaysRepeated(t *testing.T) {
+	w := postWithVersionHeader(t, NewServer(), `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, "2025-06-18", "2025-06-18")
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "repeated "+ProtocolVersionHeader) {
+		t.Fatalf("= %d %s, want 400 naming the header as repeated", w.Code, w.Body)
+	}
+}
+
+// The notification stream opens for a client that sends a supported header, as 2025-06-18 clients do on the GET.
+func TestVersionHeaderOpensStreamWhenSupported(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	srv := httptest.NewServer(NewServer().ServeSSE("/mcp"))
+	defer srv.Close()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/mcp", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set(ProtocolVersionHeader, "2025-06-18")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	first, err := bufio.NewReader(resp.Body).ReadString('\n')
+	if resp.StatusCode != http.StatusOK || err != nil || first != "event: endpoint\n" {
+		t.Fatalf("GET under 2025-06-18 = %d, first line %q (%v); want 200 and the endpoint event", resp.StatusCode, first, err)
+	}
+}

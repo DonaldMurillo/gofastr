@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -108,6 +109,41 @@ func decodeEnvelope(raw []byte, req *Request) (notification bool, errResp *Respo
 	return false, nil
 }
 
+// ProtocolVersionHeader is the HTTP header a client names its negotiated MCP revision in on every request after initialize.
+const ProtocolVersionHeader = "MCP-Protocol-Version"
+
+const maxEchoedVersionBytes = 64
+
+func refuseVersionHeader(w http.ResponseWriter, r *http.Request, req Request) bool {
+	values := r.Header.Values(ProtocolVersionHeader)
+	if len(values) == 0 || req.Method == "initialize" {
+		return false
+	}
+	requested := strings.TrimSpace(values[0])
+	if len(values) == 1 && slices.Contains(supportedProtocolVersions, requested) {
+		return false
+	}
+	if len(requested) > maxEchoedVersionBytes {
+		requested = requested[:maxEchoedVersionBytes]
+	}
+	msg := "unsupported " + ProtocolVersionHeader
+	if len(values) > 1 {
+		msg = "repeated " + ProtocolVersionHeader
+	}
+	resp := newErrorResponse(replyID(req.ID), ErrInvalidRequest, msg)
+	resp.Error.Data = map[string]any{"supported": SupportedProtocolVersions(), "requested": requested}
+	writeEnvelopeError(w, resp)
+	return true
+}
+
+// replyID is the id a transport-level refusal answers under: the request's own when it is a valid scalar, else null.
+func replyID(id any) any {
+	if !validRequestID(id) {
+		return nil
+	}
+	return id
+}
+
 func errorAsMaxBytes(err error, target **http.MaxBytesError) bool {
 	for e := err; e != nil; {
 		if m, ok := e.(*http.MaxBytesError); ok {
@@ -184,6 +220,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var req Request
 	ok, notification := decodeMCPRequest(w, r, &req)
 	if !ok {
+		return
+	}
+	if refuseVersionHeader(w, r, req) {
 		return
 	}
 	if notification {
@@ -310,6 +349,9 @@ func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if refuseVersionHeader(w, r, req) {
+		return
+	}
 	if notification {
 		w.WriteHeader(http.StatusAccepted)
 		return
@@ -344,6 +386,10 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) sseStream(w http.ResponseWriter, r *http.Request, path string) {
 	if !s.originOK(r) {
 		i18n.HTTPError(w, r, http.StatusForbidden, i18n.ReasonCrossOriginHost)
+		return
+	}
+
+	if refuseVersionHeader(w, r, Request{}) {
 		return
 	}
 
