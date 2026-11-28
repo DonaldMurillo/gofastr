@@ -61,7 +61,8 @@ func NextE2EPort(t *testing.T) string {
 
 // DevTempEnv is the environment for a spawned `gofastr dev`: temp
 // directories under the test's own, and an empty axe-coverage root. Call it
-// before registering the cleanup that kills the process.
+// before registering the cleanup that kills the process: cleanups run last-in
+// first-out, so the process is killed before its temp directories are removed.
 func DevTempEnv(t *testing.T) []string {
 	t.Helper()
 	dir := t.TempDir()
