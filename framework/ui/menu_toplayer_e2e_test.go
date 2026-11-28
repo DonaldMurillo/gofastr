@@ -245,3 +245,23 @@ func TestDropdownRenderedOpenIsRaisedOnArrival(t *testing.T) {
 		t.Fatal("a second scan took the open panel out of the top layer")
 	}
 }
+
+// A panel the browser refuses to raise (showPopover throws) drops the
+// popover attribute and stays drawn in its flow, placed as without
+// anchor positioning, instead of being hidden by the browser's rule for a
+// [popover] out of the top layer.
+func TestPopupPanelTheBrowserWillNotRaiseStillDraws(t *testing.T) {
+	ctx := popupPage(t, true)
+	const panel = `#dd > .fui-dropmenu__panel`
+	evalJS(t, ctx, `HTMLElement.prototype.showPopover = function () { throw new DOMException('refused', 'InvalidStateError'); }`, nil)
+	evalJS(t, ctx, `document.querySelector('#dd > summary').click()`, nil)
+	if !pollJS(ctx, `document.getElementById('dd').open`) {
+		t.Fatal("the dropdown did not open")
+	}
+	settle()
+	var shown string
+	evalJS(t, ctx, `(() => { const p = document.querySelector('`+panel+`'); return p.hasAttribute('popover') ? 'kept the popover attribute' : getComputedStyle(p).display === 'none' ? 'not drawn' : 'drawn'; })()`, &shown)
+	if shown != "drawn" {
+		t.Fatalf("a panel whose showPopover threw is %s, want it drawn in place", shown)
+	}
+}

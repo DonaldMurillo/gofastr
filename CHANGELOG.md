@@ -123,6 +123,10 @@ few lines, and link the PR or the docs page for the rest.
 - **`repolint` flags a `go build ./cmd/vettool/` written with a trailing
   slash** that lacks `-buildvcs=false`, as it already did without the
   slash ([#924](https://github.com/DonaldMurillo/gofastr/pull/924)).
+- **Anchored popovers show on the top layer** (#706). An open popover
+  widget opened with `data-cui-popover-anchor` is a manual popover, so
+  a menu, toast or tooltip already open no longer covers it. The
+  runtime still places it and its arrow beside the trigger.
 - **Menu and dropdown panels show on the top layer** (#706). Where the
   browser has CSS anchor positioning, an open `ui.Menu` or
   `ui.Dropdown` panel is a manual popover anchored to its trigger, so a

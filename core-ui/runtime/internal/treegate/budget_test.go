@@ -50,7 +50,11 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 		// and armed by a row swapped inside it, and a toast raised behind
 		// a modal waits for it to close; all are the toast lifecycle's
 		// (+512). 3688 measured + 2.
-		"framework/headless/feedback.js": 3690,
+		// TestToastStackTheBrowserWillNotRaiseStillDraws (#706): the raise
+		// drops the popover attribute when the browser refuses, inline so a
+		// toast shown before widgets.js loads still rises (+11). 3701
+		// measured + 2.
+		"framework/headless/feedback.js": 3703,
 		// framework/headless's disclosure, at the walk's line before the
 		// 2026-11-05 IME Escape fix: an Escape handler ignores a
 		// composition event (`isComposing` or keyCode 229, Safari's), so
