@@ -10,17 +10,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/file"
 )
 
-// The file uploads the generated clients send. The CRUD write handlers
-// take multipart/form-data beside JSON: a part named after an Image or
-// File column carries the file, which the server stores and replaces
-// with its URL, and every other part is a column value as text, coerced
-// by the column's type. Part names are column names (snake_case): the
-// multipart path does no wire-casing conversion.
-
-// uploadFields lists the fields of decl a write can send a file for: the
-// visible Image and File fields every write shape carries, less the
-// read-only ones, whose file the server would store and then not save.
-// The CLI's file flags come from the same list.
 func uploadFields(decl framework.EntityDeclaration) []framework.FieldDeclaration {
 	_, dropUpdate := writeShapeDrops(decl)
 	var out []framework.FieldDeclaration
@@ -36,8 +25,6 @@ func uploadFields(decl framework.EntityDeclaration) []framework.FieldDeclaration
 	return out
 }
 
-// clientHasUploads reports whether any entity takes a file, which gates
-// the shared multipart helpers and their imports.
 func clientHasUploads(decls []framework.EntityDeclaration) bool {
 	for _, d := range decls {
 		if len(uploadFields(d)) > 0 {
@@ -47,9 +34,6 @@ func clientHasUploads(decls []framework.EntityDeclaration) bool {
 	return false
 }
 
-// clientUploadHelpers is the shared multipart code of the Go client. The
-// caps are the server's: file.MaxProcessFileSize per file and
-// crud.MaxMultipartBodyBytes per request.
 func clientUploadHelpers() string {
 	return fmt.Sprintf(`// FilePart is one file in a multipart write. Name is the file name sent
 // with the part; the server sniffs the type from the bytes, not the name.
@@ -217,9 +201,6 @@ func sortedKeys[V any](m map[string]V) []string {
 `, file.MaxProcessFileSize, crud.MaxMultipartBodyBytes)
 }
 
-// renderClientUploads emits, for an entity that takes files, its files
-// struct, the map from JSON key to column, and the WithFiles variants of
-// create, update and patch. route is the table, path-escaped.
 func renderClientUploads(decl framework.EntityDeclaration, route string) string {
 	uploads := uploadFields(decl)
 	if len(uploads) == 0 {
@@ -242,7 +223,6 @@ func renderClientUploads(decl framework.EntityDeclaration, route string) string 
 	}
 	sb.WriteString("\treturn parts\n}\n\n")
 
-	// Every key the Input shape can marshal: Patch's keys are a subset.
 	dropCreate, _ := writeShapeDrops(decl)
 	fmt.Fprintf(&sb, "// %s maps each JSON key of the %s write shapes to its column,\n// the name a multipart part goes by.\nvar %s = map[string]string{\n", columns, goCommentSafe(decl.Name), columns)
 	for _, f := range decl.Fields {

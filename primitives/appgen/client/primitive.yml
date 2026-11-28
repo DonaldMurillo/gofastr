@@ -1,8 +1,64 @@
 primitive: appgen.client
-summary: Renders the typed Go HTTP client for a set of entities, written into an app as entities/client and into the Go SDK.
+summary: Renders the standalone, stdlib-only typed Go HTTP client for a set of entities, written into an app as entities/client and into the Go SDK, with its endpoint and upload calls.
 code:
   - cmd/gofastr/internal/appgen/generate_client.go
   - cmd/gofastr/internal/appgen/generate_client_*.go
   - cmd/gofastr/internal/appgen/generate_appclient.go
 docs:
   - framework/docs/content/sdk.md
+  - framework/docs/content/endpoints.md
+  - framework/docs/content/uploads.md
+invariants:
+  - id: declaration-text-stays-inert
+    rule: Declaration text written into a generated Go or JS line comment has its C0 bytes, U+2028 and U+2029 flattened to spaces, a block comment also breaks */, and a table reaches request paths only path-escaped.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestCommentSafeFlattensLineTerminators
+      - test: cmd/gofastr/internal/appgen.TestGeneratedCommentsKeepDeclarationDataInert
+      - test: cmd/gofastr/internal/appgen.TestCLIRouteLiteralsEscapeTable
+  - id: hidden-fields-never-leave
+    rule: No generated client shape names a hidden field.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestSDKNeverEmitsHiddenFields
+      - test: cmd/gofastr/internal/appgen.TestHiddenRelationSurvivesGeneration
+  - id: write-shapes-match-the-server
+    rule: Write shapes leave out the id, auto-generated columns and enforced-States stamps; update and patch shapes also leave out key columns, the state field, the owner field and the multi-tenant column; a create carries a field as a value only when it is required with no default, and patch fields are pointers so a zero value can be set.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestWriteShapesDropServerFields
+      - test: cmd/gofastr/internal/appgen.TestCreateInputSendsOnlyRequiredFieldsWithoutDefault
+      - test: cmd/gofastr/internal/appgen.TestRenderClient_PatchStructUsesPointers
+  - id: read-shapes-keep-absence
+    rule: A read shape carries an optional scalar as a pointer and a required, key or auto-generated column as a value.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestReadFieldTakesValue
+      - test: cmd/gofastr/internal/appgen.TestClientReadOptionalScalarsArePointers
+  - id: default-client-refuses-redirects
+    rule: The default http.Client both generated client packages build returns a 3xx as is instead of following it, so the token never reaches another origin.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestClientCoreDefaults
+      - test: cmd/gofastr/internal/appgen.TestOpenAPICLIRefusesRedirect
+  - id: endpoint-names-fit-every-client
+    rule: An endpoint name whose call would take a client.js Resource or Object.prototype member, a Go Client field, a state move's method or command, or a CLI verb is refused, as is one returning an entity the selection leaves out.
+    enforced_by:
+      - test: cmd/gofastr/internal/generatecmd.TestEndpointResolverRefusals
+  - id: uploads-only-for-writable-files
+    rule: Upload calls and CLI file flags cover only the image and file fields a write carries that are neither hidden nor read_only.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestClientUploadCalls
+      - test: cmd/gofastr/internal/appgen.TestClientUploadGuards
+  - id: refresh-never-takes-owned-code
+    rule: A plain generate, build or --add rebuilds entities/client/client.go only when it exists, and leaves an edited app-generator copy alone with a warning until gofastr generate client --force takes it over.
+    enforced_by:
+      - test: cmd/gofastr/internal/generatecmd.TestPlainGenerateRebuildsClient
+      - test: cmd/gofastr/internal/generatecmd.TestBuildSkipsEditedLegacyClient
+      - test: cmd/gofastr/internal/generatecmd.TestGenerateClientForceTakesOver
+      - test: cmd/gofastr/internal/appgen.TestAddRebuildsClient
+      - test: cmd/gofastr/internal/appgen.TestRefreshNeverCreatesTheClient
+decisions:
+  - id: patch-takes-pointers
+    date: 2026-11-28
+    status: accepted
+    decision: Each entity gets a <Entity>Patch struct whose fields are all pointers with omitempty, beside the Input struct.
+    rejected:
+      - option: Reuse Input with omitempty value fields for PATCH.
+        why: A value field tagged omitempty cannot set false, 0 or the empty string, and the server's PATCH applies only the keys present.
+    upholds: [write-shapes-match-the-server]
