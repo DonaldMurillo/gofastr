@@ -193,3 +193,27 @@ func TestHydratedPopoverReopensAboveALaterPopover(t *testing.T) {
 		t.Fatalf("the reopened hydrated popover is %s, want it above the popover opened while it was closed", second)
 	}
 }
+
+// A popover the browser refuses to raise (showPopover throws) drops the
+// popover attribute, so it still draws in place instead of being hidden
+// by the browser's rule for a [popover] out of the top layer.
+func TestPopoverTheBrowserWillNotRaiseStillDraws(t *testing.T) {
+	var fetches atomic.Int32
+	srv := openAnchorServer(t, &fetches)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	var shown string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		until(runtimeReady),
+		chromedp.Evaluate(`HTMLElement.prototype.showPopover = function () { throw new DOMException('refused', 'InvalidStateError'); }`, nil),
+		chromedp.Evaluate(`document.getElementById('bell').click()`, nil),
+		until(`!!`+notesRoot+` && `+notesRoot+`.hasAttribute('data-cui-popover-side')`),
+		chromedp.Evaluate(`(() => { const w = `+notesRoot+`; return w.hasAttribute('popover') ? 'kept the popover attribute' : getComputedStyle(w).display === 'none' ? 'not drawn' : 'drawn'; })()`, &shown),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if shown != "drawn" {
+		t.Fatalf("a popover whose showPopover threw is %s, want it drawn in place", shown)
+	}
+}

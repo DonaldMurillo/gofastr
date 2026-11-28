@@ -118,6 +118,7 @@ invariants:
       - test: core-ui/runtime.TestHydratedPopoverReopensAboveALaterPopover
       - test: core-ui/runtime.TestReattachedPopoverRisesAgain
       - test: core-ui/runtime.TestPopoverMovedByAClosingDialogRisesAgain
+      - test: core-ui/runtime.TestPopoverTheBrowserWillNotRaiseStillDraws
   - id: escape-waits-for-widgetfocus
     rule: An Escape pressed while a modal or popover is open and the demand-loaded widgetfocus module has not registered yet is handed to that module once it loads, so it closes the top layer instead of being lost, unless a layer opened or closed in between; an Escape that belongs to an IME is never forwarded.
     enforced_by:
