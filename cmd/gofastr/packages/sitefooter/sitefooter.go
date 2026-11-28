@@ -1,5 +1,12 @@
-// Package sitefooter is the app's colophon. This package is the app's own
-// code: edit it freely.
+// Package sitefooter is the app's colophon, built the way siteheader
+// builds the top bar: plain html elements composed here, the look in
+// sitefooter.style.css (an owned style; `gofastr gen styles` writes the
+// class methods in sitefooter_style.gen.go). Spacing and shared sizes
+// use theme tokens. The tagline measure and grid tracks use literal
+// sizes. The footer sits on the page measure the header and main share.
+//
+// The footer is the page's contentinfo landmark. This package is the
+// app's own code: edit it freely.
 package sitefooter
 
 import (
@@ -25,7 +32,8 @@ type Config struct {
 	// Tagline is one line under the name. Empty draws none.
 	Tagline string
 	Columns []Column
-	// Language is the language switcher under the name. Zero draws none.
+	// Language sits under the name: the language switcher
+	// (ui.LanguageMenu). Zero draws none.
 	Language render.HTML
 	// Note is the bottom line (the copyright). Empty draws none.
 	Note string

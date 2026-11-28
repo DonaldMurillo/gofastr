@@ -52,3 +52,12 @@ decisions:
       - option: Scrub the whole formatted line, format included.
         why: It strips the helper's own colour along with the payload's.
     upholds: [arguments-scrubbed-format-kept, styling-belongs-in-the-format]
+  - id: scrub-through-a-formatter
+    date: 2026-11-28
+    status: accepted
+    decision: "scrubArgs wraps each text-bearing argument in scrubbedArg, a fmt.Formatter that formats the value with its own verb and scrubs the result; fmt answers %T and %p from the wrapper itself, so those two verbs print scrubbedArg, which is accepted because no helper call uses them and a type or pointer has no text to scrub."
+    rejected:
+      - option: Replace each argument with its scrubbed fmt.Sprint text before formatting.
+        why: "The verb would then format a string, not the value, so %+v of a struct or %x of a []byte would print something else."
+    revisit_if: A helper call needs %T or %p on an argument.
+    upholds: [arguments-keep-their-verbs]

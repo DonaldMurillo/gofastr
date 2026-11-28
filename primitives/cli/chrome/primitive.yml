@@ -14,10 +14,17 @@ invariants:
     rule: FS embeds no file under a top-level name starting with "." or "_", so local state such as an ignored .gofastr/ next to the packages never ships in the binary.
     enforced_by:
       - test: cmd/gofastr/packages.TestFSShipsNoDotOrUnderscoreEntry
+  - id: root-files-are-not-packages
+    rule: "FS's root holds this package's own files (packages.go and its tests) beside the package directories, and the readers list and copy only the directories, so a root file is neither a listed package nor an error."
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestCanonicalPackageInfosSkipRootFiles
+    applies:
+      - cmd/gofastr/internal/appgen/generate_package.go
   - id: package-doc-is-the-listing
     rule: The first sentence of each package's doc comment is the summary `gofastr generate package` prints beside its name.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestGeneratePackageListsAllPackages
+      - test: cmd/gofastr/internal/appgen.TestFirstDocSentenceStopsAtTheFirstSentence
     applies:
       - cmd/gofastr/internal/appgen/generate_package.go
 decisions:
@@ -36,3 +43,12 @@ decisions:
       - option: Keep the packages as templates inside appgen.
         why: A second copy or template fork drifts from the packages that build and test here; go:embed cannot reach a parent directory, so the embed lives beside them.
     upholds: [no-local-state-in-the-binary]
+  - id: copied-packages-keep-their-docs
+    date: 2026-11-28
+    status: accepted
+    decision: "The non-test Go files of siteheader, sitefooter and docpage keep their package, type and field doc comments, because an app gets them as its own code and those comments are the app author's documentation; this makes them a documented exception to the sweep's 8% comment target (about 25% to 38% each)."
+    rejected:
+      - option: Move their doc comments into the registry, as the rest of the sweep does.
+        why: Apps never receive primitives/, so a copied package would lose its only documentation.
+    revisit_if: Generated apps ship their own registry, or the copy step writes the packages' docs somewhere the app keeps.
+    upholds: [package-doc-is-the-listing]
