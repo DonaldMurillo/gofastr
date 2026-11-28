@@ -34,6 +34,15 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Changed
 
+- **BREAKING: a `.json` app spec refuses `{}` where an access or database
+  setting takes a single value** (`read`, `create`, `update`, `delete`,
+  `role`, `owner_field`, `tenant_field`, `read_scope.unrestricted`,
+  `app.db.driver` and the rest). `{}` used to load as blank, the weakest
+  setting: `"read": {}` opened reads to everyone, and
+  `"unrestricted": {}` let every signed-in user past the read scope. Write
+  the value, or leave the key out
+  ([#937](https://github.com/DonaldMurillo/gofastr/issues/937)).
+
 - **BREAKING: `gofastr harness` and `gofastr harness mcp` read their
   config directory (repository-key approvals, `permissions.json`, user
   `skills/`, the credential salt and `creds.enc`) from

@@ -14,6 +14,8 @@ gofastr generate app specs/ --dry-run --json
 
 Passing a directory (`specs/`) loads every `.yml`/`.yaml`/`.json` file in alphabetical order, concatenates list sections, and merges `app:` key by key (duplicate keys across two files are a hard error).
 
+In a `.json` spec, a key that takes a single value (an access permission, a role, `app.db.driver`, `read_scope.unrestricted`) refuses `{}`; leave the key out for blank.
+
 ## What the app generator writes vs. what you hand-write
 
 | Area | Generated from `gofastr.yml` | Hand-written Go |
