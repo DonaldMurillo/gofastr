@@ -21,7 +21,7 @@ invariants:
       - test: cmd/gofastr/internal/appgen.TestSDKNeverEmitsHiddenFields
       - test: cmd/gofastr/internal/appgen.TestHiddenRelationSurvivesGeneration
   - id: write-shapes-match-the-server
-    rule: Write shapes leave out the id, auto-generated columns and enforced-States stamps; update and patch shapes also leave out key columns, the state field, the owner field and the multi-tenant column; a create carries a field as a value only when it is required with no default, and patch fields are pointers so a zero value can be set.
+    rule: Write shapes leave out the id, auto-generated columns and enforced-States stamps; patch shapes also leave out key columns, the state field, the owner field and the multi-tenant column; a create carries a field as a value only when it is required with no default, and patch fields are pointers so a zero value can be set.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestWriteShapesDropServerFields
       - test: cmd/gofastr/internal/appgen.TestCreateInputSendsOnlyRequiredFieldsWithoutDefault
