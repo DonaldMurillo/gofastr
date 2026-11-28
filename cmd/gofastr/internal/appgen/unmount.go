@@ -27,18 +27,14 @@ const UnmountHookFile = "unmounted.gen.go"
 // it would register with itself, so it can never be unmounted.
 const UnmountRegistryImport = project.GofastrModule + "/core/unmounted"
 
-// UnmountFilesHeader opens the root hook's list of the copy's other
-// files, with the sum each had when copied. remount reads it back to tell
-// an edited, added or deleted file from an untouched one.
+// UnmountFilesHeader opens the root hook's list of the copy's other files with their sums.
 const UnmountFilesHeader = "// The files copied, and their sums when copied:"
 
 // UnmountNow is the clock the settings entry's date reads; a var so tests
 // pin it.
 var UnmountNow = time.Now
 
-// UnmountTree is a package tree to copy: the upstream import path of its
-// root, the gofastr version it comes from, and its files with slash paths
-// relative to the root.
+// UnmountTree is a package tree to copy: its upstream root import path, its version and its files.
 type UnmountTree struct {
 	Source  string
 	Version string
@@ -47,10 +43,7 @@ type UnmountTree struct {
 
 func InTree(p, root string) bool { return p == root || strings.HasPrefix(p, root+"/") }
 
-// RewriteImportPrefix rewrites every import of from, or of a package
-// under it, to the same package under to, by splicing the import-spec
-// path token the parser located: never a substring replace over the
-// file, which would also rewrite a comment or a string literal.
+// RewriteImportPrefix rewrites every import of from, or of a package under it, to the same package under to.
 func RewriteImportPrefix(src, from, to string) (string, bool, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "src.go", src, parser.ImportsOnly|parser.ParseComments)
@@ -76,12 +69,7 @@ func RewriteImportPrefix(src, from, to string) (string, bool, error) {
 	return string(out), changed, nil
 }
 
-// BuildUnmountCopy renders the copy for targetImport: each Go file's
-// imports of the tree rewritten to the copy, formatted and stamped with an
-// unmount marker naming the source (a file that already carries a marker,
-// like a package's generated styles, keeps it), plus a hook file in every
-// package of the tree. The root package's hook lists every other file of
-// the copy with its sum, so remount can tell what changed.
+// BuildUnmountCopy renders the copy of tree for targetImport, with its imports rewritten, its markers and a hook file per package.
 func BuildUnmountCopy(tree UnmountTree, targetImport string) ([]GeneratedFile, error) {
 	if err := module.CheckImportPath(targetImport); err != nil {
 		return nil, fmt.Errorf("cannot copy %s: %w", tree.Source, err)
@@ -107,7 +95,7 @@ func BuildUnmountCopy(tree UnmountTree, targetImport string) ([]GeneratedFile, e
 		}
 		files = append(files, GeneratedFile{Name: f.Name, Content: content})
 		if strings.HasSuffix(f.Name, "_test.go") {
-			continue // an external test package names no package of the copy
+			continue
 		}
 		name, err := packageName(f.Content)
 		if err != nil {
@@ -155,7 +143,6 @@ func BuildUnmountCopy(tree UnmountTree, targetImport string) ([]GeneratedFile, e
 	return files, nil
 }
 
-// packageName reads a Go file's package clause.
 func packageName(src string) (string, error) {
 	f, err := parser.ParseFile(token.NewFileSet(), "src.go", src, parser.PackageClauseOnly)
 	if err != nil {
@@ -164,9 +151,6 @@ func packageName(src string) (string, error) {
 	return f.Name.Name, nil
 }
 
-// buildIgnored reports whether a file's //go:build line excludes it from
-// every build (the `ignore` convention for go:generate programs), whose
-// package clause says nothing about the package around it.
 func buildIgnored(src string) bool {
 	for line := range strings.Lines(src) {
 		line = strings.TrimSpace(line)
@@ -185,10 +169,6 @@ func buildIgnored(src string) bool {
 	return false
 }
 
-// unmountHook renders a hook file: an init() that registers the copy with
-// core/unmounted, so the running app can report it, and for the root
-// package the list of the copy's other files with their sums. The import
-// is aliased so it cannot collide with a name the package declares.
 func unmountHook(pkg string, tree UnmountTree, targetImport string, files map[string]string) (string, error) {
 	if !token.IsIdentifier(pkg) {
 		return "", fmt.Errorf("%s: package name %q is not an identifier", tree.Source, pkg)
@@ -211,14 +191,7 @@ func unmountHook(pkg string, tree UnmountTree, targetImport string, files map[st
 	return FormatGenerated(UnmountHookFile, b.String()), nil
 }
 
-// WritePackageCopy writes a copy's files into its resolved target and
-// rolls back what it wrote when the write fails. On success it returns
-// the same rollback as undo, for a later step that fails: it removes the
-// copy's files and the directories this run created, and keeps a target
-// directory that existed (empty) before. The writer resolves its output
-// root against the working directory and refuses absolute roots and
-// parent traversal, so the write runs from the target's own module
-// directory with a root relative to it.
+// WritePackageCopy writes a copy into its resolved target, rolling back on failure; on success it returns the same rollback as undo.
 func WritePackageCopy(tgt packageTarget, files []GeneratedFile) (undo func(), err error) {
 	fileSet := codegen.NewFileSet()
 	for _, f := range files {
@@ -247,17 +220,13 @@ func WritePackageCopy(tgt packageTarget, files []GeneratedFile) (undo func(), er
 	return func() { rollbackPackageCopy(tgt, files, existed) }, nil
 }
 
-// CheckUnmountOverlap refuses a copy whose path overlaps another copy's,
-// and, for an unmount (rewire), a package already copied or one
-// whose tree holds or sits inside another copy's, by source or by path.
+// CheckUnmountOverlap refuses a copy whose path, or for an unmount whose source, overlaps another copy's.
 func CheckUnmountOverlap(entry settings.Unmounted, entries []settings.Unmounted, rewire bool) error {
 	for _, e := range entries {
 		switch {
 		case InTree(entry.Path, e.Path) || InTree(e.Path, entry.Path):
 			return fmt.Errorf("%s overlaps %s, the copy of %s", entry.Path, e.Path, e.Source)
 		case !rewire:
-			// generate package wires nothing: a chrome package may have a
-			// copy per binary, each at its own path.
 		case e.Source == entry.Source:
 			return fmt.Errorf("%s is already unmounted at %s", e.Source, e.Path)
 		case InTree(entry.Source, e.Source):

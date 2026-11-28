@@ -120,9 +120,20 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **`gofastr generate app` no longer follows a font download's redirect
+  to another host or to plain http.** It asks only https fonts.googleapis.com
+  and fonts.gstatic.com for a theme's fonts, but followed any redirect
+  their answers named; a redirect within the same https host
+  still works ([#936](https://github.com/DonaldMurillo/gofastr/pull/936)).
+
 - **The app-spec PII lint no longer suggests `multi_tenant: true`**, which
   `gofastr validate` refuses for a generated app. It names `owner_field` and
   an `access.read` permission
+  ([#939](https://github.com/DonaldMurillo/gofastr/issues/939)).
+
+- **`gofastr generate`'s unscoped-read warning no longer suggests
+  `multi_tenant: true`**, which `gofastr validate` refuses for a generated
+  app. It names `owner_field` and an `access.read` permission
   ([#939](https://github.com/DonaldMurillo/gofastr/issues/939)).
 
 - **`gofastr release --url` no longer prints the credentials in a URL it

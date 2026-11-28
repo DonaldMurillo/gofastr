@@ -10,15 +10,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 )
 
-// appSpecScreenPhrases starts the collector for one screen's file, under
-// the key scope appSpecPhraseScopes gave it. The variable prefix comes
-// from the screen's Go type name, which is unique across the app, so two
-// screens never declare one variable.
 func appSpecScreenPhrases(app, screen, scope string) *appspec.AppSpecPhrases {
 	return newAppSpecPhrases(appSpecPhraseApp(app)+".screens."+scope, lowerFirst(appspec.ToCamelCase(screen))+"ScreenText")
 }
 
-// appSpecCrudPhrases starts the collector for an entity's crud file.
 func appSpecCrudPhrases(app, entity, scope string) *appspec.AppSpecPhrases {
 	return newAppSpecPhrases(appSpecPhraseApp(app)+".screens."+scope, lowerFirst(appspec.ToCamelCase(entity))+"CrudText")
 }
@@ -30,12 +25,6 @@ func appSpecPhraseScope(name string) string {
 	return "screen"
 }
 
-// appSpecPhraseScopes gives every screen file its key scope, keyed
-// "screen:<name>" or "crud:<entity>". A scope is lower-cased, so
-// screens with distinct types and files can fold onto one ("PostsList"
-// and "postslist"), and
-// i18n.Define panics at boot on one key with two English texts. A repeat
-// is numbered in spec order; a scope nothing else claims stays as it was.
 func appSpecPhraseScopes(bp appspec.AppSpec) map[string]string {
 	scopes := map[string]string{}
 	used := map[string]bool{}
@@ -60,8 +49,6 @@ func appSpecPhraseScopes(bp appspec.AppSpec) map[string]string {
 	return scopes
 }
 
-// appSpecScreenScope is a standalone screen's key scope; a screen the
-// spec does not list (a rendered fragment) keeps the unnumbered one.
 func appSpecScreenScope(bp appspec.AppSpec, screen string) string {
 	if s, ok := appSpecPhraseScopes(bp)["screen:"+screen]; ok {
 		return s
@@ -69,7 +56,6 @@ func appSpecScreenScope(bp appspec.AppSpec, screen string) string {
 	return appSpecPhraseScope(screen)
 }
 
-// appSpecCrudScope is an entity crud file's key scope.
 func appSpecCrudScope(bp appspec.AppSpec, entity string) string {
 	if s, ok := appSpecPhraseScopes(bp)["crud:"+entity]; ok {
 		return s
@@ -77,8 +63,6 @@ func appSpecCrudScope(bp appspec.AppSpec, entity string) string {
 	return appSpecPhraseScope(entity) + "_crud"
 }
 
-// appSpecChromePhrases starts the collector for app.go: the header,
-// footer, sidebar and auth chrome around every screen.
 func appSpecChromePhrases(app string) *appspec.AppSpecPhrases {
 	return newAppSpecPhrases(appSpecPhraseApp(app)+".chrome", "chromeText")
 }
@@ -103,11 +87,6 @@ func newAppSpecPhrases(ns, prefix string) *appspec.AppSpecPhrases {
 	}
 }
 
-// appSpecTx is the Go expression for reader-facing text: the phrase's
-// Text(ctx) inside a file with a collector, the quoted literal where
-// the text has no request to translate for (bp.phrases is nil). Empty
-// text stays the empty literal, which every config field reads as
-// "none".
 func appSpecTx(bp appspec.AppSpec, english string) string {
 	if english == "" || bp.PhraseCollector() == nil {
 		return strconv.Quote(english)
@@ -115,11 +94,6 @@ func appSpecTx(bp appspec.AppSpec, english string) string {
 	return bp.PhraseCollector().Use(english) + ".Text(ctx)"
 }
 
-// appSpecChromeWithPhrases adds app.go's phrase declarations and the
-// core/i18n import to the rendered file. app.go writes its imports
-// before the chrome that decides which words it says, so the two land
-// after the fact: the import beside core-ui/style (always imported), the
-// block before the file's const block.
 func appSpecChromeWithPhrases(src string, p *appspec.AppSpecPhrases) string {
 	if !p.Used() {
 		return src
@@ -133,8 +107,6 @@ func appSpecChromeWithPhrases(src string, p *appspec.AppSpecPhrases) string {
 	return strings.Replace(src, constBlock, "\n"+p.Block()+"const (\n", 1)
 }
 
-// appSpecPhraseSegment is one key segment from a name: ASCII letters
-// and digits lower-cased, every other run collapsed to "_".
 func appSpecPhraseSegment(name string) string {
 	var b strings.Builder
 	under := false

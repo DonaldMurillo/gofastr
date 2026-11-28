@@ -1,0 +1,45 @@
+primitive: appgen.styles
+summary: gofastr generate styles, which checks a package's owned .tokens.css and .style.css sheets per program and writes their typed Go and .gofastr/tokens.css.
+code:
+  - cmd/gofastr/internal/appgen/generate_styles.go
+docs:
+  - framework/docs/content/theming.md
+invariants:
+  - id: judged-per-program-like-verify
+    rule: Sheets and token files are checked per program through analyzers.CheckStylePrograms, the grouping gofastr verify uses, so two binaries may each carry a copy of one owned name while one binary carrying two is refused and neither file generates.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestGenerateStylesPerProgram
+      - test: cmd/gofastr/internal/appgen.TestGenerateStylesErrorCases
+  - id: one-bad-file-stops-only-itself
+    rule: Every diagnostic of every file is printed, a file with an unwaived error-severity finding gets no Go, the others still generate, and the run exits non-zero at the end; the tokens a failed tokens file parsed still count for the sheets and .gofastr/tokens.css, a gofastr:allow marker waives a finding as it does in verify, and repeated-literal warnings never fail the run.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestGenerateStylesErrorCases
+      - test: cmd/gofastr/internal/appgen.TestGenerateStylesTokensFiles
+  - id: exported-var-name
+    rule: The generated var is Style for a package's only style file and <Owner>Style when the package holds several.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestGenerateStylesSharedPackageVarNames
+  - id: reads-and-writes-stay-in-the-wd
+    rule: Patterns are relative and stay under the working directory, every read and write goes through an os.Root there so a symlink out is refused, and a recursive pattern skips vendor, testdata, node_modules, dot and underscore directories as the go tool does.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestGenStylesRefusesSymlinkEscape
+      - test: cmd/gofastr/internal/appgen.TestStylePatternLinkedDirRefused
+      - test: cmd/gofastr/internal/appgen.TestStylePatternsSkipTheTreesGoSkips
+  - id: marker-is-not-style
+    rule: A provenance marker on a copied sheet is blanked before checks, keeping line numbers, and stripped from the bytes the Go embeds.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestGenerateStylesIgnoresMarker
+  - id: tokens-css-lists-theme-tokens
+    rule: .gofastr/tokens.css lists every theme and app token under :root with its dark value in a comment, leaves out component.* option keys, and refuses a key that is not a CSS custom-property name.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestGenerateStylesWritesTokensCSS
+      - test: cmd/gofastr/internal/appgen.TestGenerateStylesGolden
+decisions:
+  - id: failed-tokens-still-count
+    date: 2026-11-28
+    status: accepted
+    decision: A tokens file that fails its checks writes no Go, but every token it parsed stays in the program's token set and in .gofastr/tokens.css.
+    rejected:
+      - option: Drop a failed file's tokens with its Go.
+        why: One typo in a tokens file would then turn every var() of its other tokens into a GOFASTR1806 across the program, burying the one real error.
+    upholds: [one-bad-file-stops-only-itself]

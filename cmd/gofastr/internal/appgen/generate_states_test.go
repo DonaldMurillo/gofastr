@@ -250,11 +250,11 @@ func (r staticRegistry) Get(name string) (*entity.Entity, error) {
 // reach it with those bytes dropped.
 func TestCLIMoveSummaryDropsControlBytes(t *testing.T) {
 	decls := statesFixtureDecls()
-	decls[0].Fields[2].Values = []string{"draft", "open\x1b[2J", "paid\u009b31m", "void‮\n"}
+	decls[0].Fields[2].Values = []string{"draft", "open\x1b[2J", "paid\u009b31m", "void\u202e\n"}
 	decls[0].States.Initial = []string{"draft"}
 	decls[0].States.Transitions = []framework.Transition{
 		{Key: "pay", From: []string{"open\x1b[2J"}, To: "paid\u009b31m"},
-		{Key: "void", From: []string{"draft"}, To: "void‮\n"},
+		{Key: "void", From: []string{"draft"}, To: "void\u202e\n"},
 	}
 	spec, err := buildCLISpec(decls, CliOptions{Binary: "myapp"}, "example.com/app/entities/client")
 	if err != nil {

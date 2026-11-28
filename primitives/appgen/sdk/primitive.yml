@@ -1,0 +1,64 @@
+primitive: appgen.sdk
+summary: gofastr generate sdk for entity declarations, which writes a stdlib-only Go module around the typed client, a handwritten-style ESM client.js with its client.d.ts, their READMEs, and the dist/ artifacts and manifest framework/sdkdocs serves.
+code:
+  - cmd/gofastr/internal/appgen/generate_sdk.go
+  - cmd/gofastr/internal/appgen/generate_sdkjs.go
+  - cmd/gofastr/internal/appgen/generate_repo.go
+docs:
+  - framework/docs/content/sdk.md
+invariants:
+  - id: config-values-stay-inert
+    rule: The name and versions in every SDK file's header lose C0 and DEL bytes, README prose also loses backticks and tildes, an install fence keeps only the path-component alphabet, and --module accepts only letters, digits and ._~/- with no empty element, so a settings value cannot add go.mod directives or code.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestSDKHeaderCannotEscapeComment
+      - test: cmd/gofastr/internal/appgen.TestSDKReadmeScrubConfigName
+      - test: cmd/gofastr/internal/appgen.TestSDKModulePathRejectsDirectives
+      - test: cmd/gofastr/internal/appgen.TestSDKModulePathRefusesEmptyElements
+      - test: cmd/gofastr/internal/appgen.TestSDKConfigValuesLoseEachByteTheRuleNames
+  - id: derived-names-are-safe-and-unique
+    rule: An entity is refused when its Go type is not an identifier, its table holds a quote, backslash or control byte, its client.js property is not a JS identifier or is a Client or Object.prototype member, two entities derive one property or one Go type, or its states block would fail the app's boot check.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestSDKSpecRefusesHostileDeclarations
+      - test: cmd/gofastr/internal/appgen.TestSDKDerivedNamesMustNotCollide
+      - test: cmd/gofastr/internal/appgen.TestSDKRefusesNamesTheClientOwns
+  - id: dts-names-do-not-merge
+    rule: An endpoint request interface or entity type that would take a name client.d.ts already declares is refused, since TypeScript would merge the two.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestSDKRefusesEntityTypeClash
+      - test: cmd/gofastr/internal/appgen.TestEndpointGenerationRefusals
+  - id: js-keys-are-quoted
+    rule: client.js binds resources, moves and field-name keys through quoted strings (this["posts"], "title":), never bare identifiers built from declaration text.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestSDKJSIdentSlotRefusesTables
+      - test: cmd/gofastr/internal/appgen.TestJSClientMembersReserved
+      - test: cmd/gofastr/internal/appgen.TestSDKShapesMatchCRUDResponse
+  - id: js-and-go-describe-one-wire
+    rule: client.d.ts types come from the same field walk as the Go client, an integer is number | string so a value past 2^53 keeps its digits, and a nullable column is T | null exactly where the OpenAPI document says so.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestSDKJSTypedSurface
+      - test: cmd/gofastr/internal/appgen.TestDTSOptionalFieldsTakeNull
+  - id: fields-constant-is-filterable
+    rule: The <table>Fields constant lists only columns the server lets a caller filter and sort on, so a NoQuery field is left out.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestSDKJSFieldConstantsOmitNoQueryFields
+  - id: readme-examples-are-accepted
+    rule: A README's example filter uses an operator filter.OpSuitsType allows for its column, and an ambiguous bare key is shown in bracket form.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestSDKReadmeExamplesMatchOpMatrix
+      - test: cmd/gofastr/internal/appgen.TestSDKJSReadmeExampleSkipsLeadingNoQueryField
+      - test: cmd/gofastr/internal/appgen.TestSDKReadmesNameCollidingKeys
+decisions:
+  - id: no-npm-packaging
+    date: 2026-11-28
+    status: accepted
+    decision: The JS SDK is one ESM client.js and its client.d.ts, importable from disk or the app's /docs/api/sdk/client.js, with no package.json or tarball.
+    rejected:
+      - option: Publish-ready npm packaging.
+        why: Publishing to a registry is the app owner's decision, and a package would add a second artifact to keep in step with the served file.
+  - id: rerun-is-byte-identical
+    date: 2026-11-28
+    status: accepted
+    decision: manifest.json carries a generation time only under --stamp-time.
+    rejected:
+      - option: Always stamp the time.
+        why: A rerun over an unchanged schema would rewrite every manifest and churn diffs.

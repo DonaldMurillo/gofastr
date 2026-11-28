@@ -7,8 +7,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
 )
 
-// goFields renders `Key: value` pairs for a config literal, skipping the
-// zero ones so the generated screen reads like hand-written code.
 type goFields []string
 
 func (f *goFields) str(key, v string) {
@@ -25,8 +23,6 @@ func (f *goFields) flag(key string, on bool) {
 
 func (f *goFields) raw(key, expr string) { *f = append(*f, key+": "+expr) }
 
-// text sets a reader-facing field: a phrase read through the request
-// ctx when the file has a collector, the literal otherwise.
 func (f *goFields) text(bp appspec.AppSpec, key, v string) {
 	if v != "" {
 		*f = append(*f, key+": "+appSpecTx(bp, v))
@@ -47,8 +43,6 @@ func appSpecButtonVariantExpr(v string) string {
 	return "ui.ButtonPrimary"
 }
 
-// renderAppSpecControlBlock emits a control-catalog block. children is
-// the comma-joined child expressions (custom_form, item_list).
 func renderAppSpecControlBlock(bp appspec.AppSpec, block appspec.AppSpecBlock, childExprs []string) (string, bool) {
 	kind := strings.ToLower(strings.TrimSpace(block.Kind))
 	if !appspec.AppSpecControlKind(kind) {
@@ -65,7 +59,7 @@ func renderAppSpecControlBlock(bp appspec.AppSpec, block appspec.AppSpecBlock, c
 		}
 		f.str("Type", typ)
 		f.flag("Disabled", appspec.AppSpecBoolProp(block, "disabled"))
-		f.raw("Ctx", "ctx") // the Shortcut keycaps are said through it
+		f.raw("Ctx", "ctx")
 		return "ui.Button(ui.ButtonConfig{" + f.String() + "})", true
 	case "text_field", "number_field":
 		f.raw("Ctx", "ctx")
@@ -128,7 +122,6 @@ func renderAppSpecControlBlock(bp appspec.AppSpec, block appspec.AppSpecBlock, c
 		f.str("Method", strings.ToUpper(appspec.AppSpecProp(block, "method")))
 		f.text(bp, "SubmitLabel", appspec.AppSpecProp(block, "submit"))
 		f.flag("HideSubmit", appspec.AppSpecBoolProp(block, "hide_submit"))
-		// Ctx lets the form stamp the CSRF token the request carries.
 		f.raw("Ctx", "ctx")
 		return "ui.Form(" + joinCallArgs("ui.FormConfig{"+f.String()+"}", childExprs) + ")", true
 	case "data_table":
@@ -151,7 +144,7 @@ func renderAppSpecControlBlock(bp appspec.AppSpec, block appspec.AppSpecBlock, c
 		f.str("ID", appspec.AppSpecProp(block, "id"))
 		f.raw("Columns", "[]ui.Column{"+strings.Join(cols, ", ")+"}")
 		f.raw("Rows", "[]ui.Row{"+appSpecLines(rowExprs)+"}")
-		f.raw("Ctx", "ctx") // sort, empty-state and pagination words
+		f.raw("Ctx", "ctx")
 		return "ui.DataTable(ui.DataTableConfig{" + f.String() + "})", true
 	case "item_list":
 		items := make([]string, len(childExprs))
@@ -174,9 +167,6 @@ func renderAppSpecControlBlock(bp appspec.AppSpec, block appspec.AppSpecBlock, c
 	return "", false
 }
 
-// joinCallArgs lays a call's trailing arguments out one per line, which
-// gofmt then indents: a form's fields read top to bottom in the owned
-// screen.
 func joinCallArgs(first string, rest []string) string {
 	if len(rest) == 0 {
 		return first
@@ -184,8 +174,6 @@ func joinCallArgs(first string, rest []string) string {
 	return first + "," + appSpecLines(rest)
 }
 
-// appSpecLines lays out list elements one per line, each with a
-// trailing comma, ready for gofmt.
 func appSpecLines(items []string) string {
 	if len(items) == 0 {
 		return ""

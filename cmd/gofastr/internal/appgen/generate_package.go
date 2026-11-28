@@ -22,30 +22,14 @@ import (
 	"golang.org/x/mod/module"
 )
 
-// canonicalPackages is the copyable chrome: siteheader, sitefooter and
-// docpage, the packages an app owns when the framework does not ship
-// the surface. The directory is the single source of truth — its embed
-// (cmd/gofastr/packages) is how the binary ships it, and `gofastr
-// generate package` plus the app spec's marketing chrome both copy FROM
-// it, so no second copy or template fork can drift.
 var canonicalPackages = packages.FS
 
-// packageWriteFiles writes a package copy's files; a var so tests can
-// interpose exactly where a concurrent process can race the copy — after
-// the one-shot emptiness check, before the first file lands. The default
-// is the codegen writer the real copy uses.
 var packageWriteFiles = codegen.WriteFiles
 
 // CanonicalPackageImport is the import path the packages carry inside
 // this repo; a copy rewrites it to the target module's own path.
 const CanonicalPackageImport = "github.com/DonaldMurillo/gofastr/cmd/gofastr/packages/"
 
-// runGeneratePackage is the `gofastr generate package [<name>]` path:
-// with no name it lists the canonical chrome packages with a one-line
-// summary each; with a name it copies that package into the app as
-// owned code, rewriting the package's self-import to the target
-// module's path. One-shot: the app owns the result, so a non-empty
-// target is refused rather than merged into.
 func runGeneratePackage(args []string) {
 	if cli.HasHelpFlag(args) {
 		printGeneratePackageHelp()
@@ -86,11 +70,6 @@ func runGeneratePackage(args []string) {
 		return
 	}
 
-	// The copied code imports itself by module path, so an enclosing
-	// go.mod is a requirement, not a convenience. Mirrors generate cli.
-	// The target is resolved once, here, into everything both --dry-run
-	// and the real copy need — so the two modes can never disagree about
-	// which targets are acceptable.
 	wd, err := os.Getwd()
 	if err != nil {
 		cli.Fail("%v", err)
@@ -107,17 +86,12 @@ func runGeneratePackage(args []string) {
 		return
 	}
 
-	// One-shot copy: the app owns the result. An existing non-empty
-	// target means someone's code is already there; there is no merge
 	if entries, derr := os.ReadDir(tgt.Dir); derr == nil && len(entries) > 0 {
 		cli.Fail("%s already exists and is not empty: `generate package` is a one-shot copy and the app owns the result; move the directory away first if you really want to replace it", tgt.Display)
 		cli.OsExit(1)
 		return
 	}
 
-	// The copy is an unmount of the canonical package from the embedded
-	// tree: same markers, same hook, same settings entry, so verify,
-	// upgrade and remount see it like any other copy.
 	source := CanonicalPackageImport + name
 	settingsPath, entries, err := project.UnmountedSettings(tgt.AnchorDir)
 	if err == nil {
@@ -180,18 +154,9 @@ func runGeneratePackage(args []string) {
 	cli.Printf("    gofastr gen styles   : regenerate %s after editing the sheets\n", generated)
 }
 
-// ErrPackageNoModule names the missing-module failure; the caller prints
-// its own hint for it. Every other resolution failure carries a
-// self-explanatory message.
+// ErrPackageNoModule is the error for a run outside any module; the caller prints its own hint.
 var ErrPackageNoModule = errors.New("no enclosing go.mod: the copied package imports itself by module path, so it cannot build until this directory is a Go module")
 
-// packageTarget is a copy destination resolved once, so --dry-run and the
-// real copy judge exactly the same targets: display is the target as the
-// user spelled it (what every message prints), dir its absolute path,
-// importPath the module path the copied code will import itself by,
-// anchorDir the directory the write runs from, and root the output root
-// relative to anchorDir — a relative path with no parent traversal, the
-// only form the codegen writer accepts.
 type packageTarget struct {
 	Display    string
 	Dir        string
@@ -200,15 +165,7 @@ type packageTarget struct {
 	Root       string
 }
 
-// ResolvePackageTarget resolves --out (default ./<name>) from the working
-// directory. The command runs inside a module and may only copy within
-// it; inside that fence any spelling works, including one that escapes
-// the working directory ("../chrome/hdr" from a subdirectory) or an
-// absolute path — both previously approved by --dry-run and then refused
-// by the writer. The import path comes from the go.mod that encloses the
-// TARGET, not the working directory: a nested module (tools/go.mod)
-// owns the packages under it, and a path glued onto the outer module
-// would not compile there.
+// ResolvePackageTarget resolves --out (default ./<name>) against wd, inside wd's module, taking the import path from the go.mod enclosing the target.
 func ResolvePackageTarget(name, outDir, wd string) (packageTarget, error) {
 	display := outDir
 	if display == "" {
@@ -229,8 +186,6 @@ func ResolvePackageTarget(name, outDir, wd string) (packageTarget, error) {
 		return packageTarget{}, outside
 	}
 
-	// Safe by the fence above, but keep the failure honest if the walk
-	// ever disagrees: an import path must never be guessed.
 	enclosingPath, enclosingDir := project.FindEnclosingGoMod(dir)
 	if enclosingPath == "" {
 		return packageTarget{}, outside
@@ -252,14 +207,9 @@ func ResolvePackageTarget(name, outDir, wd string) (packageTarget, error) {
 	}, nil
 }
 
-// packageDirChainExisted snapshots which directories on the anchor→target
-// chain exist, taken BEFORE the copy writes: rollback may remove a
-// directory only when this map says the copy itself created it.
 func packageDirChainExisted(tgt packageTarget) map[string]bool {
 	existed := map[string]bool{}
 	if codegen.EnsureNoSymlinkPath(tgt.Dir) != nil {
-		// A symlinked chain is not the copy's to reason about; record
-		// everything as pre-existing so rollback removes no directory.
 		existed[tgt.Dir] = true
 		return existed
 	}
@@ -273,17 +223,6 @@ func packageDirChainExisted(tgt packageTarget) map[string]bool {
 	}
 }
 
-// rollbackPackageCopy removes what a failed copy created in the target:
-// every file whose current bytes are exactly the copy's own output (the
-// target was verified empty before the write began, so matching bytes are
-// this run's), then the directories the run created along the
-// anchor→target chain (per the existed snapshot taken before the write),
-// deepest first, stopping at the first directory that existed before or
-// still holds something. A file another process dropped in mid-copy —
-// the refusal that failed the copy — does not match and survives; a
-// symlink planted on a path stops the rollback there (Remove never
-// follows one, and the guard keeps the walk from touching anything it
-// cannot see through).
 func rollbackPackageCopy(tgt packageTarget, files []GeneratedFile, existed map[string]bool) (filesRemoved, dirsRemoved int) {
 	for _, f := range files {
 		p := filepath.Join(tgt.Dir, filepath.FromSlash(f.Name))
@@ -298,9 +237,6 @@ func rollbackPackageCopy(tgt packageTarget, files []GeneratedFile, existed map[s
 			filesRemoved++
 		}
 	}
-	// Directories the copy created inside the target, deepest first. The
-	// target was empty, so a directory there is the copy's unless a racer
-	// filled it, and os.Remove refuses a directory that is not empty.
 	var subdirs []string
 	seen := map[string]bool{}
 	for _, f := range files {
@@ -333,14 +269,6 @@ func rollbackPackageCopy(tgt packageTarget, files []GeneratedFile, existed map[s
 	return filesRemoved, dirsRemoved
 }
 
-// parsePackageArgs parses the flags accepted by `generate package
-// [<name>]`: at most one positional (no name means list mode), plus
-// --out and --dry-run. --force, --add and --json are rejected (the
-// copy is one-shot and owns no machine-readable shape), and any extra
-// positional or unknown flag fails with usage guidance. A refusal of
-// arguments that include --json prints the shared generate JSON error
-// document, as every generate verb does. ok is false (after printing
-// the failure) when the arguments are invalid.
 const packageUsage = "Usage: gofastr generate package <name> [--out=DIR] [--dry-run]"
 
 func parsePackageArgs(args []string) (name, outDir string, dryRun, ok bool) {
@@ -396,17 +324,11 @@ the copy the package is yours to edit (gofastr gen styles regenerates
 the .gen.go files after you edit a sheet).`)
 }
 
-// canonicalPackageInfo is one row of the list mode: a package name and
-// the first sentence of its package doc comment.
 type canonicalPackageInfo struct {
 	Name    string
 	Summary string
 }
 
-// canonicalPackageInfos lists the embedded packages in name order with
-// a one-line summary each, parsed from the package doc comment — not a
-// hand-maintained table, so a new package under packages/ appears here
-// (and in the command) with no second list to update.
 func canonicalPackageInfos() ([]canonicalPackageInfo, error) {
 	entries, err := fs.ReadDir(canonicalPackages, ".")
 	if err != nil {
@@ -438,8 +360,6 @@ type PackageFile struct {
 	Content string
 }
 
-// readEmbeddedPackage reads every file of the named package from the
-// embedded tree, sorted by name so the copy order is deterministic.
 func readEmbeddedPackage(name string) ([]PackageFile, error) {
 	entries, err := fs.ReadDir(canonicalPackages, name)
 	if err != nil {
@@ -460,19 +380,7 @@ func readEmbeddedPackage(name string) ([]PackageFile, error) {
 	return out, nil
 }
 
-// copyCanonicalPackage copies the named package for a target import
-// path: the sheets are checked with the same ownstyle rules the app's
-// `gofastr verify` runs (a finding is a bug in the canonical package,
-// not in the app, and fails the copy instead of shipping), every .go
-// file's import of the canonical path is rewritten to targetImport
-// through the parser-located import spec, and the Go is gofmt'd so the
-// bytes an app receives are clean whatever the import sort order does
-// to them. Returns the files (base names), whether the package carries
-// a .tokens.css, and whether it carries a chromium test.
 func copyCanonicalPackage(name, targetImport string) (files []GeneratedFile, hasTokens, hasChromiumTest bool, err error) {
-	// The import path lands in Go source, so it must be one: a target
-	// directory named with a quote or a space would otherwise emit a
-	// file that does not parse.
 	if err := module.CheckImportPath(targetImport); err != nil {
 		return nil, false, false, fmt.Errorf("cannot copy %s: %w", name, err)
 	}
@@ -490,7 +398,6 @@ func copyCanonicalPackage(name, targetImport string) (files []GeneratedFile, has
 	for _, f := range src {
 		content := f.Content
 		if strings.HasSuffix(f.Name, ".go") {
-			// Rewriting from == to is the identity; no special case.
 			rewritten, _, rerr := RewriteImportPrefix(content, CanonicalPackageImport+name, targetImport)
 			if rerr != nil {
 				return nil, false, false, fmt.Errorf("%s/%s: %w", name, f.Name, rerr)
@@ -504,12 +411,6 @@ func copyCanonicalPackage(name, targetImport string) (files []GeneratedFile, has
 	return files, hasTokens, hasChromiumTest, nil
 }
 
-// checkCanonicalPackageSheets runs the ownstyle checks over one
-// package's tokens file (if any) and style sheet, exactly as `gofastr
-// gen styles` and the app's `gofastr verify` will judge the copies: an
-// unwaived finding is an error, so a dirty canonical package fails
-// every copy and the app spec instead of shipping an app whose verify
-// is red by construction.
 func checkCanonicalPackageSheets(name string, files map[string]string) error {
 	builtins := style.ThemeToTokens(style.DefaultTheme())
 	rel := func(file string) string { return name + "/" + file }
@@ -547,10 +448,6 @@ func checkCanonicalPackageSheets(name string, files map[string]string) error {
 	return nil
 }
 
-// canonicalPackageSheetFinding returns an error for one unwaived
-// finding in a canonical package sheet, nil when a gofastr:allow
-// marker in the sheet waives it. Warnings fail too: the sheets are
-// fixed source the repo owns, so there is no "address it later".
 func canonicalPackageSheetFinding(rel, src string, d ownstyle.Diagnostic) error {
 	if ownstyle.Suppressed(src, d) {
 		return nil
@@ -558,10 +455,6 @@ func canonicalPackageSheetFinding(rel, src string, d ownstyle.Diagnostic) error 
 	return fmt.Errorf("%s:%d:%d: %s %s %s", rel, d.Line, d.Col, d.Severity, d.Rule, d.Message)
 }
 
-// packageDocSummary returns the first sentence of the package doc
-// comment from the package's own <name>.go, with the conventional
-// "Package <name>" prefix dropped: the one-line summary list mode
-// prints. Empty when the file is missing or carries no doc comment.
 func packageDocSummary(name string, files []PackageFile) string {
 	for _, f := range files {
 		if f.Name != name+".go" {
@@ -577,11 +470,6 @@ func packageDocSummary(name string, files []PackageFile) string {
 	return ""
 }
 
-// firstDocSentence reduces a package doc comment to its first
-// sentence: the first paragraph, whitespace-collapsed, cut at the
-// first sentence terminator followed by a space or the end (a period
-// inside siteheader.style.css or _style.gen.go is followed by more
-// identifier bytes and does not cut).
 func firstDocSentence(text, pkg string) string {
 	para := text
 	if before, _, found := strings.Cut(text, "\n\n"); found {

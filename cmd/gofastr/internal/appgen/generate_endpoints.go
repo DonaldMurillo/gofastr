@@ -15,16 +15,11 @@ import (
 // of the settings endpoints, relative to the app root.
 const AppEndpointsPath = "entities/endpoints.gen.go"
 
-// schemaTypeNames spells each type an endpoint input can have as the
-// core/schema constant.
 var schemaTypeNames = map[schema.FieldType]string{
 	schema.String: "schema.String", schema.Int: "schema.Int", schema.Float: "schema.Float",
 	schema.Bool: "schema.Bool", schema.Timestamp: "schema.Timestamp", schema.JSON: "schema.JSON",
 }
 
-// renderAppEndpoints renders entities/endpoints.gen.go: one
-// App.EntityEndpoints call per endpoint, from a registrar ordered before
-// every entity so each endpoint joins its entity's registration.
 func renderAppEndpoints(eps []AppEndpoint) (string, error) {
 	var body strings.Builder
 	usesSchema, usesMCP := false, false
@@ -88,11 +83,8 @@ func renderAppEndpoints(eps []AppEndpoint) (string, error) {
 	return stampFile("endpoints", AppEndpointsPath, sb.String())
 }
 
-// appEndpointsPlan is what an endpoints rebuild would do to the file.
 type appEndpointsPlan struct {
-	// content is the file to write; empty means the file should not exist.
-	content string
-	// existing is the file on disk, when there is one.
+	content  string
 	existing string
 	present  bool
 }
@@ -101,16 +93,11 @@ func (p appEndpointsPlan) unchanged() bool {
 	return p.content == p.existing && p.present == (p.content != "")
 }
 
-// planAppEndpoints renders the endpoints file for the app under dir.
-// ok is false when dir has no entities package.
 func planAppEndpoints(dir string) (plan appEndpointsPlan, ok bool, err error) {
 	decls, err := PackReadEntities(dir)
 	if err != nil {
 		return plan, false, fmt.Errorf("read entities: %w", err)
 	}
-	// An app with no entities yet has nothing to rebuild, unless the
-	// settings declare endpoints: then the resolver names the missing
-	// entity instead of the run passing in silence.
 	if len(decls) == 0 && !AppEndpointsWanted(dir) {
 		return plan, false, nil
 	}
@@ -138,10 +125,7 @@ func planAppEndpoints(dir string) (plan appEndpointsPlan, ok bool, err error) {
 	return plan, true, err
 }
 
-// RefreshAppEndpoints is the endpoints rebuild every plain `gofastr
-// generate` and `gofastr build` runs, and `gofastr generate endpoints`
-// itself. It writes the file when the settings file declares endpoints and
-// removes it when the section is gone. quiet drops the progress lines.
+// RefreshAppEndpoints writes entities/endpoints.gen.go when the settings declare endpoints and removes it when they do not.
 func RefreshAppEndpoints(dir string, dryRun, quiet bool) ([]GeneratedFile, error) {
 	note := cli.Info
 	if quiet {
@@ -197,7 +181,6 @@ func AppEndpointsWanted(dir string) bool {
 	return err == nil && f.Section("endpoints") != nil
 }
 
-// runGenerateEndpoints is `gofastr generate endpoints`.
 func runGenerateEndpoints(args []string) {
 	const usage = "Usage: gofastr generate endpoints [--dry-run] [--json]"
 	if showGenerateHelp(args, usage) {

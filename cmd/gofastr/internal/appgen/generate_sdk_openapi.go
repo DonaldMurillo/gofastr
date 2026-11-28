@@ -16,9 +16,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/sdk"
 )
 
-// oaSDKSpec is the input of the OpenAPI SDK renderers: the settled SDK
-// options, the operation model the --from-openapi CLI renders from, and
-// the types its schemas name.
 type oaSDKSpec struct {
 	sdkSpec
 	API   cliSpec
@@ -26,7 +23,6 @@ type oaSDKSpec struct {
 	Types *oaTypeSet
 }
 
-// oaSDKOp is one operation as the SDKs call it.
 type oaSDKOp struct {
 	cliOp
 	// JSName is the client.js method: the operationId when it is a JS
@@ -49,19 +45,10 @@ type oaSDKOp struct {
 	Accept string
 }
 
-// oaGoClientMembers are the Go Client's fields and methods, which an
-// operation's method may not shadow.
 var oaGoClientMembers = []string{"BaseURL", "HTTP", "Token", "Do", "DoRaw", "DoStream"}
 
-// oaJSClientMembers are the members the OpenAPI client.js Client defines.
-// then is among them: a Client with a then method is a thenable, and
-// awaiting it, or returning it from an async function, would call it.
 var oaJSClientMembers = []string{"baseURL", "token", "maxBlobBytes", "_fetch", "do", "_send", "_call", "_readBody", "_readBytes", "then"}
 
-// renderOpenAPISDK reads the document opts.fromOpenAPI names and renders
-// the SDK files. With a project directory the name is a file inside it,
-// read through os.Root so neither ../ nor a symlink leaves it; without
-// one it is the --from-openapi flag's path or URL, read as given.
 func renderOpenAPISDK(opts *SdkOptions, project string) ([]GeneratedFile, error) {
 	if err := checkOpenAPISDKOptions(*opts); err != nil {
 		return nil, err
@@ -102,7 +89,6 @@ func renderOpenAPISDK(opts *SdkOptions, project string) ([]GeneratedFile, error)
 	}, opts.targets, !opts.noArchive)
 }
 
-// readProjectFile reads rel inside dir through os.Root.
 func readProjectFile(dir, rel string) ([]byte, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -112,8 +98,6 @@ func readProjectFile(dir, rel string) ([]byte, error) {
 	return root.ReadFile(filepath.FromSlash(rel))
 }
 
-// openAPIDocHash is the manifest's drift hash: sdk.OpenAPIHash over the
-// document's JSON, a YAML document's re-encoded as JSON.
 func openAPIDocHash(raw []byte, doc map[string]any) (string, error) {
 	if !strings.HasPrefix(strings.TrimSpace(string(raw)), "{") {
 		var err error
@@ -128,9 +112,6 @@ func openAPIDocHash(raw []byte, doc map[string]any) (string, error) {
 	return hash, nil
 }
 
-// buildOpenAPISDKSpec derives the SDK model from doc. It refuses what the
-// --from-openapi CLI refuses, through the same walk, plus the names an
-// SDK cannot declare.
 func buildOpenAPISDKSpec(doc map[string]any, opts *SdkOptions, src string) (oaSDKSpec, error) {
 	base, err := settleSDKSpec(opts)
 	if err != nil {
@@ -259,8 +240,6 @@ func oaImplicitlyNullableBody(schema map[string]any) bool {
 	return true
 }
 
-// oaRequestSchema is the unresolved schema of an operation's JSON request
-// body, so a component keeps its name.
 func oaRequestSchema(root, node map[string]any) (map[string]any, error) {
 	body, _ := node["requestBody"].(map[string]any)
 	body, err := oaResolve(root, orEmpty(body))
@@ -273,12 +252,6 @@ func oaRequestSchema(root, node map[string]any) (map[string]any, error) {
 	return schema, nil
 }
 
-// oaResponse reads the operation's success answer: the lowest 2xx
-// response that has content. A JSON media type among its types makes a
-// "json" result typed from that schema (application/json first), asked
-// for with an Accept of that type; with none, the answer is "binary",
-// handed to the caller unread, and Accept lists its types. No 2xx content
-// is "".
 func oaResponse(root, node map[string]any) (kind string, schema map[string]any, accept string, err error) {
 	responses, _ := node["responses"].(map[string]any)
 	codes := slices.DeleteFunc(slices.Sorted(maps.Keys(responses)), func(code string) bool {
@@ -305,7 +278,6 @@ func oaResponse(root, node map[string]any) (kind string, schema map[string]any, 
 				pick = ct
 			case oaJSONMedia(ct):
 			case (base == "*/*" || base == "application/*") && oaJSONShaped(root, s):
-				// springdoc documents every answer as */* with the JSON schema.
 				wildcard = ct
 			case err == nil && !strings.ContainsFunc(base, isControlByte):
 				binary = append(binary, base)
@@ -332,9 +304,6 @@ func oaResponse(root, node map[string]any) (kind string, schema map[string]any, 
 	return "", nil, "", nil
 }
 
-// oaJSONShaped reports a schema a wildcard media type carries JSON in: a
-// reference, an object, an array or a non-string scalar. A string schema
-// (format binary or not) or none is a body handed over as it is.
 func oaJSONShaped(root, schema map[string]any) bool {
 	if schema == nil {
 		return false
@@ -342,7 +311,7 @@ func oaJSONShaped(root, schema map[string]any) bool {
 	if _, isRef := schema["$ref"]; isRef {
 		resolved, err := oaResolve(root, schema)
 		if err != nil {
-			return true // typing the result reports the reference
+			return true
 		}
 		schema = resolved
 	}
@@ -360,7 +329,6 @@ func oaJSONShaped(root, schema map[string]any) bool {
 	return true
 }
 
-// oaJSONMedia reports application/json, text/json or a +json suffix type.
 func oaJSONMedia(ct string) bool {
 	base, _, err := mime.ParseMediaType(ct)
 	if err != nil {
@@ -369,7 +337,6 @@ func oaJSONMedia(ct string) bool {
 	return base == "application/json" || base == "text/json" || strings.HasSuffix(base, "+json")
 }
 
-// oaSummary is the operation's summary when the document gives one.
 func oaSummary(op cliOp) string {
 	if op.Summary == op.Method+" "+op.PathTemplate {
 		return ""
@@ -415,7 +382,6 @@ func renderOASDKGoFiles(spec oaSDKSpec) ([]GeneratedFile, error) {
 	), nil
 }
 
-// oaGoParamType is the Go type of a parameter field.
 func oaGoParamType(p cliOpParam) string {
 	if p.Repeated {
 		return "[]string"
@@ -430,8 +396,6 @@ func oaGoParamType(p cliOpParam) string {
 	return typ
 }
 
-// oaGoParamString converts a parameter value expression to its wire
-// string.
 func oaGoParamString(v, goType string) string {
 	switch goType {
 	case "int":
@@ -527,7 +491,6 @@ func renderOASDKParamsType(sb *strings.Builder, op oaSDKOp) {
 	sb.WriteString("}\n")
 }
 
-// oaGoZero is the zero value of a JSON result of type t.
 func oaGoZero(t *oaType) string {
 	switch t.Kind {
 	case "string":
@@ -582,7 +545,6 @@ func renderOASDKMethod(sb *strings.Builder, op oaSDKOp) {
 
 	fmt.Fprintf(sb, "\n// %s calls %s %s.\n", op.GoName, op.Method, oaCommentText(op.PathTemplate))
 	if s := oaSummary(op.cliOp); s != "" {
-		// A closing period keeps go doc from reading a short line as a heading.
 		if !strings.ContainsAny(s[len(s)-1:], ".!?:;)") {
 			s += "."
 		}
@@ -647,7 +609,6 @@ func renderOASDKMethod(sb *strings.Builder, op oaSDKOp) {
 	default:
 		fmt.Fprintf(sb, "\tdata, _, err := %s.DoRaw%s\n\tif err != nil {\n\t\t%s\n\t}\n", caller, call, fail("err"))
 		if op.ResultType.Kind == "struct" {
-			// Decoding into a nil pointer keeps a literal null answer nil.
 			fmt.Fprintf(sb, "\tif len(data) == 0 {\n\t\treturn nil, nil\n\t}\n\tvar out *%s\n\tif err := decodeBody(data, &out); err != nil {\n\t\treturn nil, err\n\t}\n\treturn out, nil\n}\n", op.ResultType.Name)
 			return
 		}
@@ -672,8 +633,6 @@ func renderOASDKGoReadme(spec oaSDKSpec) string {
 	return sb.String()
 }
 
-// oaMarkdownPath holds a path template to the bytes inert in a markdown
-// code span: letters, digits and the path punctuation.
 func oaMarkdownPath(p string) string {
 	return strings.Map(func(r rune) rune {
 		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("/{}-_.~", r) {
