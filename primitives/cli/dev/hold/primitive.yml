@@ -45,10 +45,11 @@ invariants:
       - test: cmd/gofastr/internal/devcmd.TestDevHoldKeepsTheTailOfLongOutput
       - test: cmd/gofastr/internal/devcmd.TestDevHoldShowsBuildError
   - id: release-frees-the-port
-    rule: release closes the listener and every open connection, waiting out a relisten in progress, so the app can bind the address; show takes it back, retrying for up to three seconds while the stopped app's socket is freed.
+    rule: release closes the listener and every open connection, waiting out a relisten in progress, so the app can bind the address; show takes it back, retrying for holdRelistenFor, three seconds, while the stopped app's socket is freed.
     enforced_by:
       - test: cmd/gofastr/internal/devcmd.TestDevHoldReleaseFreesThePort
       - test: cmd/gofastr/internal/devcmd.TestDevHoldReleaseWaitsForRelisten
+      - test: cmd/gofastr/internal/devcmd.TestDevHoldShowWaitsForTheFreedPort
       - test: cmd/gofastr/internal/devcmd.TestBuildAndServeHandsThePortToTheApp
 decisions:
   - id: hold-not-proxy
@@ -69,3 +70,34 @@ decisions:
       - option: srv.Close alone.
         why: Serve may not have registered the listener yet, and srv.Close then leaves the port bound.
     upholds: [release-frees-the-port]
+  - id: hold-ships-its-own-reload-script
+    date: 2026-11-28
+    status: accepted
+    decision: The hold page loads its own reload client, holdReloadJS at holdScriptURL, which reloads on any ready event whose ID is not the page's own.
+    rejected:
+      - option: Load framework/dev's livereload client on the hold page.
+        why: That client ignores the first build ID it sees and the hold sends none while building, so a page loaded during a build would take the next ID as its first and never reload.
+    upholds: [page-reloads-on-a-new-id]
+  - id: head-is-a-get-without-the-body
+    date: 2026-11-28
+    status: accepted
+    decision: A HEAD to the hold runs the GET path and net/http drops the body, so the answer carries Content-Length of the GET body and keeps the connection alive.
+    rejected:
+      - option: A HEAD branch that writes no body.
+        why: net/http then sends no Content-Length and closes the connection, so a HEAD told a client less than the GET's headers do, where RFC 9110 says a HEAD should send the same header fields as the GET.
+    upholds: [every-request-gets-a-503]
+  - id: hold-output-locks
+    date: 2026-11-28
+    status: accepted
+    decision: holdOutput takes its mutex on every Write and String.
+    rejected:
+      - option: An unlocked byte buffer.
+        why: The build's stdout and stderr are two io.MultiWriters over the one holdOutput, which os/exec copies from separate goroutines, and the hold page reads it from another.
+  - id: livereload-has-no-host-pin
+    date: 2026-11-28
+    status: accepted
+    decision: On a loopback bind the hold's /__livereload answers whatever Host the request names; the Host pin covers only the build output on the page, an open finding from the review of PR 933 left as it was because that sweep changed no behaviour.
+    rejected:
+      - option: Refuse /__livereload to a Host outside h.hosts, as the rest of the hold withholds its output.
+        why: Not done yet; the stream carries only the hold's own IDs and no output, so a rebound page learns at most when the build state changes.
+    revisit_if: The hold's stream carries anything beyond an ID, or the next change to the hold's Host handling, which should pin /__livereload as well.

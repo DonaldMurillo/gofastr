@@ -110,6 +110,26 @@ func TestDevHoldReleaseFreesThePort(t *testing.T) {
 	}
 }
 
+// show takes the address back once the stopped app's socket is freed, for
+// up to holdRelistenFor.
+func TestDevHoldShowWaitsForTheFreedPort(t *testing.T) {
+	if holdRelistenFor != 3*time.Second {
+		t.Errorf("holdRelistenFor = %v, want 3s", holdRelistenFor)
+	}
+	h := newTestHold(t)
+	h.release()
+	blocker, err := net.Listen("tcp", h.addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { time.Sleep(time.Second); _ = blocker.Close() }()
+	h.show(holdExited, "exit status 3")
+	_, body := holdGet(t, h.addr, "")
+	if !strings.Contains(body, "exit status 3") {
+		t.Fatalf("hold did not take the address back after a second: %q", body)
+	}
+}
+
 // A relisten still retrying when release runs must not take the port
 // back after it: the app release made way for would then fail to bind.
 func TestDevHoldReleaseWaitsForRelisten(t *testing.T) {
