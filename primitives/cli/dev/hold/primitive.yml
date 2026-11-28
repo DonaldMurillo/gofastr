@@ -61,3 +61,11 @@ decisions:
       - option: Proxy to the app on another port.
         why: The app would no longer run exactly as it does without gofastr dev; the cost is that the address refuses connections for as long as the app takes to boot.
     upholds: [release-frees-the-port]
+  - id: release-closes-the-listener-itself
+    date: 2026-11-28
+    status: accepted
+    decision: release closes the hold's listener directly as well as calling srv.Close.
+    rejected:
+      - option: srv.Close alone.
+        why: Serve may not have registered the listener yet, and srv.Close then leaves the port bound.
+    upholds: [release-frees-the-port]

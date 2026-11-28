@@ -1240,6 +1240,31 @@ HTTP in v0.3.
   no process boundary to lean on, so unauthenticated is not a
   posture the transport will serve.
 
+To use the stdio server from Claude Code, Codex or Cursor, add it to
+the client's MCP config. The harness reads its keys from the
+environment the client gives it:
+
+```json
+{
+  "mcpServers": {
+    "gofastr-harness": {
+      "command": "gofastr",
+      "args": ["harness", "mcp"],
+      "env": {
+        "GOFASTR_HARNESS_PASSPHRASE": "your-passphrase",
+        "ZAI_API_KEY": "your-zai-key"
+      }
+    }
+  }
+}
+```
+
+Add `"--framework"` to `args` for the framework profile, or
+`"--profile", "/path/to/profile.toml"` for one of your own. With
+`--required-token <t>`, the server refuses to start unless the
+client sets `GOFASTR_HARNESS_TOKEN` to `<t>` in `env`. Step-by-step setup is in
+[harness end-to-end testing](harness-e2e-testing.md).
+
 #### Tools exposed
 
 The tool that runs the agent is named honestly to make the
@@ -2096,7 +2121,8 @@ at rest" indistinguishable from plaintext. Set one of the two
 variables before storing any credential.
 
 The credstore file is at `~/.config/gofastr/harness/creds.enc`.
-`XDG_CONFIG_HOME` overrides the `~/.config` base when set.
+`XDG_CONFIG_HOME` overrides the `~/.config` base when it is an absolute
+path; a relative value is ignored.
 
 Entries are keyed by provider and account encoded separately, so a
 `|` inside either one cannot make two pairs share a slot. Files written
@@ -2130,7 +2156,10 @@ remembered or `--allow-repo-secrets` is passed (§ Threat model,
 
 XDG layout. `gofastr harness`, `gofastr harness mcp` and
 `gofastr harness creds` read one config directory: `XDG_CONFIG_HOME`,
-when set, replaces `~/.config` in every `~/.config` path below.
+when set to an absolute path, replaces `~/.config` in every `~/.config`
+path below. A relative `XDG_CONFIG_HOME` is ignored, as the XDG spec
+says: run inside a cloned repository, it would name files the
+repository's author wrote.
 
 - `~/.config/gofastr/harness/config.toml`: global defaults
 - `~/.config/gofastr/harness/approved.lock`: TOFU file hashes

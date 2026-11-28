@@ -20,6 +20,10 @@ invariants:
       - test: cmd/gofastr/internal/telemetrycmd.TestEveryJSONCommandEscapesUnsafeRunes
       - test: cmd/gofastr/internal/telemetrycmd.TestJSONLineIsSafeToPrint
       - test: cmd/gofastr/internal/telemetrycmd.TestJSONOutputIsScrubbed
+  - id: json-escapes-bytes-that-are-not-utf8
+    rule: A --json line that json.Valid accepts but that holds a byte that is not UTF-8, which json.Valid allows inside a string, prints that byte as the JSON escape of U+FFFD, the rune a decoder reads it as, so a lone 0x9b never reaches the terminal as an 8-bit CSI; a U+FFFD already in the line is left as it is.
+    enforced_by:
+      - test: cmd/gofastr/internal/telemetrycmd.TestValidJSONLineEscapesBytesThatAreNotUTF8
   - id: torn-line-prints-as-a-string
     rule: A stored line that is not valid JSON is printed under --json as a JSON string of itself, with bytes that are not UTF-8 replaced and the same unsafe-rune escapes a valid line gets.
     enforced_by:
@@ -51,8 +55,10 @@ decisions:
   - id: escape-not-scrub-under-json
     date: 2026-11-28
     status: accepted
-    decision: --json escapes the runes a terminal obeys instead of removing them, and leaves every other byte of a stored line as it is.
+    decision: --json escapes the runes a terminal obeys instead of removing them, writes a byte that is not UTF-8 as the escape of U+FFFD, and leaves every other byte of a stored line as it is.
     rejected:
       - option: Scrub --json output like the tables.
         why: --json is the line as stored for a program to read; removing runes would change the values it decodes, while an escape means the same character.
-    upholds: [json-escapes-unsafe-runes]
+      - option: Print a valid line that holds bytes that are not UTF-8 as a JSON string, like a torn line.
+        why: A program reading the output would get a string where it expects the object, when escaping the byte keeps the object and decodes the same as the stored line.
+    upholds: [json-escapes-unsafe-runes, json-escapes-bytes-that-are-not-utf8]
