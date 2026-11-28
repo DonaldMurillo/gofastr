@@ -4,3 +4,60 @@ code:
   - cmd/gofastr/internal/devcmd/dev_hold.go
 docs:
   - framework/docs/content/dev-livereload.md
+twins:
+  - job: Turn the dev livereload stream off on a bind other machines can reach unless dev.LiveReloadExposeEnv is set.
+    why: The hold is a plain net/http server in cmd/gofastr and decides from the address the kernel bound, while the app's guard withdraws a route from its router and decides from the address string it was given; TestExposedHoldDropsLiveReload and framework.TestLiveReloadOffOnExposedBind pin the same rule on each side.
+    sites:
+      - path: cmd/gofastr/internal/devcmd/dev_hold.go
+        note: newDevHold's liveReload field.
+      - path: framework/devmcp_bind.go
+        note: guardDevLiveReloadBind.
+invariants:
+  - id: every-request-gets-a-503
+    rule: Every path but /__livereload and holdScriptURL gets 503 with Retry-After 1, Cache-Control no-store and X-Gofastr-Dev naming the phase (building, build-failed or exited), as an HTML page when Accept holds text/html in any case and as plain text otherwise.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestDevHoldAnswersWhileBuilding
+      - test: cmd/gofastr/internal/devcmd.TestDevHoldHeadersNameThePhase
+      - test: cmd/gofastr/internal/devcmd.TestDevHoldMixedCaseHTML
+  - id: output-only-to-this-machine
+    rule: The build or lint output goes into the page only on a loopback bind asked by one of its loopback Host names; an exposed bind, read from the address the kernel bound, or a foreign Host gets the page without it and a lead pointing at the terminal.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestExposedHoldHidesBuildOutput
+      - test: cmd/gofastr/internal/devcmd.TestLoopbackHoldWithholdsBuildOutputFromAForeignHost
+  - id: livereload-off-when-exposed
+    rule: On an exposed bind /__livereload answers 404, which ends an EventSource, unless dev.LiveReloadExposeEnv is set.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestExposedHoldDropsLiveReload
+      - test: framework.TestLiveReloadOffOnExposedBind
+  - id: ready-only-with-something-to-show
+    rule: The hold's /__livereload sends a ready event, with an ID no app build uses, only in the build-failed or exited phase and once per change, so a tab sitting through an ordinary rebuild never reloads into a building page.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestDevHoldLiveReloadOnlyOnFailure
+  - id: page-reloads-on-a-new-id
+    rule: The hold page loads holdScriptURL, which reloads on any ready event whose ID is not the page's own, the hold's next state or the app's build.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestDevHoldServesItsReloadScript
+  - id: output-is-escaped-stripped-and-tailed
+    rule: The output a hold shows has every ANSI escape removed, repeated until none is left, keeps its last holdDetailLimit bytes and is HTML-escaped in the page.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestDevHoldStripsEscapesFromTheOutput
+      - test: cmd/gofastr/internal/devcmd.TestStripANSIDoesNotReassemble
+      - test: cmd/gofastr/internal/devcmd.TestDevHoldKeepsTheTailOfLongOutput
+      - test: cmd/gofastr/internal/devcmd.TestDevHoldShowsBuildError
+  - id: release-frees-the-port
+    rule: release closes the listener and every open connection, waiting out a relisten in progress, so the app can bind the address; show takes it back, retrying for up to three seconds while the stopped app's socket is freed.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestDevHoldReleaseFreesThePort
+      - test: cmd/gofastr/internal/devcmd.TestDevHoldReleaseWaitsForRelisten
+      - test: cmd/gofastr/internal/devcmd.TestBuildAndServeHandsThePortToTheApp
+decisions:
+  - id: hold-not-proxy
+    date: 2026-11-28
+    status: accepted
+    decision: The hold answers the dev address only while no app runs and closes its listener right before the app starts, so the app binds the address itself.
+    rejected:
+      - option: Leave the address unbound while no app runs.
+        why: A request then gets connection refused, which reads as a dead server, and agents started another gofastr dev on top of the one running.
+      - option: Proxy to the app on another port.
+        why: The app would no longer run exactly as it does without gofastr dev; the cost is that the address refuses connections for as long as the app takes to boot.
+    upholds: [release-frees-the-port]
