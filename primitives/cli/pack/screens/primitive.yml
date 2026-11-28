@@ -1,0 +1,50 @@
+primitive: cli.pack.screens
+summary: Pack's screen reader - finds the authored screens in the per-screen or the older aggregated layout and reverses each render body, block by block, from the code the generator wrote back into app spec blocks.
+code:
+  - cmd/gofastr/internal/packcmd/pack_screens.go
+  - cmd/gofastr/internal/packcmd/pack_reverse.go
+  - cmd/gofastr/internal/packcmd/pack_nodes.go
+  - cmd/gofastr/internal/packcmd/pack_controls.go
+  - cmd/gofastr/internal/packcmd/pack_phrases.go
+docs:
+  - framework/docs/content/cli.md
+on_change:
+  - A block the generator learns to write gets its reverse here, and a spelling it stops writing stays readable for apps generated before.
+invariants:
+  - id: both-layouts-read
+    rule: Screens are read from screen_*.go through an os.Root over the app directory when the per-screen layout is present, and from screens.go and app.go otherwise, and an app with no authored screens packs none in either layout.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackRoundTripPerScreenFiles
+      - test: cmd/gofastr/internal/packcmd.TestPackLegacyAggregatedScreens
+      - test: cmd/gofastr/internal/packcmd.TestPack_ScreenlessAppRoundTrips
+      - test: cmd/gofastr/internal/packcmd.TestPackRecoverySkipsSymlinkedGo
+  - id: root-shapes
+    rule: A render body reverses from the generator's screen stack, the actions wrapper around it, an html.Div root or a render.Tag root, and a hand-written root stack with its own Align or Justify keeps its stack instead of being unwrapped.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackUnwrapsActionsWrapper
+      - test: cmd/gofastr/internal/packcmd.TestPackKeepsHandWrittenRootStack
+      - test: cmd/gofastr/internal/packcmd.TestPackLegacyAggregatedScreens
+  - id: synthesized-header-skipped
+    rule: The page header the generator puts first on a screen nothing else draws an h1 on is skipped, so the next generate writes it again instead of packing it as an authored block.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackKeepsCardHoldingChart
+      - test: cmd/gofastr/internal/packcmd.TestAppSpecLayoutBlocksRenderAndPack
+      - test: cmd/gofastr/internal/packcmd.TestListFirstKeepsPageHeading
+  - id: helper-hops-are-bounded
+    rule: Following package-local zero-argument helpers stops after 32 hops, so a self-referential or mutually recursive helper leaves the screen unreversed instead of hanging pack.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackSelfReferentialHelperNoHang
+      - test: cmd/gofastr/internal/packcmd.TestReverseEntityUIStopsOnARecursiveHelper
+  - id: one-literal-pin
+    rule: An appUI list chain with a second Where, or a Where whose arguments are not both string literals, is not reversed, so pack reports the screen instead of dropping a pin.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestReverseEntityUIRefusesTwoWherePins
+      - test: cmd/gofastr/internal/packcmd.TestReverseEntityUIRefusesNonLiteralWhere
+  - id: app-home-is-kept
+    rule: Pack moves the app layout among the packed screens so that the screen the generator used as the app home is the home again.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackKeepsTheAppHome
+  - id: phrases-read-as-english
+    rule: A phrase read the generator wrote, a Text(ctx) on a phrase the same file defines, a framework phrase from i18nui or an entity form's catalog lookup, reads as the English it stands for before any block is reversed.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackInlinesScreenPhrases
