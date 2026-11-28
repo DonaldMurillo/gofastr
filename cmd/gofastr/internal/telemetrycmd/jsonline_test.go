@@ -141,3 +141,27 @@ func TestTornJSONLineEscapesUnsafeRunes(t *testing.T) {
 		t.Errorf("the torn line reads as %q (err %v), want %q", text, err, torn)
 	}
 }
+
+// json.Valid accepts bytes that are not UTF-8 inside a string, and a lone
+// 0x9b is the one-byte C1 CSI to a terminal that reads 8-bit controls. A
+// valid line that holds one prints it as U+FFFD escaped, what a decoder reads it as.
+func TestValidJSONLineEscapesBytesThatAreNotUTF8(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"{\"m\":\"a\x9b2Jb\"}", `{"m":"a\ufffd2Jb"}`},
+		{"{\"m\":\"a\x9b2Jb\u202ec\"}", `{"m":"a\ufffd2Jb\u202ec"}`},
+		{"{\"m\":\"ok \ufffd\"}", "{\"m\":\"ok \ufffd\"}"},
+	} {
+		got := string(jsonLine([]byte(tc.in)))
+		if got != tc.want {
+			t.Errorf("jsonLine(%q) = %q, want %q", tc.in, got, tc.want)
+			continue
+		}
+		var before, after map[string]string
+		if err := json.Unmarshal([]byte(tc.in), &before); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal([]byte(got), &after); err != nil || after["m"] != before["m"] {
+			t.Errorf("%q reads as %q (err %v), want %q", got, after["m"], err, before["m"])
+		}
+	}
+}

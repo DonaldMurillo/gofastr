@@ -72,6 +72,10 @@ invariants:
   - id: reload-then-refresh-then-report
     rule: After a successful rebuild the loop restarts the app first, then refreshes the package graph and runs the contract report behind it, never before the restart.
     judge: Does this change put the package-graph refresh or the contract analysis in front of the app's restart in RunDev?
+  - id: port-zero-gets-no-hold
+    rule: holdDevAddr starts no hold for an address whose port is 0, and refuses an address already in use.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestHoldDevAddrRejectsABusyPort
   - id: windows-addr-in-use
     rule: addrInUse treats WSAEADDRINUSE (10048) as address in use, which syscall.EADDRINUSE does not match on Windows.
     judge: Does this change drop the 10048 errno from addrInUse, so a busy port on Windows is no longer reported as in use?
@@ -108,3 +112,18 @@ decisions:
       - option: Append GOFASTR_DEV=1.
         why: glibc getenv returns the first entry, so a parent GOFASTR_DEV=0 won on Linux while macOS takes the last.
     upholds: [child-env-is-platform-independent]
+  - id: no-hold-on-port-zero
+    date: 2026-11-28
+    status: accepted
+    decision: An address on port 0 gets no hold.
+    rejected:
+      - option: Hold whatever port the kernel picks.
+        why: Port 0 gives a browser no fixed place to wait on, since the app binds a port of its own choosing after the hold lets go.
+    upholds: [port-zero-gets-no-hold]
+  - id: crash-watcher-writer-captured-at-spawn
+    date: 2026-11-28
+    status: accepted
+    decision: buildAndServe hands the goroutine that waits on the app the os.Stdout of the moment it starts the app.
+    rejected:
+      - option: Read os.Stdout inside the goroutine when the app exits.
+        why: The goroutine can outlive buildAndServe, and the coverage tests swap os.Stdout around it, so a later read races their restore.

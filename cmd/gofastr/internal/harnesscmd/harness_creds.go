@@ -154,7 +154,7 @@ func openCredstore() (*credstore.EncryptedFileStore, error) {
 }
 
 func resolveHarnessXDGConfig() (string, error) {
-	if xch := os.Getenv("XDG_CONFIG_HOME"); xch != "" {
+	if xch := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(xch) {
 		return filepath.Join(xch, "gofastr", "harness"), nil
 	}
 	home, err := os.UserHomeDir()

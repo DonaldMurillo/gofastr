@@ -14,9 +14,11 @@ twins:
         note: New's creds.enc path, deriveCredstoreKey and readOrCreateSalt.
 invariants:
   - id: one-config-directory
-    rule: gofastr harness, gofastr harness mcp and gofastr harness creds use one config directory, $XDG_CONFIG_HOME/gofastr/harness when XDG_CONFIG_HOME is set and ~/.config/gofastr/harness otherwise, so a credential creds add stores is the one the booted harness reads.
+    rule: gofastr harness, gofastr harness mcp and gofastr harness creds use one config directory, $XDG_CONFIG_HOME/gofastr/harness when XDG_CONFIG_HOME is an absolute path and ~/.config/gofastr/harness otherwise, so a credential creds add stores is the one the booted harness reads.
     enforced_by:
       - test: cmd/gofastr/internal/harnesscmd.TestCredsAddIsReadByTheHarness
+      - test: cmd/gofastr/internal/harnesscmd.TestHarnessAndMCPReadTheXDGConfigDirectory
+      - test: cmd/gofastr/internal/harnesscmd.TestRelativeXDGConfigHomeIsIgnored
   - id: machine-key-before-passphrase
     rule: The store key is the 32-byte machine key when one is set, with no salt written; else the passphrase's PBKDF2 key with the salt; with neither the store refuses to open and writes no salt.
     enforced_by:
@@ -37,6 +39,14 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/harnesscmd.TestCredsListIsSorted
 decisions:
+  - id: relative-xdg-config-home-ignored
+    date: 2026-11-28
+    status: accepted
+    decision: A relative XDG_CONFIG_HOME is ignored and the config directory falls back to ~/.config/gofastr/harness, as the XDG spec says and battery/service already does.
+    rejected:
+      - option: Join a relative XDG_CONFIG_HOME onto the working directory.
+        why: The harness reads permissions.json, user skills, the salt, creds.enc and repository-key approvals from that directory, and inside a cloned repository a relative path names files the repository's author wrote.
+    upholds: [one-config-directory]
   - id: dash-marker-for-secrets
     date: 2026-11-28
     status: accepted
