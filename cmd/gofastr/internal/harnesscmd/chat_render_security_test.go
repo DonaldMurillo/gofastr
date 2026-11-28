@@ -18,7 +18,7 @@ import (
 // this test runs the REAL shipped functions (extracted from chatJS) under
 // node and asserts the payloads stay inert at every formatting stage:
 // element markup, script markup, markdown-link scheme smuggling, and
-// attribute break-out through an autolinked URL.
+// attribute break-out through an autolinked URL, with or without a space.
 func TestChatMarkdownKeepsModelOutputInert(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -39,6 +39,7 @@ func TestChatMarkdownKeepsModelOutputInert(t *testing.T) {
 		`<script>PWN()</script>`,
 		`[click me](javascript:PWN())`,
 		`https://ok.test/a" onmouseover="PWN()`,
+		`https://x.test/"onmouseover="PWN()"`,
 		"```html\n<img src=x onerror=PWN()>\n```",
 	}
 	script := `
@@ -54,6 +55,19 @@ for (const p of payloads) {
   // payload unescaped.
   const residual = out.replace(allowed, '');
   if (residual.includes('<')) problems.push({payload: p, out, why: 'unescaped < from payload'});
+  // Inside the renderer's own tags only href, target and rel may appear.
+  for (const tag of out.matchAll(allowed)) {
+    const attrs = tag[2] || '';
+    const attr = /\s*([^\s"'>\/=]+)(?:="([^"]*)")?/y;
+    let i = 0;
+    while (/\S/.test(attrs.slice(i))) {
+      attr.lastIndex = i;
+      const m = attr.exec(attrs);
+      if (!m) { problems.push({payload: p, out, why: 'unparsed attribute text: ' + attrs.slice(i)}); break; }
+      if (!['href', 'target', 'rel'].includes(m[1])) problems.push({payload: p, out, why: 'attribute ' + m[1] + ' in a renderer tag'});
+      i = attr.lastIndex;
+    }
+  }
   for (const href of out.matchAll(/href="([^"]*)"/g)) {
     if (!/^https?:\/\//.test(href[1])) problems.push({payload: p, out, why: 'href not http(s): ' + href[1]});
   }
