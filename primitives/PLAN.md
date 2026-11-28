@@ -249,7 +249,7 @@ task reads `battery/` (`2026-11-20-replay-battery-sweep.md`).
 `dup-column-key` reads an entry that names its sibling sites and went
 from 1 of 4 to 4 of 4 (`2026-11-20-dup-column-key-twin.md`).
 
-`cmd/` is swept, 15.5% to 4.4%. Its nine small tools went first, 22.4% to
+`cmd/` is swept, 15.5% to 4.5%. Its nine small tools went first, 22.4% to
 2.7%, their tests 13.6% to 11.9%. Every tool directory is in
 `TestCoveredPackagesHaveNoUnownedFile`. Per tool (before, after):
 
@@ -305,8 +305,8 @@ Per directory (before, after):
 | appspec | 18.3% | 1.5% | | packages (tree) | 34.7% | 32.8% ** |
 | auditcmd | 8.8% | 1.2% | | packcmd | 12.4% | 0.2% |
 | buildcmd | 27.2% | 1.3% | | plugincmd | 4.1% | 4.1% |
-| cli | 24.4% | 9.2% * | | project | 19.4% | 6.7% |
-| clitest | 12.9% | 4.8% | | projectfs | 28.5% | 6.3% |
+| cli | 24.4% | 9.7% * | | project | 19.4% | 6.7% |
+| clitest | 12.9% | 5.0% | | projectfs | 28.5% | 6.3% |
 | deploycmd | 10.5% | 0.7% | | releasecmd | 12.5% | 0.5% |
 | desktopcmd | 8.8% | 0.2% | | semanticcmd | 13.8% | 0.7% |
 | devcmd | 27.8% | 2.7% | | telemetrycmd | 7.9% | 0.7% |
@@ -330,31 +330,72 @@ In `appgen` about 520 of the remaining lines are comments inside the
 templates it emits. Two follow-ups are left: `appgen`'s `appspec.go`, its
 largest file, which was not swept line by line, and `verifycmd`.
 
-The stack added 81 primitives (82 new directories, less `devcmd`, which
-became `cli.dev`), about 610 invariants (about 20 judged only) and about 150
-decisions, plus about 195 new tests, most of them for rules that had none.
+The stack added 82 primitives (83 new directories, 72 under `cli/` and 11
+under `appgen/`, less `devcmd`, which became `cli.dev`), about 620
+invariants (21 more judged only, besides `devcmd`'s one, which moved) and
+172 decisions, plus 206 new tests, most of them for rules that had none.
 It recorded 5 twins and merged 4: `gates`' two walks into `auditTree`, the
 harness's three config directory lookups into `harnessDirs`, `runSingle`'s
 copy of the REPL loop, and `project.InstalledFrameworkVersion`'s copy of
-`CliVersion`'s lookup. Fixed on the way: `gofastr harness` and `harness
-mcp` read `~/.config/gofastr/harness` while `harness creds` wrote under
-`$XDG_CONFIG_HOME` (breaking for anyone who set it); `gofastr telemetry
---json` printed C1, bidi and zero-width runes raw, in a torn line too (the
-second found by Bugbot); and `gofastr generate app` followed a font
-download's redirect to any host (found in review of #936). The stack itself
-tripped on three things a later sweep should check first: `.gitignore`'s
-bare `screens/` hid a registry directory (now exempt), a mutation run left
-two files in a package directory, and moving an embedded script to a `.js`
-file put it under the repo's JS lints. Reviews found rules whose named
-tests pass with the code broken (eight in #931, six in #936) and
-reasons recorded nowhere; each got a test watched failing, a narrower rule
-or a decision.
+`CliVersion`'s lookup. Fixed on the way:
 
-Left judged only or unproven: the harness MCP server's never-prompt and
-stderr-only rules and the `RunDev` loop's signal and order rules, which need
-the whole loop; the Windows and macOS desktop packaging rules, whose tests
-run only there; the theme editor's constant-time token compare; and the
-Postgres-only migrate checks, which were not watched failing here.
+- `gofastr harness` and `harness mcp` read `~/.config/gofastr/harness`
+  while `harness creds` wrote under `$XDG_CONFIG_HOME` (breaking for anyone
+  who set it);
+- `gofastr telemetry --json` printed C1, bidi and zero-width runes raw, in
+  a torn line too (the second found by Bugbot);
+- `gofastr dev`'s hold page answered `/__livereload` to any Host (#941,
+  from the review of #933);
+- `gofastr release --url` printed the credentials of a URL it refused
+  (#934);
+- a `.json` app spec loaded `{}` in an access or database field as blank,
+  which opened reads (#937), and `static_dir` accepted a dot directory such
+  as `.git` (#938), both from the review of #935;
+- the PII lint and `gofastr generate`'s unscoped-read warning suggested
+  `multi_tenant: true`, which validate refuses (#939);
+- `gofastr generate app` followed a font download's redirect to any host
+  (found in review of #936).
+
+One finding was decided rather than fixed: `gofastr audit a11y` reads a
+sitemap location on any origin as a path on `--url`, because uihost writes
+production URLs and the audit usually runs locally (#940, from #931). The
+stack itself tripped on three things a later sweep should check first:
+`.gitignore`'s bare `screens/` hid a registry directory (now exempt), a
+mutation run left two files in a package directory, and moving an embedded
+script to a `.js` file put it under the repo's JS lints.
+
+Every PR's owner review found rules whose named tests pass with the code
+broken: 8 of 19 mutations survived in #931, 8 of 29 in #932, 6 of 21 in
+#933, 9 of 37 in #934, 11 of 40 in #935 and 15 of 24 in #936. The agents'
+adversarial reviews before them had found 4 of 46 in #932, 6 of 35 in
+#933, 9 of 39 in #934, 8 of 39 in #935 and 8 of 21 in #936. The reviews
+also found reasons recorded nowhere. Each got a test watched failing, a
+narrower rule or a decision.
+
+Left judged only, all 22 in the stack's new primitives:
+
+- the dev loop, whose rules need the whole loop running: `cli.dev`'s
+  `one-signal-reaches-everything`, `reload-then-refresh-then-report`,
+  `one-dev-build-command` and `windows-addr-in-use`, `cli.dev.process`'s
+  `interrupt-only-from-the-signal-owner` and `one-thread-starts-the-app`,
+  `cli.dev.watch/a-graph-move-mid-walk-waits` and
+  `cli.dev.contracts/a-panic-is-a-warning`;
+- the harness: `cli.harness`'s `mcp-never-prompts` and
+  `mcp-logs-to-stderr-only`, and `cli.harness.web/token-before-the-socket`;
+- desktop builds: `cli.desktop/watch-lists-with-the-build-env`,
+  `cli.desktop.windows/sign-last` and `cli.desktop.update/keygen-no-half-pair`;
+- the theme editor: `cli.theme.edit`'s `token-compared-in-constant-time`
+  and `contrast-reads-the-requested-sheet`;
+- `cli.unmount/failed-rewire-is-put-back`;
+- the test helpers: `cli.clitest.run`'s `binary-from-the-working-tree` and
+  `shared-trees-are-read-only`, and
+  `cli.clitest.variant/no-inputs-reads-no-change-set`;
+- `cli.appspec/one-relation-kind-table` and
+  `appgen.app/view-stubs-ship-verbatim`.
+
+Left unproven: the Windows and macOS desktop packaging rules, whose tests
+run only there (the Windows ones in `windows-init.yml`), and the
+Postgres-only migrate checks. Neither was watched failing here.
 
 The replay eval after it has not run yet.
 
