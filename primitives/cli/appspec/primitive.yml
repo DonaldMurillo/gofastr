@@ -11,6 +11,12 @@ docs:
 on_change:
   - appspec.go, the spec types, is still owned by appgen; a change to a type there updates the decoder, the validator and pack's reader here in the same commit.
 invariants:
+  - id: render-state-is-unexported
+    rule: AppSpec's render and fragment state (the phrase collector, the fragment flag, the phrase app, the project's app and shell) lives in unexported fields reached through methods, so every exported field of AppSpec is a spec key the pack serializer writes.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackSerializerCoversEveryAppSpecField
+    applies:
+      - cmd/gofastr/internal/appspec/appspec.go
   - id: system-columns-exist-only-when-declared
     rule: A screen or index may name id, created_at and updated_at unless timestamps is false, deleted_at only under soft_delete, tenant_id only under multi_tenant with no custom tenant_field, and a foreign key column a relations block declares, each as an existing column with no flags of its own; id is indexable only under the generated key.
     enforced_by:

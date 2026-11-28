@@ -17,45 +17,18 @@ type AppSpec struct {
 	Plugins    []AppSpecNamedStub
 	Helpers    []AppSpecNamedStub
 
-	// phrases collects the reader-facing text of the file being
-	// emitted (appSpecTx). Each file renderer sets it on its own copy;
-	// nil outside one, where text is emitted as a literal. Unexported so
-	// it never reads as a spec field (reflection over AppSpec, the
-	// serializer's coverage test); appgen reaches it through
-	// PhraseCollector and SetPhraseCollector.
 	phrases *AppSpecPhrases
 
-	// appless is set by the decoders when the file (or every file of a
-	// directory) has no app: section: a fragment for generate app --add,
-	// whose App holds no api_prefix default, so the checks that need the
-	// project's app settings skip it. Unexported for the reason phrases is.
 	appless bool
 
-	// phraseApp is the app name a fragment's phrase keys take, read from
-	// the project the fragment joins: a fragment's App.Name is empty, and
-	// keys under the fallback "app" namespace would differ from the rest
-	// of the project's. Unexported for the reason phrases is; App.Name
-	// itself stays empty, since it decides whether app.go is emitted.
 	phraseApp string
 
-	// projectApp holds the route-owning settings of the project a
-	// fragment joins (SetProjectApp), nil when none were read. Unexported
-	// for the reason phrases is: App itself stays empty, since it decides
-	// what the fragment emits.
 	projectApp *AppSpecApp
 
-	// projectShell holds what the generated app.go of the project a
-	// fragment joins declares for screens to mount through
-	// (SetProjectShell), nil when none was read. Unexported for the
-	// reason phrases is.
 	projectShell *ProjectShell
 }
 
-// ProjectShell is what an added screen mounts through in the project it
-// joins, read off the project's generated source: whether app.go
-// declares appLayout and guestPolicy, the login route its authPolicy
-// calls redirect to and the home its guestPolicy calls send a signed-in
-// visitor to ("" when no call names one).
+// ProjectShell is what the project an added screen joins declares in its generated app.go for screens to mount through.
 type ProjectShell struct {
 	AppLayout   bool
 	GuestPolicy bool
@@ -63,14 +36,10 @@ type ProjectShell struct {
 	Home        string
 }
 
-// SetProjectShell records the shell of the project a fragment joins
-// (generate app --add). A fragment has no nav and only its own screens,
-// so without it an added screen would drop the app layout, the guest
-// redirect and the project's login route.
+// SetProjectShell records the shell of the project a fragment joins (generate app --add).
 func (bp *AppSpec) SetProjectShell(s ProjectShell) { bp.projectShell = &s }
 
-// ProjectShell returns the shell SetProjectShell recorded; ok is false
-// when none was, and the spec renders against its own nav and screens.
+// ProjectShell returns the shell SetProjectShell recorded, and false when none was.
 func (bp *AppSpec) ProjectShell() (s ProjectShell, ok bool) {
 	if bp.projectShell == nil {
 		return s, false
@@ -78,31 +47,19 @@ func (bp *AppSpec) ProjectShell() (s ProjectShell, ok bool) {
 	return *bp.projectShell, true
 }
 
-// PhraseCollector returns the phrase collector of the file being
-// rendered, nil outside a file renderer.
+// PhraseCollector returns the phrase collector of the file being rendered, nil outside a file renderer.
 func (bp *AppSpec) PhraseCollector() *AppSpecPhrases { return bp.phrases }
 
-// MarkFragment records that bp is a fragment added to an existing
-// project (generate app --add, generate entity|screen): its App does not
-// carry the project's settings, so validation skips the checks that read
-// them.
+// MarkFragment records that bp is a fragment added to an existing project, so checks that read its app settings skip it.
 func (bp *AppSpec) MarkFragment() { bp.appless = true }
 
-// IsFragment reports whether bp was decoded with no app: section (or
-// marked with MarkFragment). A serializer writes no app: section for one,
-// so the fragment stays a fragment on the next decode.
+// IsFragment reports whether bp was decoded with no app section or marked with MarkFragment.
 func (bp *AppSpec) IsFragment() bool { return bp.appless }
 
-// SetProjectApp records the app settings of the project a fragment
-// joins (generate app --add), read off its generated source. Validation
-// judges the fragment's screen routes against them: a fragment's own App
-// is empty, so a screen at the project's admin path, PWA files, llm.md
-// pages, auth routes or entity API would otherwise pass and never
-// render.
+// SetProjectApp records the app settings of the project a fragment joins, so its routes are judged against them.
 func (bp *AppSpec) SetProjectApp(app AppSpecApp) { bp.projectApp = &app }
 
-// RouteApp is the app whose settings decide which routes the framework
-// mounts: the project's, recorded by SetProjectApp, else App.
+// RouteApp is the app whose settings decide which routes the framework mounts: SetProjectApp's, else App.
 func (bp *AppSpec) RouteApp() AppSpecApp {
 	if bp.projectApp != nil {
 		return *bp.projectApp
@@ -110,12 +67,10 @@ func (bp *AppSpec) RouteApp() AppSpecApp {
 	return bp.App
 }
 
-// SetPhraseApp records the project's app name for a fragment's phrase
-// keys (generate app --add). An empty name changes nothing.
+// SetPhraseApp records the project's app name for a fragment's phrase keys; empty changes nothing.
 func (bp *AppSpec) SetPhraseApp(name string) { bp.phraseApp = name }
 
-// PhraseApp is the app name phrase keys are namespaced under: the
-// project's name recorded by SetPhraseApp, else App.Name.
+// PhraseApp is the app name phrase keys are namespaced under: SetPhraseApp's, else App.Name.
 func (bp *AppSpec) PhraseApp() string {
 	if bp.phraseApp != "" {
 		return bp.phraseApp
@@ -123,28 +78,18 @@ func (bp *AppSpec) PhraseApp() string {
 	return bp.App.Name
 }
 
-// SetPhraseCollector installs the phrase collector a file renderer
-// emits through, on that renderer's own copy of the spec.
+// SetPhraseCollector installs the phrase collector a file renderer emits through, on its own copy of the spec.
 func (bp *AppSpec) SetPhraseCollector(p *AppSpecPhrases) { bp.phrases = p }
 
 // AppSpecSeedEntity holds seed data for one entity.
 type AppSpecSeedEntity struct {
 	Entity string
 	Rows   []map[string]any
-	// Count, when > 0, auto-generates that many demo rows for the entity
-	// (in addition to any explicit Rows) with deterministic, realistic-looking
-	// values. Enum columns get a varied (non-uniform) distribution.
+	// Count, when > 0, generates that many demo rows besides Rows.
 	Count int
-	// Weights maps an enum column to a value→weight distribution used when
-	// auto-generating rows (e.g. {"status": {"open": 5, "closed": 1}}). A
-	// column with no weights entry gets a deterministic skew seeded from the
-	// entity name so demos never read as a flat round-robin.
+	// Weights maps an enum column to a value to weight distribution for generated rows.
 	Weights map[string]map[string]int
-	// Authored is the number of leading Rows the author wrote; the
-	// generator sets it when it expands Count (ExpandAppSpecSeed) so the
-	// stub emitter and pack know where the authored rows end. It is not an
-	// app-spec key, and pack never writes it back: a packed spec carries
-	// the recipe (count/weights) plus the authored rows only.
+	// Authored is how many leading Rows the author wrote; set by the generator, never an app spec key.
 	Authored int
 }
 
@@ -159,13 +104,9 @@ type AppSpecNavItem struct {
 
 type AppSpecApp struct {
 	Name string
-	// Description is the site-level <meta name="description"> content
-	// (app.description). Empty derives one from the app name + entities
-	// so the generated app passes uihost strict mode with honest copy.
+	// Description is the site's meta description (app.description); empty derives one.
 	Description string
-	// BaseURL seeds the generated appBaseURL() fallback, the canonical
-	// origin for sitemap <loc> entries (app.base_url). The APP_BASE_URL
-	// env var always wins at runtime; empty falls back to localhost.
+	// BaseURL is the generated appBaseURL fallback (app.base_url); APP_BASE_URL wins at run time.
 	BaseURL       string
 	Module        string
 	DBDriver      string
@@ -179,26 +120,15 @@ type AppSpecApp struct {
 	Auth          AppSpecAuth
 	Admin         AppSpecAdmin
 	PWA           AppSpecPWA
-	// LLMMD emits uihost.WithPublicLLMMD() so every registered screen
-	// serves its /llm.md document (plus the /llm-pages.md index).
-	// Independent of PWA. A screen inventory is schema disclosure, so
-	// it never rides along with another feature.
+	// LLMMD serves every screen's /llm.md and /llm-pages.md (app.llm_md), never implied by another setting.
 	LLMMD bool
-	// EntityLLMMD (app.entity_llm_md) emits AppConfig.NoLLMMD as its
-	// inverse when set; nil leaves entity llm.md routes on.
+	// EntityLLMMD (app.entity_llm_md) is emitted as the inverse NoLLMMD; nil leaves entity llm.md on.
 	EntityLLMMD *bool
-	// LocalePrefixes emits framework.WithLocalePrefixes()
-	// (app.locale_prefixes): every locales/<tag>.json is served under
-	// /<tag>/, with hreflang, sitemap and robots entries. English keeps
-	// the plain paths.
+	// LocalePrefixes serves each locales/<tag>.json under /<tag>/ (app.locale_prefixes).
 	LocalePrefixes bool
 }
 
-// AppSpecPWA configures the generated app's installable-PWA surface
-// (app.pwa). Enabled emits uihost.WithPWA(...) plus replaceable 192px,
-// 512px, and maskable icons under <static>/icons/. Every other field is
-// optional; the framework derives the defaults (name from the app
-// title, start_url/scope "/", standalone display).
+// AppSpecPWA configures the generated app's installable PWA (app.pwa); unset fields take the framework's defaults.
 type AppSpecPWA struct {
 	Enabled         bool
 	Name            string
@@ -274,27 +204,14 @@ type AppSpecAction struct {
 	ClientJS string
 }
 
-// AppSpecHook is one entity lifecycle hook carried through
-// graduation. It declares a surface the generated app must implement in
-// owned Go: the app spec records WHICH hook runs
-// WHERE, and Handler names the func to write.
-//
-// It exists because kiln's freeze dropped hooks entirely. A world's hooks
-// are enforced in the live preview (kiln/render registers them on the
-// framework HookRegistry), so an operator watches a before_create
-// validation reject bad rows and then ships an app that silently has no
-// such validation. kiln.md promises the opposite: "freeze emits an
-// owned-Go handler stub with a description naming the declarative
-// action".
+// AppSpecHook is an entity lifecycle hook the generated app implements in owned Go.
 type AppSpecHook struct {
-	// ID is the hook's stable identifier from the kiln world; it doubles
-	// as the app spec's name for the hook.
-	ID string
-	// Entity is the entity whose lifecycle the hook runs on.
+	// ID is the hook's id in the kiln world and its name in the spec.
+	ID     string
 	Entity string
-	// When is the lifecycle point: before_create, after_update, ...
+	// When is the lifecycle point, a key of AppSpecHookTypes.
 	When string
-	// Handler is the owned-Go func name to implement.
+	// Handler is the owned-Go func the generated app calls.
 	Handler string
 	// Description names the declarative action the hook came from.
 	Description string

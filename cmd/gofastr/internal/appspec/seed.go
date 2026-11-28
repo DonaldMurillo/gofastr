@@ -72,8 +72,6 @@ func decodeAppSpecSeed(node *coreyaml.Node) ([]AppSpecSeedEntity, error) {
 	return out, nil
 }
 
-// decodeSeedWeights parses the optional per-column weight map used when
-// auto-generating rows: `weights: { <column>: { <value>: <weight> } }`.
 func decodeSeedWeights(node *coreyaml.Node, label string) (map[string]map[string]int, error) {
 	if node == nil {
 		return nil, nil
@@ -104,22 +102,14 @@ func decodeSeedWeights(node *coreyaml.Node, label string) (map[string]map[string
 	return out, nil
 }
 
-// AppSpecGenerateSeedRows builds n demo rows for an entity. Each enum column
-// is filled from a precomputed distribution; scalar columns get plausible
-// deterministic values keyed off the row index. System columns (id/timestamps/
-// auto-generated/read-only), hidden columns, and relations are skipped.
-// Relations can't be safely fabricated, so count-seeding suits scalar/enum
-// entities (use explicit rows: for entities with required relations).
+// AppSpecGenerateSeedRows builds n deterministic demo rows for an entity.
 func AppSpecGenerateSeedRows(decl framework.EntityDeclaration, n int, weights map[string]map[string]int) []map[string]any {
-	// Precompute enum distributions once per column.
 	dist := map[string][]string{}
 	for _, f := range decl.Fields {
 		if strings.EqualFold(f.Type, "enum") && len(f.Values) > 0 {
 			dist[f.Name] = appSpecEnumDistribution(decl.Name, f.Name, f.Values, weights[f.Name], n)
 		}
 	}
-	// A key made only of enums takes one combination per row instead,
-	// counted from the second: the e2e create sends the first.
 	enumKey := appSpecSeedEnumKey(decl)
 	for _, f := range enumKey {
 		delete(dist, f.Name)
@@ -145,30 +135,21 @@ func AppSpecGenerateSeedRows(decl framework.EntityDeclaration, n int, weights ma
 			case "", "string", "text":
 				row[f.Name] = appSpecSeedStringValue(f, singular, r)
 			case "int", "integer", "bigint":
-				// A key column needs one value per row.
 				if slices.Contains(decl.PrimaryKey, f.Name) {
 					row[f.Name] = appSpecSeedIntKeyStart(f) + r
 					continue
 				}
-				// A gently-skewed spread rather than 1..n so charts summing a
-				// numeric column show variation.
 				row[f.Name] = 10 + int(appSpecSeedHash(decl.Name+f.Name+strconv.Itoa(r))%90)
 			case "float", "double", "decimal", "money", "numeric":
 				v := 5 + float64(appSpecSeedHash(decl.Name+f.Name+strconv.Itoa(r))%9950)/10.0
 				row[f.Name] = math.Round(v*100) / 100
 			case "bool", "boolean":
-				// Skew towards true so demos look "active".
 				row[f.Name] = appSpecSeedHash(decl.Name+f.Name+strconv.Itoa(r))%4 != 0
 			case "uuid":
-				// A key column the server does not fill is never null:
-				// one value per row, in a block apart from the e2e
-				// create's 8000 so the test's insert never collides.
 				if slices.Contains(decl.PrimaryKey, f.Name) {
 					row[f.Name] = fmt.Sprintf("00000000-0000-4000-9000-%012d", r+1)
 				}
 			default:
-				// date/timestamp/uuid/relation/json: leave to auto-generation
-				// or nullable columns.
 			}
 		}
 		rows = append(rows, row)
@@ -176,10 +157,6 @@ func AppSpecGenerateSeedRows(decl framework.EntityDeclaration, n int, weights ma
 	return rows
 }
 
-// appSpecSeedEnumKey returns the key columns of an entity keyed only on
-// enums, in key order, each with its values once; nil when any key column
-// is another type. Seed rows for such a key can repeat only once they run
-// out of combinations.
 func appSpecSeedEnumKey(decl framework.EntityDeclaration) []framework.FieldDeclaration {
 	if DeclKeyIsID(decl) {
 		return nil
@@ -202,9 +179,6 @@ func appSpecSeedEnumKey(decl framework.EntityDeclaration) []framework.FieldDecla
 	return cols
 }
 
-// appSpecSeedIntKeyStart is the value count seeding gives an integer key
-// column's first row: 1001 for an unbounded column, else the lowest value
-// min allows above the 1 the e2e create sends.
 func appSpecSeedIntKeyStart(f framework.FieldDeclaration) int {
 	if f.Min == nil && f.Max == nil {
 		return 1001
@@ -215,12 +189,6 @@ func appSpecSeedIntKeyStart(f framework.FieldDeclaration) int {
 	return 2
 }
 
-// appSpecCheckSeedKeys builds the rows a seed count generates and refuses
-// one that would abort startup on its key: a key column count seeding
-// cannot fill, an integer key outside the column's bounds, or a key an
-// explicit row or an earlier generated row already holds. A key column the
-// server fills (auto_generate, or the id the entity injects) never
-// repeats, so a key holding one is not checked.
 func appSpecCheckSeedKeys(decl framework.EntityDeclaration, seed AppSpecSeedEntity) error {
 	keyCols := decl.PrimaryKey
 	if DeclKeyIsID(decl) {
@@ -242,7 +210,6 @@ func appSpecCheckSeedKeys(decl framework.EntityDeclaration, seed AppSpecSeedEnti
 				return "", f.Name
 			}
 			text := fmt.Sprint(v)
-			// The store reads "01001", 1001.0 and 1001 as one integer.
 			if appSpecIntType(f.Type) {
 				switch n := v.(type) {
 				case float64:
@@ -275,9 +242,6 @@ func appSpecCheckSeedKeys(decl framework.EntityDeclaration, seed AppSpecSeedEnti
 		}
 		held[k] = true
 		for _, f := range cols {
-			// The boot validator judges the value, bounds compared the
-			// way startup compares them. The generator's ints are the
-			// int64 the generated code stores.
 			val := row[f.Name]
 			switch n := val.(type) {
 			case int:
@@ -291,7 +255,6 @@ func appSpecCheckSeedKeys(decl framework.EntityDeclaration, seed AppSpecSeedEnti
 	return nil
 }
 
-// appSpecIntType reports whether a declared field type is an integer.
 func appSpecIntType(t string) bool {
 	switch strings.ToLower(strings.TrimSpace(t)) {
 	case "int", "integer", "bigint":
@@ -300,9 +263,6 @@ func appSpecIntType(t string) bool {
 	return false
 }
 
-// appSpecSeedStringValue produces a plausible value for a scalar text column
-// based on common naming conventions (name/title/email/slug), falling back to a
-// humanized "<Singular> <n>".
 func appSpecSeedStringValue(f framework.FieldDeclaration, singular string, r int) string {
 	name := strings.ToLower(f.Name)
 	switch {
@@ -321,20 +281,12 @@ func appSpecSeedStringValue(f framework.FieldDeclaration, singular string, r int
 	}
 }
 
-// appSpecSeedHash is a small deterministic FNV-1a hash used to derive stable
-// pseudo-random-looking (but reproducible) seed values.
 func appSpecSeedHash(s string) uint32 {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(s))
 	return h.Sum32()
 }
 
-// appSpecEnumDistribution returns a length-n slice of enum values whose
-// frequencies follow `weights` when given, otherwise a deterministic skew
-// derived from the entity+column+value names. The result is always non-uniform
-// for the default (no-weights) path, so demo data never reads as a flat
-// round-robin. Values are interleaved (round-robin over the assigned counts) so
-// the first page of a list isn't a single value.
 func appSpecEnumDistribution(seedKey, col string, values []string, weights map[string]int, n int) []string {
 	if len(values) == 0 || n <= 0 {
 		return nil
@@ -346,7 +298,7 @@ func appSpecEnumDistribution(seedKey, col string, values []string, weights map[s
 		if explicit {
 			w[i] = weights[v]
 		} else {
-			w[i] = 1 + int(appSpecSeedHash(seedKey+"|"+col+"|"+v)%7) // 1..7
+			w[i] = 1 + int(appSpecSeedHash(seedKey+"|"+col+"|"+v)%7)
 		}
 		total += w[i]
 	}
@@ -356,8 +308,6 @@ func appSpecEnumDistribution(seedKey, col string, values []string, weights map[s
 		}
 		total = len(w)
 	}
-	// Guard the default skew against a hash collision leaving every weight
-	// equal (which would round-trip to a uniform split).
 	if !explicit && len(w) > 1 {
 		allEqual := true
 		for i := 1; i < len(w); i++ {
@@ -371,7 +321,6 @@ func appSpecEnumDistribution(seedKey, col string, values []string, weights map[s
 			total++
 		}
 	}
-	// Largest-remainder apportionment: exact integer counts summing to n.
 	counts := make([]int, len(values))
 	type rem struct {
 		idx  int
@@ -390,7 +339,6 @@ func appSpecEnumDistribution(seedKey, col string, values []string, weights map[s
 		counts[rems[k%len(rems)].idx]++
 		assigned++
 	}
-	// Interleave for readability.
 	out := make([]string, 0, n)
 	remaining := make([]int, len(counts))
 	copy(remaining, counts)
@@ -413,39 +361,20 @@ func appSpecEnumDistribution(seedKey, col string, values []string, weights map[s
 	return out
 }
 
-// validateAppSpecSeedTypes rejects seed values whose YAML type can never
-// satisfy the target field's runtime validator (core/schema/validate.go).
-//
-// Without this check, an app spec like the blog's, where comments.post_id is a
-// relation (a UUID string column) seeded with `post_id: 1`, sails through
-// generate, compiles, and then the app DIES at boot with
-// "seed comments: validation failed": the least discoverable point in the
-// pipeline, after the author has done everything the tool told them to.
-// Every generated entity has a UUID string primary key, so a numeric
-// literal on a relation column can never work; the fix the author needs is
-// the "@entity.field=value" reference form resolveSeedRefs resolves at
-// boot. The check mirrors the runtime's coercion rules exactly (a string
-// "42" on an int column is fine, a fractional float is not) so it never
-// rejects a seed that would have booted.
 func validateAppSpecSeedTypes(bp AppSpec, entitiesByName map[string]framework.EntityDeclaration) error {
 	var errs schemaErrors
 	for _, seed := range bp.Seed {
 		decl, known := entitiesByName[seed.Entity]
 		if !known {
-			// A seed for an undeclared entity fails at boot with
-			// "no handler"; same fail-late shape, catch it here too.
 			errs.add(fmt.Errorf("app spec: seed targets unknown entity %q: declare an entity named %q under entities: (or fix the seed's entity: value)", seed.Entity, seed.Entity))
 			continue
 		}
 		for i, row := range seed.Rows {
-			// Rows are maps: iterate their keys sorted so a row with two
-			// bad values reports both, in a stable order, instead of one
-			// picked by map-iteration luck.
 			for _, name := range slices.Sorted(maps.Keys(row)) {
 				value := row[name]
 				field, fieldKind := appSpecSeedFieldKind(decl, name)
 				if !fieldKind {
-					continue // not a declared column: not this check's business
+					continue
 				}
 				reason := seedValueRejection(field, value)
 				if reason == "" {
@@ -464,34 +393,19 @@ func validateAppSpecSeedTypes(bp AppSpec, entitiesByName map[string]framework.En
 	return errs.err()
 }
 
-// ValidateAppSpecSeedStructure holds the seed checks that are about
-// WHICH rows run and in what order, not about value types (those live in
-// validateAppSpecSeedTypes). Every check here exists because the
-// generated seed hook is fail-fast at boot: a block the hook silently
-// skips, a row whose key matches no column, or a reference that cannot
-// resolve in declaration order each generate green and then abort (or
-// quietly lose data) on every fresh database.
+// ValidateAppSpecSeedStructure checks which seed rows run and in what order: entities, blocks, columns, keys and references.
 func ValidateAppSpecSeedStructure(bp AppSpec, entitiesByName map[string]framework.EntityDeclaration) error {
 	var errs schemaErrors
 	seeded := map[string]bool{}
 	for _, seed := range bp.Seed {
 		decl, known := entitiesByName[seed.Entity]
 		if seeded[seed.Entity] {
-			// The generated hook gates each block on CountAll(entity) > 0:
-			// the first block inserts, the second is skipped wholesale, and
-			// rows the author wrote never land. Directory merges concatenate
-			// seed blocks before validating, so this also catches the same
-			// duplicate arriving as two files.
 			errs.add(fmt.Errorf("app spec: duplicate seed blocks for entity %q: the generated seed hook skips later blocks once the entity has rows, so only the first block's rows would land; merge them into one block", seed.Entity))
 		}
 		seeded[seed.Entity] = true
 		if !known {
-			continue // validateAppSpecSeedTypes names the unknown entity
+			continue
 		}
-		// Count-seeding fabricates scalars but never relations
-		// (appSpecGenerateSeedRows skips them), so a required relation
-		// leaves every fabricated row failing CreateOne's required check —
-		// and a failed seed row aborts startup.
 		if seed.Count > 0 {
 			keyCols := AppSpecKeyColNames(decl)
 			fits := true
@@ -504,14 +418,11 @@ func ValidateAppSpecSeedStructure(bp AppSpec, entitiesByName map[string]framewor
 					errs.add(fmt.Errorf("app spec: seed count for entity %q cannot fabricate the required relation %q: every generated row would lack it and fail CreateOne's required check, aborting startup. Seed explicit rows instead (reference a row seeded earlier with %q)", seed.Entity, f.Name, "@"+strings.TrimSpace(f.To)+"."+appSpecSeedRefFieldHint(entitiesByName, f.To)+"=<value>"))
 				}
 			}
-			// An enum-only key has a fixed number of combinations, and
-			// the e2e create takes the first: a row past the rest
-			// repeats a key, and the failed insert aborts startup.
 			if key := appSpecSeedEnumKey(decl); key != nil {
 				combos, enough := 1, false
 				for _, f := range key {
 					if combos > seed.Count/len(f.Values) {
-						enough = true // more combinations than rows
+						enough = true
 						break
 					}
 					combos *= len(f.Values)
@@ -529,22 +440,10 @@ func ValidateAppSpecSeedStructure(bp AppSpec, entitiesByName map[string]framewor
 		}
 		for i, row := range seed.Rows {
 			for _, name := range slices.Sorted(maps.Keys(row)) {
-				// A key that matches no declared column is silently dropped
-				// by CreateOne (it writes declared columns only), and when
-				// the real column is required the boot error names the
-				// missing column, never the typo the author wrote. Every
-				// other transcribed name in the app spec gets an
-				// unknown-target check; the seed row key is the same class.
 				if _, ok := appSpecSeedFieldKind(decl, name); !ok {
 					errs.add(fmt.Errorf("app spec: seed row %d for entity %q sets %q, which matches no declared column: the value would be silently dropped at boot. Fix the key, or declare the column on the entity", i+1, seed.Entity, name))
 					continue
 				}
-				// "@entity.field=value" references resolve at boot, in
-				// block order. A forward reference stays unresolved, fails
-				// UUID validation on the relation column, and aborts every
-				// fresh database. Only app spec entities are checkable
-				// here: a target registered by app code is outside the
-				// generator's knowledge.
 				if ref, ok := appSpecSeedRefTarget(fmt.Sprint(row[name])); ok {
 					if _, isAppSpecEntity := entitiesByName[ref]; isAppSpecEntity && !seeded[ref] {
 						errs.add(fmt.Errorf("app spec: seed row %d for entity %q references %q, but %s is seeded later (or never): resolveSeedRefs runs at boot in block order and leaves unresolvable references as-is, so the shipped app aborts on a fresh database. Seed %s first, or in the same block", i+1, seed.Entity, fmt.Sprint(row[name]), ref, ref))
@@ -556,10 +455,6 @@ func ValidateAppSpecSeedStructure(bp AppSpec, entitiesByName map[string]framewor
 	return errs.err()
 }
 
-// appSpecSeedRefTarget extracts the entity named by a
-// "@entity.field=value" seed reference (the form resolveSeedRefs rewrites
-// at boot), mirroring its exact grammar: leading @, a dot at index >= 1,
-// and an = after the dot. ok is false for any other string.
 func appSpecSeedRefTarget(v string) (entity string, ok bool) {
 	if !strings.HasPrefix(v, "@") {
 		return "", false
@@ -573,9 +468,6 @@ func appSpecSeedRefTarget(v string) (entity string, ok bool) {
 	return rest[:dot], true
 }
 
-// appSpecSeedRefFieldHint names the target entity's display field for
-// the "@entity.field=value" example in refusal messages, mirroring the
-// hint validateAppSpecSeedTypes already gives.
 func appSpecSeedRefFieldHint(entitiesByName map[string]framework.EntityDeclaration, target string) string {
 	if decl, ok := entitiesByName[strings.TrimSpace(target)]; ok {
 		return appSpecDisplayField(decl)
@@ -583,9 +475,6 @@ func appSpecSeedRefFieldHint(entitiesByName map[string]framework.EntityDeclarati
 	return "id"
 }
 
-// appSpecSeedFieldKind resolves a seed row key to the field declaration
-// it targets. Synthesized system columns (the UUID id) get a synthesized
-// declaration. The second return is false for keys that match no column.
 func appSpecSeedFieldKind(decl framework.EntityDeclaration, name string) (framework.FieldDeclaration, bool) {
 	for _, f := range decl.Fields {
 		if f.Name == name {
@@ -593,22 +482,14 @@ func appSpecSeedFieldKind(decl framework.EntityDeclaration, name string) (framew
 		}
 	}
 	if name == "id" {
-		// Every generated model carries `ID string` (renderEntityModel);
-		// seeding it directly is legal but takes a UUID string.
 		return framework.FieldDeclaration{Name: "id", Type: "uuid"}, true
 	}
 	return framework.FieldDeclaration{}, false
 }
 
-// seedValueRejection returns "" when value can satisfy the field's runtime
-// validator, else the message that validator would produce. Mirrors the
-// per-type validators in core/schema/validate.go, including their
-// coercions (toString accepts only strings; toInt64 accepts integral
-// floats and integer-parsable strings; toFloat64 accepts no strings),
-// so the generate-time verdict never disagrees with boot.
 func seedValueRejection(field framework.FieldDeclaration, value any) string {
 	if value == nil {
-		return "" // absent value; required-ness fails at boot with field detail
+		return ""
 	}
 	switch strings.ToLower(strings.TrimSpace(field.Type)) {
 	case "relation", "uuid":
@@ -620,8 +501,6 @@ func seedValueRejection(field framework.FieldDeclaration, value any) string {
 		if !ok {
 			return "must be a string"
 		}
-		// An enum's Values list is closed; a string outside it can never
-		// satisfy the validator either.
 		if strings.EqualFold(strings.TrimSpace(field.Type), "enum") && len(field.Values) > 0 {
 			for _, allowed := range field.Values {
 				if s == allowed {
@@ -651,8 +530,6 @@ func seedValueRejection(field framework.FieldDeclaration, value any) string {
 			return "must be a number"
 		}
 	case "decimal":
-		// Numbers are fine: the stub emitter re-quotes them as the decimal
-		// string the validator expects (appSpecSeedFieldIsDecimal).
 		switch value.(type) {
 		case string, int64, float64:
 		default:
@@ -679,27 +556,10 @@ func seedValueRejection(field framework.FieldDeclaration, value any) string {
 			return "must be true or false"
 		}
 	case "json":
-		// Any value marshals; the validator accepts strings, maps, lists.
 	}
 	return seedConstraintRejection(field, value)
 }
 
-// seedConstraintRejection asks the BOOT validator itself whether the value
-// satisfies the field's constraints -- pattern, min/max, enum membership --
-// rather than re-deriving them here.
-//
-// The type checks above are deliberately coercion-tolerant: the stub
-// emitter re-encodes an int given as a string, a decimal given as a
-// number, and so on, so a shape mismatch there is not a boot failure. The
-// CONSTRAINTS are a different matter: nothing re-encodes "abc" into
-// ^[A-Z]{3}$, so a row that violates one generates cleanly, compiles, and
-// then aborts the shipped app's startup on a fresh database. That is the
-// saw-green-ships-red the docstring above promises never happens.
-//
-// It runs only when the value is already in the form the field will hold,
-// so a coercible value is not judged on a shape the generator is about to
-// change. A field declaration that cannot be converted is a separate
-// error the caller reports elsewhere.
 func seedConstraintRejection(field framework.FieldDeclaration, value any) string {
 	bootField, err := field.Field()
 	if err != nil {
@@ -714,9 +574,6 @@ func seedConstraintRejection(field framework.FieldDeclaration, value any) string
 	return ""
 }
 
-// seedValueInFinalForm reports whether value's Go type already matches
-// what the generated code will store for this field, so the boot
-// validator's verdict on it is the verdict the shipped app will reach.
 func seedValueInFinalForm(f schema.Field, value any) bool {
 	switch f.Type {
 	case schema.String, schema.Text, schema.Enum, schema.UUID, schema.Relation:
@@ -740,14 +597,6 @@ func seedValueInFinalForm(f schema.Field, value any) bool {
 		_, ok := value.(bool)
 		return ok
 	default:
-		// Date, Timestamp, Decimal, JSON, Image, File. Every one of these
-		// is re-encoded by the stub emitter before it reaches the shipped
-		// app -- a decimal given as a number becomes the decimal string
-		// the validator wants, a JSON value is marshalled -- so the value
-		// here is not yet in the form the field will hold, and the boot
-		// validator's verdict on it would be a verdict on a shape that is
-		// about to change. Judging them is what would produce a FALSE
-		// rejection of a working app spec.
 		return false
 	}
 }

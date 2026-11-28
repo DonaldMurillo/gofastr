@@ -35,6 +35,16 @@ func TestRouteShapeKeepsConstraintsAndCatchAll(t *testing.T) {
 	}
 }
 
+func TestScreenMayTakeACrudlessEntitysRoute(t *testing.T) {
+	bp, err := decodeSpecString(t, "app:\n  name: a\n  module: example.com/a\nentities:\n  - name: tags\n    crud: false\n    fields:\n      - name: label\n        type: string\nscreens:\n  - name: tags\n    route: /api/tags\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateAppSpec(bp); err != nil {
+		t.Fatalf("an entity with crud: false mounts no API, so its route is free: %v", err)
+	}
+}
+
 func TestScreenParamNamePrefersIDThenTheLastParam(t *testing.T) {
 	for route, want := range map[string]string{
 		"/posts/{id}/comments/{comment}":                "id",

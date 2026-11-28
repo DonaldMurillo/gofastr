@@ -17,17 +17,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// authBasePathRE matches an app.auth.base_path: one or more "/segment"
-// with no trailing slash. A segment cannot start with a dot, so "." and
-// ".." never reach a mount.
 var authBasePathRE = regexp.MustCompile(`^(/[A-Za-z0-9_-][A-Za-z0-9._-]*)+$`)
 
-// validateDetailRoutes holds every entity_detail screen to the route shape
-// entityui links records at: <list route>/{id} under one of the entity's
-// list screens, which becomes its home (appSpecEntityListScreen). Every
-// list's record links point there, so a detail screen anywhere else
-// renders fine but is unreachable. An entity with no list screen keeps
-// only the {id} requirement its own screen needs.
 func validateDetailRoutes(bp AppSpec) error {
 	var errs schemaErrors
 	for _, s := range bp.Screens {
@@ -52,11 +43,6 @@ func validateDetailRoutes(bp AppSpec) error {
 	return errs.err()
 }
 
-// schemaErrors accumulates validation findings so one pass reports every
-// fixable problem rather than only the first. The alternative is a serial
-// guess-and-recompile loop: fix one error, rerun, meet the next. A single
-// finding returns unchanged (existing exact-shape callers keep their
-// message); multiple findings join under a count.
 type schemaErrors struct{ errs []error }
 
 func (s *schemaErrors) add(err error) {
@@ -82,48 +68,26 @@ func (s *schemaErrors) err() error {
 
 func ValidateAppSpec(bp AppSpec) error {
 	var errs schemaErrors
-	// Production auth without a signing key: the generated app's auth
-	// battery fails closed at boot (battery/auth Init refuses an empty
-	// JWTSecret with DevMode=false). Fail at generate/validate time
-	// instead, with the same remedy.
 	if bp.App.Auth.Enabled && !bp.App.Auth.DevMode && bp.App.Auth.JWTSecret == "" {
 		errs.add(fmt.Errorf("app spec: app.auth has dev_mode: false but no jwt_secret: the generated app would refuse to boot (production auth requires a signing key); set jwt_secret from your secret store, or set dev_mode: true for local development"))
 	}
-	// The battery mounts its routes at base_path + "/login" and the
-	// generated forms, sign-out button and e2e test post there. A trailing
-	// slash mounts "//login", a missing leading one a relative path, and
-	// "//host" would be a protocol-relative form action.
 	if p := bp.App.Auth.BasePath; p != "" && !authBasePathRE.MatchString(p) {
 		errs.add(fmt.Errorf("app spec: app.auth.base_path %q must be an absolute path such as /account: segments of letters, digits, '-', '_' and '.', none starting with a dot, and no trailing slash", p))
 	}
 	if why := staticDirProblem(bp.App.StaticDir, bp.App.DBURL, bp.App.OutputDir); why != "" {
 		errs.add(fmt.Errorf("app spec: app.static_dir %q %s", bp.App.StaticDir, why))
 	}
-	// The admin battery mounts every route under admin.path the same way:
-	// "/" trims to an empty prefix and panics its Init at boot.
 	if p := bp.App.Admin.Path; p != "" && !authBasePathRE.MatchString(p) {
 		errs.add(fmt.Errorf("app spec: app.admin.path %q must be an absolute path such as /admin: segments of letters, digits, '-', '_' and '.', none starting with a dot, and no trailing slash; / is refused because the back office needs a prefix of its own", p))
 	}
-	// The sitemap origin: the generated app's always-on strict mode
-	// panics at boot on a base_url it cannot use.
 	if why := uihost.InvalidSitemapBaseURL(bp.App.BaseURL); bp.App.BaseURL != "" && why != "" {
 		errs.add(fmt.Errorf("app spec: app.base_url %q must be a bare origin, with no path, query or fragment: write an origin such as https://demo.example (the generated app uses it for sitemap URLs)", bp.App.BaseURL))
 	}
-	// A multi-tenant entity needs a request-time tenant resolver, and the
-	// right one is host-specific (subdomain, JWT claim, user's org). The
-	// generator can't emit it, and ApplyTenantScope is fail-closed, so a
-	// generated multi_tenant app with no resolver reads empty and stamps an
-	// empty tenant on writes: silently broken while looking secure. Refuse
-	// to generate rather than ship that.
 	for _, decl := range bp.Entities {
 		if EntityDeclarationScope(decl).MultiTenant {
 			errs.add(fmt.Errorf("app spec: entity %q sets multi_tenant: true, but the generator cannot emit a tenant resolver (the strategy, subdomain, JWT claim, user's org, is app-specific). A generated app with none reads empty and stamps an empty tenant on every write. Wire tenant.TenantMiddleware + SetTenantID in your own main (see `gofastr docs multi-tenant`) and drop multi_tenant from the app spec, or use owner_field for per-user scoping", decl.Name))
 		}
 	}
-	// One screen cannot list the same entity twice: both lists would share
-	// the entity's one query-param namespace, so sorting either table
-	// rewrites both from the first block's columns. Two lists of DIFFERENT
-	// entities on one screen are fine; each carries its own key.
 	for _, s := range bp.Screens {
 		seen := map[string]bool{}
 		var walk func(blocks []AppSpecBlock)
@@ -141,11 +105,6 @@ func ValidateAppSpec(bp AppSpec) error {
 		}
 		walk(s.Body)
 	}
-	// Every create-flagged list's New opens <home list route>/create, the
-	// one create screen AppSpecSynthesizeCRUDScreens adds per entity. Two
-	// entities whose home list is the same screen would share that route:
-	// the second create screen was dropped and its New opened the first
-	// entity's form, so a team was saved as a player.
 	createFor := map[string]string{}
 	for _, s := range bp.Screens {
 		for _, b := range AppSpecBlocksDeep(s.Body) {
@@ -165,12 +124,7 @@ func ValidateAppSpec(bp AppSpec) error {
 			createFor[route] = e
 		}
 	}
-	// entityui links a record at <base>/<id> with <base> the list's route,
-	// so a detail screen must sit exactly at <list route>/{id} when the
-	// entity also has a list screen. Anything else strands the links.
 	errs.add(validateDetailRoutes(bp))
-	// An explicit login_form/signup_form action must be the mounted
-	// auth route, or the generated sign-in form posts to a 404.
 	validateAuthFormActions(bp, &errs)
 	if bp.App.PWA.Enabled {
 		switch bp.App.PWA.Display {
@@ -185,16 +139,6 @@ func ValidateAppSpec(bp AppSpec) error {
 			errs.add(fmt.Errorf("app spec: app.pwa.scope %q must be a root-relative path (start with /)", s))
 		}
 	}
-	// Theme VALUES need the same boundary as theme keys. The emitter writes
-	// them as direct struct assignments (theme.Colors.<T>.Value = …,
-	// theme.DarkColors = map[string]string{…}), which bypass every
-	// core-ui/style setter, so ApplyTokens' grammar never runs on them, and
-	// the value reaches `--color-<token>: <value>;` on the stylesheet the UI
-	// host (/app.css) and the admin battery serve. A `;` or `}` there closes
-	// :root and appends rules of the author's choosing; `url(` is an outbound
-	// fetch on every page load. style.ValidateColorValue is that one grammar,
-	// called here rather than copied. Keys are sorted so the multi-error
-	// report is deterministic (map iteration order is not).
 	for _, key := range slices.Sorted(maps.Keys(bp.App.Theme)) {
 		value := bp.App.Theme[key]
 		if _, ok := AppSpecThemeColorPath(key); ok {
@@ -203,10 +147,6 @@ func ValidateAppSpec(bp AppSpec) error {
 			}
 			continue
 		}
-		// Font tokens are valid theme keys too. They drive the theme's
-		// font-family tokens and the webfont <link>s, not colors. Their value
-		// is reduced to an allow-listed family name by appSpecFontFamilyName
-		// before it reaches CSS, so the color grammar does not apply.
 		if key == "font_body" || key == "font_heading" || key == "font_display" {
 			continue
 		}
@@ -233,11 +173,6 @@ func ValidateAppSpec(bp AppSpec) error {
 			errs.add(fmt.Errorf("app spec: entity %q does not produce a valid Go identifier: the generated code would not compile; rename it to start with a letter (e.g. \"two_fa_tokens\" instead of \"2fa_tokens\")", decl.Name))
 			continue
 		}
-		// The table name reaches two sinks that neither re-escape nor
-		// re-validate it: the generated typed client emits it into Go string
-		// literals, and the runtime interpolates it into DDL/queries as a
-		// bare SQL identifier. An entity name is already constrained to a Go
-		// identifier above; `table:` was the way around that.
 		if decl.Table != "" {
 			if _, err := query.SafeIdent(decl.Table); err != nil {
 				errs.add(fmt.Errorf("app spec: entity %q table %q must be letters, digits and underscores (it becomes a SQL identifier and is emitted into generated Go)", decl.Name, decl.Table))
@@ -249,10 +184,6 @@ func ValidateAppSpec(bp AppSpec) error {
 		}
 		entityNames[decl.Name] = true
 		entitiesByName[decl.Name] = decl
-		// A field declared twice was caught only by the render pass, as
-		// "generated code declares Products.Title twice
-		// (entities/client/client.go and entities/client/client.go)",
-		// naming a file the author never wrote instead of the spec line.
 		seenField := map[string]bool{}
 		for _, f := range decl.Fields {
 			if seenField[f.Name] {
@@ -261,13 +192,6 @@ func ValidateAppSpec(bp AppSpec) error {
 			seenField[f.Name] = true
 		}
 		errs.add(ownerScopedKeyProblem(decl))
-		// Field names and enum values are transcribed into emitted Go,
-		// SQL identifiers and CSS. Nothing downstream re-escapes them,
-		// so they are validated here, at the generate-time boundary,
-		// where the error can name the offending field.
-		// Two field names one Go struct field or one Postgres column would
-		// carry (Title and title, _note and note) are refused: AutoMigrate
-		// writes names unquoted, so Postgres folds them together.
 		fieldOwner := map[string]string{}
 		for _, f := range decl.Fields {
 			if !project.IsGoIdentifier(ToCamelCase(f.Name)) {
@@ -285,12 +209,6 @@ func ValidateAppSpec(bp AppSpec) error {
 				if strings.ContainsAny(v, "`\"\\\n\r") {
 					errs.add(fmt.Errorf("app spec: entity %q field %q enum value %q contains a quote, backtick, backslash or newline: these break the generated Go source", decl.Name, f.Name, v))
 				}
-				// The value is served verbatim in llm.md field notes and
-				// the OpenAPI enum array; a C1 control or invisible/bidi
-				// codepoint there forges or hides text for the agent/human
-				// reviewing it (2026-09-05 red-probe round). The generated
-				// Go itself is inert (%q escapes the rune) — the served
-				// docs are the sink.
 				if strings.ContainsFunc(v, textsafe.IsC1) || textsafe.ContainsInvisible(v) {
 					errs.add(fmt.Errorf("app spec: entity %q field %q enum value %q contains a C1 control or invisible character (bidi overrides, zero-width, BOM, U+0080–U+009F): it would reach llm.md and the OpenAPI enum verbatim", decl.Name, f.Name, v))
 				}
@@ -304,17 +222,11 @@ func ValidateAppSpec(bp AppSpec) error {
 		if err := framework.ValidateExposure(decl.Name, cfg); err != nil {
 			errs.add(fmt.Errorf("app spec: entities[%d].exposure: %w", entityIndex, err))
 		}
-		// The display: block names fields, facets, views and form slots
-		// registration checks against the entity; run that check here.
 		if decl.Display != nil {
 			if err := framework.ValidateDisplay(decl.Name, cfg); err != nil {
 				errs.add(fmt.Errorf("app spec: %w", err))
 			}
 		}
-		// A field default the field's own validator refuses (an enum
-		// value not in values:, "notanumber" on an int, "" on a required
-		// field) fails registration, which panicked the generated app at
-		// boot. Run that one check here, from framework/entity.
 		if slices.ContainsFunc(decl.Fields, func(f framework.FieldDeclaration) bool { return f.Default != nil }) {
 			if err := fwentity.ValidateDefaults(decl.Name, cfg); err != nil {
 				errs.add(fmt.Errorf("app spec: %w", err))
@@ -323,10 +235,6 @@ func ValidateAppSpec(bp AppSpec) error {
 	}
 	errs.add(validateAppSpecSQLNames(bp))
 	for _, decl := range bp.Entities {
-		// Relation-TYPED FIELDS (`type: relation, to: X`) become BelongsTo
-		// relations at runtime. Catch a dangling target here so the failure
-		// is a generate-time error, not an auto-migrate crash in the built
-		// app ("entity has BelongsTo to unknown entity").
 		for _, field := range decl.Fields {
 			if !strings.EqualFold(strings.TrimSpace(field.Type), "relation") {
 				continue
@@ -339,12 +247,6 @@ func ValidateAppSpec(bp AppSpec) error {
 				errs.add(fmt.Errorf("app spec: entity %q field %q is a relation to unknown entity %q: declare an entity named %q under entities: (or fix the field's to: value)", decl.Name, field.Name, field.To, field.To))
 			}
 		}
-		// Both sides of a rename become column names in emitted
-		// ALTER TABLE … RENAME COLUMN DDL, so they get the same identifier
-		// guard as table: an app spec is agent-transcribed text, not
-		// developer-authored SQL. A rename whose target is not a declared
-		// field would never fire, so catch that here rather than at migrate
-		// time.
 		declaredFields := map[string]bool{}
 		for _, field := range decl.Fields {
 			declaredFields[field.Name] = true
@@ -367,10 +269,6 @@ func ValidateAppSpec(bp AppSpec) error {
 				errs.add(fmt.Errorf("app spec: entity %q renames %q to %q while still declaring %q as a field: the diff would see both columns; remove the old field", decl.Name, old, next, old))
 			}
 		}
-		// An index is CREATE INDEX over the entity's own columns. A column
-		// the entity does not have passed the load and failed the first
-		// `migrate up` and the generated app's boot with "no such column",
-		// and an index with no column is no statement at all.
 		for i, idx := range decl.Indices {
 			label := idx.Name
 			if label == "" {
@@ -391,13 +289,6 @@ func ValidateAppSpec(bp AppSpec) error {
 				}
 			}
 		}
-		// A relation name is an identifier, not a label: the entity emitter
-		// puts toCamelCase(name) in struct-field position AND inside the
-		// backtick `json:"…"` tag (a raw literal, which has no escape
-		// mechanism at all), and the typed-column emitter puts it in
-		// const-identifier position. It was the last name in the IR with no
-		// identifier guard. Every sibling above (entity, field, screen,
-		// endpoint handler, middleware, plugin, helper) already has one.
 		relNames := map[string]string{}
 		for _, field := range decl.Fields {
 			relNames[ToCamelCase(field.Name)] = "field " + field.Name
@@ -428,20 +319,13 @@ func ValidateAppSpec(bp AppSpec) error {
 			}
 		}
 	}
-	// Seed values are typed inserts the generated app runs through the
-	// CRUD validators at boot. Check them here. See validateAppSpecSeedTypes.
 	errs.add(validateAppSpecSeedTypes(bp, entitiesByName))
 	errs.add(ValidateAppSpecSeedStructure(bp, entitiesByName))
 	routes := map[string]bool{}
-	routeShapes := map[string]string{} // routeShape → the first route with it
-	screenFiles := map[string]string{} // file name → what writes it
-	screenTypes := map[string]string{} // generated type name → screen name
-	routesOf := map[string]string{}    // screen name → its route, for the error
-	// Two writers of one generated file emit it twice; the second write
-	// silently replaces the first and its routes never mount. A
-	// standalone screen writes screen_<name>.go, and an entity's screens
-	// share screen_<entity>_crud.go, so a screen named "Posts Crud"
-	// collides with the posts screens.
+	routeShapes := map[string]string{}
+	screenFiles := map[string]string{}
+	screenTypes := map[string]string{}
+	routesOf := map[string]string{}
 	claimFile := func(screen AppSpecScreen) {
 		file, owner := ScreenFileName(screen.Name), fmt.Sprintf("screen %q", screen.Name)
 		if e, ok := ScreenEntityRef(screen); ok {
@@ -496,9 +380,6 @@ func ValidateAppSpec(bp AppSpec) error {
 			continue
 		}
 		routes[screen.Route] = true
-		// The router tries dynamic screens in registration order, so
-		// /posts/{id} and /posts/{slug} (or /posts/:id) match the same
-		// URLs and the second never renders.
 		shape := RouteShape(screen.Route)
 		if prev, dup := routeShapes[shape]; dup {
 			errs.add(fmt.Errorf("app spec: screen routes %q and %q differ only in parameter names, so the router always matches the first and screen %q never renders; give one a literal segment or remove it", prev, screen.Route, screen.Name))
@@ -506,8 +387,6 @@ func ValidateAppSpec(bp AppSpec) error {
 		}
 		routeShapes[shape] = screen.Route
 		claimFile(screen)
-		// Every screen declares <Name>Screen and mount<Name>Screen in one
-		// package, whichever file it lands in, so the name is the app's.
 		typeName := ToCamelCase(screen.Name) + "Screen"
 		if prev, dup := screenTypes[typeName]; dup {
 			errs.add(fmt.Errorf("app spec: screens %q (%s) and %q (%s) both generate the type %s, so the app would not build; rename one", prev, routesOf[prev], screen.Name, screen.Route, typeName))
@@ -518,15 +397,8 @@ func ValidateAppSpec(bp AppSpec) error {
 		if _, err := ScreenTypeConst(screen.Type); err != nil {
 			errs.add(err)
 		}
-		// appSpecScreenLayoutExpr maps ANYTHING that is not "marketing" to
-		// appLayout, so a typo ("markting") silently renders a public marketing
-		// page inside the authenticated app shell; sidebar, account controls and
-		// all. Gating is `access`, not `layout`, so this is a wrong-chrome bug
-		// rather than a gate bypass; it is still a value the author believed they
-		// set and did not. Fail on it instead of guessing.
 		switch screen.Layout {
 		case "", "app", "marketing":
-			// recognized
 		default:
 			errs.add(fmt.Errorf("app spec: screen %q layout %q is not a layout; use \"app\", \"marketing\", or omit it", screen.Name, screen.Layout))
 		}
@@ -536,10 +408,6 @@ func ValidateAppSpec(bp AppSpec) error {
 		for _, block := range AppSpecBlocksDeep(screen.Body) {
 			errs.add(validateCreateFormCoversRequired(screen.Name, entitiesByName, bp.Hooks, block))
 		}
-		// entity_detail renders .Detail(ctx, s.id) and the list's "View" link is
-		// BasePath+"/"+id; entity_form mode:edit posts to {entity}/{id}. Both
-		// need the record id from a route param. A route with no {id} produces
-		// an empty render and a dead link that matches no registered route.
 		if detail, edit := ScreenNeedsRouteID(screen); detail || edit {
 			if len(RouteParamNames(screen.Route)) == 0 {
 				what := "entity_detail"
@@ -549,9 +417,6 @@ func ValidateAppSpec(bp AppSpec) error {
 				errs.add(fmt.Errorf("app spec: screen %q has an %s block but its route %q has no {id} parameter: add {id} (e.g. %s/{id}) so the record id is in the URL", screen.Name, what, screen.Route, strings.TrimRight(screen.Route, "/")))
 			}
 		}
-		// A composite-key record screen mounts its record param as one
-		// segment per key column, named after the columns: another param
-		// of the same name would be read for the key.
 		if keys := ScreenRecordKeys(bp, screen); keys != nil {
 			param := ScreenParamName(screen)
 			for _, n := range RouteParamNames(screen.Route) {
@@ -562,8 +427,6 @@ func ValidateAppSpec(bp AppSpec) error {
 		}
 		errs.add(validateAppSpecActions(screen.Name, screen.Body))
 	}
-	// The render adds a create screen per writable list; its file and its
-	// type join the same package as the authored ones.
 	for _, screen := range AppSpecSynthesizeCRUDScreens(bp).Screens[len(bp.Screens):] {
 		claimFile(screen)
 		typeName := ToCamelCase(screen.Name) + "Screen"
@@ -571,25 +434,12 @@ func ValidateAppSpec(bp AppSpec) error {
 			errs.add(fmt.Errorf("app spec: screen %q (%s) and the create screen a writable %s list adds at %s both generate the type %s, so the app would not build; rename the screen", prev, routesOf[prev], screen.Body[0].Entity, screen.Route, typeName))
 		}
 	}
-	// The render adds a create screen only where no authored screen sits,
-	// so an authored screen at <list>/create replaced the create form:
-	// the list's New opened a page with no form, and the generated e2e
-	// stayed green because it creates through the API.
 	for _, screen := range bp.Screens {
 		if e, ok := createFor[strings.TrimRight(screen.Route, "/")]; ok {
 			errs.add(fmt.Errorf("app spec: screen %q route %q is where the %s list's create: true adds the create screen, so the authored screen would replace the create form and New would open a page without one; move the screen, or drop the list's create: true to keep your own", screen.Name, screen.Route, e))
 		}
 	}
 	errs.add(ValidateAppSpecEndpoints(bp))
-	// Hooks are the sibling construct of endpoints: a surface the generated
-	// app must implement in owned Go (the handler stub) and the registry
-	// wiring. They get the same boundary checks endpoints get: a handler
-	// string that lands in identifier position must derive an identifier,
-	// and a hook whose entity or lifecycle point is wrong can never fire —
-	// the author believes a validation is enforced and no such hook exists.
-	// The kiln live preview already rejects these shapes (applyHooks:
-	// "missing entity" / mapHookType), so the generator refusing them keeps
-	// graduation from preview to app honest.
 	hookHandlers := map[string]bool{}
 	for _, hook := range bp.Hooks {
 		if hook.Entity == "" {
@@ -619,11 +469,6 @@ func ValidateAppSpec(bp AppSpec) error {
 		}
 		hookHandlers[handler] = true
 	}
-	// A nav item's icon is rendered as raw HTML inside the sidebar's icon
-	// slot (ui.SidebarItem.Icon is render.HTML, emitted unescaped), so an
-	// icon carrying markup is not styling, it is an injection into every
-	// page the shell renders. Icons are names or emoji; anything with
-	// markup characters is refused rather than sanitized.
 	var validateNavIcons func(items []AppSpecNavItem)
 	validateNavIcons = func(items []AppSpecNavItem) {
 		for _, item := range items {
@@ -662,11 +507,7 @@ func ValidateAppSpec(bp AppSpec) error {
 	return errs.err()
 }
 
-// AppSpecHookTypes maps the app spec/kiln `when` spellings to the
-// framework lifecycle constants the generated app registers. It is the
-// closed set mapHookType (kiln/render) accepts; the preview and the
-// generator must agree or a hook that fires in the preview fires nowhere
-// in the shipped app.
+// AppSpecHookTypes maps each hook when spelling to the framework lifecycle constant the generated app registers.
 var AppSpecHookTypes = map[string]string{
 	"before_create": "framework.BeforeCreate",
 	"after_create":  "framework.AfterCreate",
@@ -678,8 +519,7 @@ var AppSpecHookTypes = map[string]string{
 	"after_list":    "framework.AfterList",
 }
 
-// AppSpecNavIconSafe reports whether a nav icon can render in the
-// sidebar's raw-HTML icon slot without carrying markup with it.
+// AppSpecNavIconSafe reports whether a nav icon holds no markup or control character.
 func AppSpecNavIconSafe(icon string) bool {
 	for _, r := range icon {
 		switch {

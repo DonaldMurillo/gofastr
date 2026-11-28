@@ -294,6 +294,7 @@ var ownedPackages = []string{
 	"cmd/vettool",
 	// cmd/gofastr group E: the app spec and the project model.
 	"cmd/gofastr/internal/project",
+	"cmd/gofastr/internal/appspec",
 }
 
 //gofastr:test-reads primitives/ *.go

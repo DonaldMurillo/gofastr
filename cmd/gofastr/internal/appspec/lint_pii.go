@@ -8,23 +8,19 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/piicheck"
 )
 
-// piiFinding is one entity flagged by lintUnscopedPII.
 type piiFinding struct {
 	Entity string
 	Fields []string
 }
 
-// Message names the entity, the PII-shaped fields, and every remedy.
-// Enabling auth is deliberately NOT listed: SessionMiddleware is
-// pass-through, so auth alone leaves the rows world-readable.
+// Message names the entity, its PII-shaped fields and every remedy; enabling auth alone is not one.
 func (f piiFinding) Message() string {
 	return fmt.Sprintf(
 		"entity %q exposes PII-shaped field(s) %s via auto-CRUD/MCP with no scoping. Set owner_field: <column> for per-user rows, require a permission in access.read (RBAC), or set multi_tenant: true",
 		f.Entity, strings.Join(f.Fields, ", "))
 }
 
-// LintUnscopedPII returns one finding per auto-exposed entity with
-// PII-shaped fields and no scoping.
+// LintUnscopedPII returns one finding per auto-exposed entity with PII-shaped fields and no scoping.
 func LintUnscopedPII(bp AppSpec) []piiFinding {
 	var out []piiFinding
 	for _, decl := range bp.Entities {
@@ -39,8 +35,6 @@ func LintUnscopedPII(bp AppSpec) []piiFinding {
 		}
 		var pii []string
 		for _, field := range decl.Fields {
-			// FK columns typed `relation` reference PII rows, they don't
-			// hold PII; the target entity is checked on its own.
 			if strings.EqualFold(strings.TrimSpace(field.Type), "relation") {
 				continue
 			}
