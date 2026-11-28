@@ -17,54 +17,23 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/dev"
 )
 
-// What the hold says about the app while it holds the dev address.
 const (
 	holdBuilding    = "building"
 	holdBuildFailed = "build-failed"
 	holdExited      = "exited"
 )
 
-// holdDetailLimit caps the build output a hold page carries. A failing
-// build that prints more is cut from the front: the last lines name the
-// error the developer fixes next.
 const holdDetailLimit = 64 << 10
 
-// devHold answers the dev address while no app process is serving it:
-// during the first build, after a failed build, and after the app exits.
-// Without it a request in those windows gets "connection refused", which
-// reads as a dead server, and agents relaunched `gofastr dev` on top of
-// the one still running (issue #483). Every request gets a 503 with
-// Retry-After that says which of the three it is, the build or lint
-// output included.
-//
-// The hold never proxies. It closes its listener right before the app
-// starts, so the app binds the address itself and runs exactly as it
-// does without gofastr dev. Between that close and the app's own bind
-// the address refuses connections for as long as the app takes to boot.
-//
-// It also answers /__livereload, the endpoint an open app tab's reload
-// client reconnects to when the app goes away. It sends a ready event
-// only when there is an error to show: a tab sitting through an
-// ordinary rebuild never reloads into a "building" page, and when the
-// app comes back its new build ID reloads the tab as before.
-//
-// On a bind other machines can reach, the page carries no build or lint
-// output (absolute paths and quoted source; the terminal has it), and
-// /__livereload answers 404 unless dev.LiveReloadExposeEnv is set, the
-// same rule framework.App.Start applies to the app's own stream.
+const holdRelistenFor = 3 * time.Second
+
+// devHold answers the dev address while no app process serves it.
 type devHold struct {
-	addr     string // the bound address, reused on every relisten
-	idPrefix string
-	// exposed is a bind that is not loopback; liveReload is whether the
-	// hold serves /__livereload (always on loopback).
+	addr       string
+	idPrefix   string
 	exposed    bool
 	liveReload bool
-	// hosts are the Host authorities that name this machine's loopback
-	// bind (127.0.0.1:<port>, localhost:<port>, [::1]:<port>). A request
-	// naming any other host is a DNS-rebound page (evil.example resolving
-	// to 127.0.0.1), which reads the response as same-origin: it gets the
-	// page without the build output, as an exposed bind does.
-	hosts []string
+	hosts      []string
 
 	mu      sync.Mutex
 	ln      net.Listener
@@ -72,13 +41,11 @@ type devHold struct {
 	phase   string
 	detail  string
 	gen     int
-	changed chan struct{} // closed and replaced on every show
+	changed chan struct{}
 
-	listenMu sync.Mutex // one relisten at a time
+	listenMu sync.Mutex
 }
 
-// newDevHold binds addr now, so a busy address fails `gofastr dev` at
-// startup instead of after the first build.
 func newDevHold(addr string) (*devHold, error) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -101,9 +68,6 @@ func newDevHold(addr string) (*devHold, error) {
 	return h, nil
 }
 
-// boundLoopback reports a listener only this machine can reach. It reads
-// the address the kernel bound, so "localhost:8080" counts (it bound
-// 127.0.0.1) and ":8080" does not (it bound every interface).
 func boundLoopback(a net.Addr) bool {
 	tcp, ok := a.(*net.TCPAddr)
 	return ok && tcp.IP.IsLoopback()
@@ -115,9 +79,6 @@ func (h *devHold) serveLocked(ln net.Listener) {
 	go func() { _ = srv.Serve(ln) }()
 }
 
-// show records what the hold says and takes the address back if the
-// hold had released it. A nil hold does nothing, so callers without a
-// dev address (tests on :0) skip it.
 func (h *devHold) show(phase, detail string) {
 	if h == nil {
 		return
@@ -131,9 +92,6 @@ func (h *devHold) show(phase, detail string) {
 	h.relisten()
 }
 
-// relisten rebinds the address after a release. The app that held it
-// was just killed, and the kernel frees its socket when the process is
-// gone, so the first tries can still find it bound.
 func (h *devHold) relisten() {
 	h.listenMu.Lock()
 	defer h.listenMu.Unlock()
@@ -143,7 +101,7 @@ func (h *devHold) relisten() {
 	if serving {
 		return
 	}
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(holdRelistenFor)
 	for {
 		ln, err := net.Listen("tcp", h.addr)
 		if err == nil {
@@ -160,10 +118,6 @@ func (h *devHold) relisten() {
 	}
 }
 
-// release closes the listener and every open connection, livereload
-// streams included, so the app can bind the address and the open tabs
-// reconnect to it. It waits out a relisten still retrying, which would
-// otherwise bind the address after the release and keep the app off it.
 func (h *devHold) release() {
 	if h == nil {
 		return
@@ -173,8 +127,6 @@ func (h *devHold) release() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.srv != nil {
-		// Close the listener directly: Serve may not have registered it
-		// yet, and then srv.Close alone would leave the port bound.
 		_ = h.ln.Close()
 		_ = h.srv.Close()
 		h.ln, h.srv = nil, nil
@@ -191,8 +143,11 @@ func (h *devHold) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/__livereload":
 		if !h.liveReload {
-			// 404 is final to an EventSource: the tab stops asking.
 			http.NotFound(w, r)
+			return
+		}
+		if !h.exposed && !loopback.HostAllowed(r.Host, h.hosts) {
+			http.Error(w, "gofastr dev: this address answers only its own host names", http.StatusForbidden)
 			return
 		}
 		h.serveLiveReload(w, r)
@@ -204,9 +159,6 @@ func (h *devHold) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	phase, detail, gen, _ := h.state()
-	// Build output holds absolute paths and quoted source. It goes only to
-	// a loopback bind asked by a loopback name: a rebound page's Host is
-	// the attacker's own name.
 	withheld := h.exposed || !loopback.HostAllowed(r.Host, h.hosts)
 	if withheld {
 		detail = ""
@@ -227,15 +179,9 @@ func (h *devHold) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(http.StatusServiceUnavailable)
-	if r.Method != http.MethodHead {
-		_, _ = fmt.Fprint(w, body)
-	}
+	_, _ = fmt.Fprint(w, body)
 }
 
-// liveReload speaks the framework/dev livereload protocol: a ready
-// event carrying a build ID, where a changed ID reloads the page. The
-// hold's IDs never match an app's, so a ready event from the hold
-// reloads an app tab into the error page.
 func (h *devHold) serveLiveReload(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -264,10 +210,6 @@ func (h *devHold) serveLiveReload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// holdMessage is the page's title and lead. withheld means the page
-// carries no build output, so a failed build points at the terminal;
-// exposed says why: the bind is reachable from other machines, rather
-// than the request naming a host that is not this machine.
 func holdMessage(phase string, withheld, exposed bool) (title, lead string) {
 	switch phase {
 	case holdBuildFailed:
@@ -289,11 +231,6 @@ func holdMessage(phase string, withheld, exposed bool) (title, lead string) {
 	}
 }
 
-// holdScriptURL serves holdReloadJS, the hold page's reload client. It
-// reloads on any ready event whose build ID is not the page's own: the
-// hold's next state, or the app's build once it is up. framework/dev's
-// client cannot do this, since it ignores the first ID it sees and the
-// hold sends none while building.
 const holdScriptURL = "/__gofastr/dev-hold.js"
 
 const holdReloadJS = `(() => {
@@ -304,8 +241,6 @@ const holdReloadJS = `(() => {
   });
 })();`
 
-// holdPage is the browser's view of the hold. It is the dev tool's own
-// page, not an app surface: no stylesheet beyond the browser's.
 func holdPage(title, lead, detail, id string) string {
 	var b strings.Builder
 	b.WriteString(`<!doctype html><html lang="en"><head><meta charset="utf-8">`)
@@ -323,10 +258,6 @@ func holdPage(title, lead, detail, id string) string {
 
 var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
 
-// stripANSI removes ANSI escape sequences from build output, run until
-// nothing changes: one pass over "\x1b[\x1b[31m31m" removes the inner
-// sequence and splices the outer one back together. Each changing pass
-// shortens the string, so the loop ends.
 func stripANSI(s string) string {
 	for {
 		next := ansiEscape.ReplaceAllString(s, "")
@@ -344,9 +275,6 @@ func tailString(s string, limit int) string {
 	return "…" + strings.ToValidUTF8(s[len(s)-limit:], "")
 }
 
-// holdOutput collects what a rebuild prints for the hold page, keeping
-// the last holdDetailLimit bytes. go build writes stdout and stderr from
-// separate goroutines, so writes lock.
 type holdOutput struct {
 	mu sync.Mutex
 	b  []byte

@@ -14,19 +14,7 @@ func IsWildcardHost(host string) bool {
 	return false
 }
 
-// LoopbackGuards returns the Host authorities and browser Origins the
-// sidecar accepts for a listener bound at addr.
-//
-// Host-pinning is the DNS-rebinding defence. Without it, an attacker
-// who points their own domain at 127.0.0.1 makes the victim's browser
-// treat the sidecar as same-origin, which lets their JS read response
-// bodies, including the chat page's harness-token meta tag, and then
-// drive /v1/sessions/<id>/input and .../permission as an authenticated
-// client. Comparing Host against the bound authority breaks that: a
-// rebound request still carries the attacker's own name.
-//
-// Loopback and wildcard binds admit the standard loopback spellings.
-// Loopback binds also admit the bound authority. Other binds admit only their own authority.
+// LoopbackGuards returns the Host authorities and Origins a server bound at addr accepts.
 func LoopbackGuards(addr string) (hosts, origins []string) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -43,9 +31,6 @@ func LoopbackGuards(addr string) (hosts, origins []string) {
 	seen := make(map[string]bool, len(names))
 	for _, n := range names {
 		authority := net.JoinHostPort(n, port)
-		if strings.HasPrefix(n, "[") { // already bracketed
-			authority = n + ":" + port
-		}
 		if seen[authority] {
 			continue
 		}
@@ -68,9 +53,7 @@ func IsLoopbackHost(host string) bool {
 	return false
 }
 
-// HostAllowed reports whether the request's Host matches one of the
-// pinned authorities. An empty list means nothing was pinned, which
-// only happens if the caller skipped loopbackGuards: fail closed.
+// HostAllowed reports whether host matches an allowed authority, ignoring case.
 func HostAllowed(host string, allowed []string) bool {
 	for _, a := range allowed {
 		if strings.EqualFold(host, a) {

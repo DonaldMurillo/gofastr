@@ -1,0 +1,78 @@
+primitive: cli.projectfs
+summary: How the CLI reads and writes files in a project it may have cloned from anyone, through an os.Root on the project directory, following a symlink only while it stays in the project.
+code:
+  - cmd/gofastr/internal/projectfs/
+docs:
+  - framework/docs/content/security.md
+on_change:
+  - A command that writes into the user's project (init, new, theme, agents, unmount) goes through this package, never os.WriteFile or atomicfile on a joined path.
+  - Check and CheckRegularLeaf exist for what an os.Root cannot cover, a go or git subprocess or an editor that writes later, and for a refusal that must come before anything is written so a refused command leaves no half-made project.
+invariants:
+  - id: link-out-of-the-project-is-refused
+    rule: Resolve, and every reader and writer built on it, errors on a symlink whose target is absolute or climbs above the root, dangling or not, naming the link; a name that climbs above the root itself is refused too.
+    enforced_by:
+      - test: cmd/gofastr/internal/projectfs.TestResolve
+      - test: cmd/gofastr/internal/projectfs.TestCheck
+      - test: cmd/gofastr/internal/projectfs.TestReplaceRefusesALinkOutOfTheProject
+  - id: link-target-read-from-the-real-parent
+    rule: A relative link target, and a "..", is read from the directory the link really sits in, the resolved parent, as the kernel reads it.
+    enforced_by:
+      - test: cmd/gofastr/internal/projectfs.TestResolve
+      - test: cmd/gofastr/internal/projectfs.TestRegularLeafResolvesLinkedParentLikeLstat
+  - id: link-hops-are-bounded
+    rule: Resolve follows at most maxLinkHops (40) links and then errors with too many levels of symbolic links.
+    enforced_by:
+      - test: cmd/gofastr/internal/projectfs.TestResolve
+      - test: cmd/gofastr/internal/projectfs.TestResolveFollowsFortyLinks
+  - id: refusal-quotes-the-names
+    rule: The out-of-project error quotes the link's path and its target with %q, so a control byte in a checkout's names never reaches the terminal raw.
+    enforced_by:
+      - test: cmd/gofastr/internal/projectfs.TestOutOfProjectErrorCarriesNoLiveEscapes
+  - id: replace-writes-the-link-target
+    rule: Replace follows an in-project link at name and renames over its target, so the link stays a link.
+    enforced_by:
+      - test: cmd/gofastr/internal/projectfs.TestReplaceWritesThroughAnInProjectLink
+  - id: replace-keeps-the-mode
+    rule: Replace keeps an existing file's permission bits and refuses one without its owner write bit.
+    enforced_by:
+      - test: cmd/gofastr/internal/projectfs.TestReplaceKeepsAnExistingMode
+      - test: cmd/gofastr/internal/projectfs.TestReplaceRefusesAReadOnlyFile
+  - id: fixed-mode-refuses-a-leaf-link
+    rule: ReplaceFixedMode refuses a symlink at name and leaves the file at exactly the mode given.
+    enforced_by:
+      - test: cmd/gofastr/internal/projectfs.TestReplaceFixedModeRefusesALeafLinkAndSetsTheMode
+  - id: secret-goes-into-a-regular-owner-only-file
+    rule: ReplaceOwnerOnly and CheckRegularLeaf refuse a symlink at name whatever it points at, in the project or out, dangling or not, and refuse a directory; the file written is owner-only whatever mode it had.
+    enforced_by:
+      - test: cmd/gofastr/internal/projectfs.TestOwnerOnlyWriterRefusesALinkAtTheLeaf
+      - test: cmd/gofastr/internal/projectfs.TestReplaceOwnerOnlyTightensAnExistingFile
+  - id: lstat-does-not-follow-the-leaf
+    rule: Lstat and LstatFile report a link at name as a link, so a dangling one counts as present.
+    enforced_by:
+      - test: cmd/gofastr/internal/projectfs.TestLstatSeesADanglingLink
+  - id: split-confines-project-paths
+    rule: Split confines a local path, and an absolute path whose directory is the working directory or one inside it under any spelling (a link to either, macOS /var for /private/var), to the working directory, and confines only the last element of any other path.
+    enforced_by:
+      - test: cmd/gofastr/internal/projectfs.TestSplit
+      - test: cmd/gofastr/internal/projectfs.TestSplitAbsoluteUnderTheWorkingDirectory
+      - test: cmd/gofastr/internal/projectfs.TestSplitThroughALinkToTheWorkingDirectory
+      - test: cmd/gofastr/internal/projectfs.TestSplitThroughALinkToAProjectSubdirectory
+decisions:
+  - id: confine-through-os-root
+    date: 2026-11-28
+    status: accepted
+    decision: Every project read and write goes through an os.Root on the project directory, following a link that stays in the project and refusing one that leaves.
+    rejected:
+      - option: Join the path onto the project directory and use os.WriteFile, os.ReadFile or atomicfile.Rewrite.
+        why: Those follow every link on the way, so a cloned repo's .gitignore -> ~/.bashrc had `gofastr init .` append to the user's shell profile, and static -> /elsewhere created files outside the project.
+      - option: Refuse every symlink.
+        why: A link inside the project is ordinary layout, and a write through it lands where the project means it to.
+    upholds: [link-out-of-the-project-is-refused, replace-writes-the-link-target]
+  - id: no-link-at-a-secret-file
+    date: 2026-11-28
+    status: accepted
+    decision: A file the CLI writes a secret into must be a regular file or missing; a symlink there is refused even when it stays in the project.
+    rejected:
+      - option: Follow an in-project link as Replace does.
+        why: The link still chooses which file gets the secret, and `init . --force` with .env -> static/robots.txt wrote a generated JWT_SECRET into a committed, statically served file.
+    upholds: [secret-goes-into-a-regular-owner-only-file]
