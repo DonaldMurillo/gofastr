@@ -25,6 +25,7 @@ invariants:
     rule: HasHelpFlagBeforeTerminator and HasFlagBeforeTerminator ignore every argument after the first "--", while HasHelpFlag scans them all.
     enforced_by:
       - test: cmd/gofastr/internal/cli.TestHelpFlagBoundaries
+      - test: cmd/gofastr/internal/cli.TestFlagBeforeTerminator
       - test: cmd/gofastr.TestJSONModeDecisions
 decisions:
   - id: next-flag-is-not-a-value
