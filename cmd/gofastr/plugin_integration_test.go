@@ -686,4 +686,9 @@ func TestMigrateBuiltinRefusesFilteredDB(t *testing.T) {
 	if code != 1 || !strings.Contains(errOut, "DATABASE_URL was stripped") {
 		t.Fatalf("expected --builtin migrate refusal when DATABASE_URL was stripped: code=%d err=%q", code, errOut)
 	}
+
+	out, errOut, code := runDispatch(t, "--builtin", "migrate", "--help")
+	if code != 0 || strings.Contains(errOut, "DATABASE_URL was stripped") || !strings.Contains(out+errOut, "Usage") {
+		t.Fatalf("--builtin migrate --help should print usage, not refuse: code=%d out=%q err=%q", code, out, errOut)
+	}
 }
