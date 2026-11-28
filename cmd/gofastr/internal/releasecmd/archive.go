@@ -11,19 +11,14 @@ import (
 	"time"
 )
 
-// archiveFile is one entry of a release archive. Entries sit at the
-// archive root, so the install scripts find the binary by its name.
 type archiveFile struct {
-	name string // entry name: a base name, never a path
-	src  string // file whose bytes the entry holds
+	name string
+	src  string
 	mode fs.FileMode
 }
 
-// epoch is every entry's modification time. Fixed times, owners and
-// order make two archives of the same build byte-identical.
 var epoch = time.Unix(0, 0).UTC()
 
-// writeTarGz writes files as a gzip-compressed tar to w.
 func writeTarGz(w io.Writer, files []archiveFile) error {
 	gz, err := gzip.NewWriterLevel(w, gzip.BestCompression)
 	if err != nil {
@@ -75,7 +70,6 @@ func addTarEntry(tw *tar.Writer, f archiveFile) error {
 	return nil
 }
 
-// writeZip writes files as a deflated zip to w.
 func writeZip(w io.Writer, files []archiveFile) error {
 	zw := zip.NewWriter(w)
 	for _, f := range files {
@@ -99,7 +93,6 @@ func addZipEntry(zw *zip.Writer, f archiveFile) error {
 	if !fi.Mode().IsRegular() {
 		return fmt.Errorf("%s is not a regular file", f.src)
 	}
-	// A zero Modified keeps timestamps out of the archive.
 	hdr := &zip.FileHeader{Name: f.name, Method: zip.Deflate}
 	hdr.SetMode(f.mode)
 	dst, err := zw.CreateHeader(hdr)

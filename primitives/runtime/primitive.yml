@@ -7,6 +7,18 @@ docs:
   - framework/docs/content/reactivity.md
 on_change:
   - A new or renamed data-cui-* attribute gets its row in the core-ui/ARCHITECTURE.md attribute table and a runtime test in the same change.
+twins:
+  - job: Raise an element into the top layer as a manual popover, and drop the popover attribute when the browser refuses, since a [popover] out of the top layer is not drawn.
+    why: Each module that raises something loads on its own, and none can count on another being there; the headless modules cannot assume the widget runtime is loaded (disclosure and tooltip run on pages with none, and a toast can show before widgets.js arrives), and the popover module is the step's only caller in the runtime.
+    sites:
+      - path: core-ui/runtime/src/popover.js
+        note: place(), for an anchored popover's widget root.
+      - path: framework/headless/feedback.js
+        note: syncLayer, for a toast stack's widget, which may rise before widgets.js loads.
+      - path: framework/headless/disclosure.js
+        note: lift, for a menu or dropdown panel the kit's sheet anchors.
+      - path: framework/headless/tooltip.js
+        note: the upgrade and open of a Tooltip's pop; exempt from dropping the attribute, since the tip shows only while open and a refused show leaves it closed until the next hover or focus tries again. A browser that always refuses never shows the tip, because the upgrade turns the sheet's hover reveal off (since pull request 919).
 invariants:
   - id: sinks-go-through-the-trusted-types-policy
     rule: The kernel creates exactly one Trusted Types policy, named middleware.TrustedTypesPolicy, and every HTML string and script URL the runtime, its modules and the shipped behaviours hand the DOM passes through it, so a page under the default CSP raises no Trusted Types violation on first load, module loads, a poll swap, an html-mode signal, a navigation inside or across shells, or Back.
@@ -111,6 +123,15 @@ invariants:
     enforced_by:
       - test: core-ui/runtime.TestHeldClickNeverLandsAfterALaterClick
       - test: examples/site/tracker.TestTrackerSupersedingPointerClicksKeepRingOff
+  - id: anchored-popover-is-on-the-top-layer
+    rule: An anchored popover widget's root is a manual popover while open, so it shows above whatever is already in the top layer, still placed beside its trigger by the module; it leaves the top layer when the widget closes, so a hydrated root that is only re-hidden rises above later layers when it reopens, and a root that a page swap re-attaches or a closing dialog hands back to <body> rises again, never left hidden out of the top layer; a showPopover that throws drops the popover attribute so the root still draws, and a browser without the Popover API is never asked about :popover-open, so the popover is still placed.
+    enforced_by:
+      - test: core-ui/runtime.TestAnchoredPopoverOpensAboveTheTopLayer
+      - test: core-ui/runtime.TestHydratedPopoverReopensAboveALaterPopover
+      - test: core-ui/runtime.TestReattachedPopoverRisesAgain
+      - test: core-ui/runtime.TestPopoverMovedByAClosingDialogRisesAgain
+      - test: core-ui/runtime.TestPopoverTheBrowserWillNotRaiseStillDraws
+      - test: core-ui/runtime.TestPopoverWithoutThePopoverAPIIsStillPlaced
   - id: escape-waits-for-widgetfocus
     rule: An Escape pressed while a modal or popover is open and the demand-loaded widgetfocus module has not registered yet is handed to that module once it loads, so it closes the top layer instead of being lost, unless a layer opened or closed in between; an Escape that belongs to an IME is never forwarded.
     enforced_by:
@@ -156,6 +177,16 @@ invariants:
       - test: core-ui/runtime.TestAutogrowUsesFieldSizing
       - test: core-ui/runtime.TestHiddenTextareaGrowsOnReveal
 decisions:
+  - id: anchored-popover-placement-stays-in-script
+    date: 2026-11-28
+    status: accepted
+    decision: The anchored popover joins the top layer as a manual popover but keeps the module's script placement and arrow; CSS anchor positioning waits until anchored container queries ship in Safari and Firefox, and then replaces the script outright.
+    rejected:
+      - option: position-area and position-try-fallbacks now, the script kept for browsers without them.
+        why: The arrow points at the trigger from the side the popover took, and only anchored container queries tell CSS which fallback the browser chose; with them in Chromium alone, two placers would have to agree on every side and clamp.
+      - option: Leave the popover out of the top layer.
+        why: A menu, toast stack or tooltip already in the top layer covered it, and the top layer is the part that changes what a reader can see and reach.
+    upholds: [anchored-popover-is-on-the-top-layer]
   - id: pass-through-trusted-types-policy
     date: 2026-11-21
     status: accepted

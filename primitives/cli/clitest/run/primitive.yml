@@ -1,0 +1,89 @@
+primitive: cli.clitest.run
+summary: The run harness CLI test packages share - Main's short temp root and cleanup, the module root, the gofastr binary and vettool built once per test binary, generated trees shared by key, process-tree control and the helpers that boot and wait on a child server.
+code:
+  - cmd/gofastr/internal/clitest/main.go
+  - cmd/gofastr/internal/clitest/root.go
+  - cmd/gofastr/internal/clitest/testbin.go
+  - cmd/gofastr/internal/clitest/vettool.go
+  - cmd/gofastr/internal/clitest/sharedtree.go
+  - cmd/gofastr/internal/clitest/testproc_unix.go
+  - cmd/gofastr/internal/clitest/testproc_windows.go
+  - cmd/gofastr/internal/clitest/dev_e2e.go
+docs:
+  - docs/contributing.md
+on_change:
+  - A package that runs `go vet` with its test binary as the vettool calls verifycmd.RunAsVettoolIfMarked in TestMain before clitest.Main.
+invariants:
+  - id: shared-tree-prepared-once
+    rule: SharedTree and SharedScratchPackage run prepare once per key for the life of the test binary, and every caller with that key, concurrent ones included, gets the same directory.
+    enforced_by:
+      - test: cmd/gofastr/internal/clitest.TestSharedTreePreparesOncePerKey
+      - test: cmd/gofastr/internal/clitest.TestSharedScratchPackagePreparesOnceAndIsRemoved
+  - id: prepare-failure-is-shared
+    rule: A prepare that returns an error fails every caller of its key with that error and is not retried, and one that panics fails its own caller and leaves a "panicked" error for every later one.
+    enforced_by:
+      - test: cmd/gofastr/internal/clitest.TestSharedTreeGivesEveryCallerThePrepareError
+      - test: cmd/gofastr/internal/clitest.TestSharedTreeAfterAPanickingPrepareFails
+  - id: shared-trees-need-main
+    rule: SharedTree fails its caller when the package's TestMain did not run clitest.Main, and SharedScratchPackage also when no go.mod sits above the working directory, so no tree is made that nothing removes.
+    enforced_by:
+      - test: cmd/gofastr/internal/clitest.TestSharedTreeNeedsMain
+      - test: cmd/gofastr/internal/clitest.TestSharedScratchPackageRefusesWithoutMainOrModule
+  - id: scratch-packages-removed
+    rule: Every scratch package SharedScratchPackage made, one whose prepare failed included, is removed at the end of the run.
+    enforced_by:
+      - test: cmd/gofastr/internal/clitest.TestSharedScratchPackagePreparesOnceAndIsRemoved
+  - id: copy-tree-is-separate
+    rule: CopyTree returns a new directory under the test's own temp dir, and writing into it leaves the source tree as it was.
+    enforced_by:
+      - test: cmd/gofastr/internal/clitest.TestCopyTreeLeavesTheSourceAlone
+  - id: shared-trees-are-read-only
+    rule: A test writes into a directory SharedTree or SharedScratchPackage returned only the runtime files its app makes when it boots, and does every other write in a CopyTree copy.
+    judge: Does this change write a file (a probe, an edited source, a swapped catalog) into a directory that clitest.SharedTree or SharedScratchPackage returned, instead of into a CopyTree copy?
+    applies:
+      - cmd/gofastr/
+  - id: module-root-optional-at-init
+    rule: The module root is looked up once at package init and is empty, not a panic, when no go.mod sits above the working directory, so a test binary re-executed from a temp directory starts; RepoRootDir and the shared builds fail only the caller that needs it.
+    enforced_by:
+      - test: cmd/gofastr/internal/clitest.TestFindModuleRootOutsideAModuleIsEmpty
+      - test: cmd/gofastr/internal/clitest.TestSharedScratchPackageRefusesWithoutMainOrModule
+  - id: binary-from-the-working-tree
+    rule: A CLI test that runs gofastr as a subprocess runs the binary GofastrTestBinary builds once from the working tree's cmd/gofastr by import path, never a gofastr found on PATH or a copy of its own.
+    judge: Does this change make a test run a gofastr binary other than clitest.GofastrTestBinary's, such as one on PATH or one it builds itself?
+    applies:
+      - cmd/gofastr/
+  - id: vettool-callers-declare-their-reads
+    rule: Every test file under cmd/gofastr that calls RepoVettool declares //gofastr:test-reads naming internal/analyzers/, since the subprocess build of cmd/vettool shows no import edge for cmd/affected to follow.
+    enforced_by:
+      - test: cmd/gofastr/internal/clitest.TestRepoVettoolCallersDeclareTheirReads
+    applies:
+      - cmd/gofastr/
+  - id: kill-reaches-the-whole-tree
+    rule: KillTestProcessTree kills every process the started command spawned, through the process group ConfigureTestProcessGroup set on Unix and taskkill /T on Windows, so a dev watcher's compiled server does not keep its port.
+    enforced_by:
+      - test: cmd/gofastr/internal/clitest.TestKillTestProcessTreeKillsTheChildsChildren
+decisions:
+  - id: one-short-temp-root-per-run
+    date: 2026-11-01
+    status: accepted
+    decision: Main points TMPDIR, TMP and TEMP at one short temp root it removes after the run, and the shared trees, binaries and dev build directories live under it.
+    rejected:
+      - option: Leave the system temp directory in place.
+        why: "`gofastr dev` removes its build directory only on a clean shutdown, which in-process tests never reach, so every run leaked one; a long root also pushes service socket paths past the Unix limit."
+  - id: shared-builds
+    date: 2026-11-01
+    status: accepted
+    decision: The gofastr binary, the vettool and each generated app tree are built once per test binary and shared.
+    rejected:
+      - option: Each test builds its own.
+        why: Every link of the full CLI costs seconds even from the build cache, and twenty tests paid it each.
+    upholds: [shared-tree-prepared-once, binary-from-the-working-tree]
+  - id: dev-children-get-their-own-temp-and-axe-root
+    date: 2026-11-01
+    status: accepted
+    decision: DevTempEnv gives a spawned `gofastr dev` temp directories under the test's own and an empty GOFASTR_AXE_COVERAGE_DIR.
+    rejected:
+      - option: Inherit the test's temp directory.
+        why: The harnesses SIGKILL the dev server, which then never removes its build directory.
+      - option: Inherit the module root's axe-coverage manifest.
+        why: Strict mode checks the manifest under `gofastr dev`, and one example's scans leave a manifest missing another's screens, so that example's boot panics in a test about the dev loop.

@@ -4,11 +4,6 @@ import (
 	"fmt"
 )
 
-// subcommand_usage.go collects the short --help usage blocks for the
-// subcommands whose --help is routed in by main.ownsHelp. Each begins with
-// the `Usage: gofastr <cmd>` line that TestSubcommandHelpIsCommandSpecific
-// keys on; keep that anchor when editing.
-
 func printBuildUsage() {
 	fmt.Println(`Usage: gofastr build [--no-generate] [--no-a11y] [--no-embed-check] [--no-contracts] [--allow-unverified-embeds] [--pkg=<path>] [-o=<output>]
 

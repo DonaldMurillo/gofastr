@@ -19,34 +19,17 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/bom"
 )
 
-// packCheck is what pack reports beside the spec it writes: the Go files it
-// left out as hand-written, the files the packed spec generates
-// differently from what is on disk (or that are not on disk), and the
-// files it could not read, which pack left out of the spec too.
 type packCheck struct {
 	HandWritten []string
 	Unrecovered []packFileNote
 	Unread      []packFileNote
 }
 
-// packFileNote is one file the packed spec does not reproduce, and why.
 type packFileNote struct {
 	Path string
 	Note string
 }
 
-// checkPack regenerates the app from the packed spec and compares each Go
-// file pack's layout covers (the app root and entities/) with the file on
-// disk, provenance markers aside. A file the spec reproduces byte for byte
-// was recovered. The marker says why one was not: edited since it was
-// generated, untouched and still different (pack lost part of it), or
-// unmarked (written before markers, or by hand). An unmarked file the spec
-// does not generate at all is hand-written and outside the spec, and so is
-// a file an endpoint links: the spec names the handler, the body is the
-// developer's. Files
-// another generator marked are not the app generator's to recover. Line
-// endings and a byte order mark are not differences: a Windows checkout
-// holds the same code.
 func checkPack(dir string, bp appspec.AppSpec) (packCheck, error) {
 	var c packCheck
 	rendered, err := appgen.RenderAppSpecCode(bp)
@@ -59,8 +42,6 @@ func checkPack(dir string, bp appspec.AppSpec) (packCheck, error) {
 	want := map[string]string{}
 	handlers := endpointHandlerFiles(bp)
 	for _, f := range rendered {
-		// The renderer joins with the OS separator; the check walks the
-		// app with slash paths.
 		name := filepath.ToSlash(f.Name)
 		if !appgen.IsProductionGoSource(name) || !slices.Contains(packCheckDirs, path.Dir(name)) || handlers[name] {
 			continue
@@ -81,7 +62,6 @@ func checkPack(dir string, bp appspec.AppSpec) (packCheck, error) {
 	for _, rel := range files {
 		seen[rel] = true
 		if handlers[rel] {
-			// The spec links the handler; its body is the developer's.
 			c.HandWritten = append(c.HandWritten, rel)
 			continue
 		}
@@ -128,10 +108,6 @@ func checkPack(dir string, bp appspec.AppSpec) (packCheck, error) {
 	return c, nil
 }
 
-// untouchedNote says why an untouched marked file differs from what the
-// packed spec generates. Pack lost part of it when this release wrote the
-// file; when another release wrote it, the template may have changed
-// instead. A dev build cannot tell, so the note says either may hold.
 func untouchedNote(version string) string {
 	current := appgen.MarkerVersion(project.CliVersion())
 	switch {
@@ -150,15 +126,8 @@ func withSection(rel, note string) string {
 	return note
 }
 
-// packCheckHeader is how much of a file the check reads to find a marker
-// before it knows it needs the rest: more than the marker's header lines
-// of any generated file.
 const packCheckHeader = 64 << 10
 
-// readPackCheckFile reads rel for the check with line endings and a byte
-// order mark normalized. A file the spec does not generate is read in
-// full only when its header carries a marker: an unmarked one is
-// hand-written whatever follows, so its first bytes are enough.
 func readPackCheckFile(root *os.Root, rel string, generated bool) (string, error) {
 	f, err := appgen.OpenRegularSource(root, rel)
 	if err != nil {
@@ -188,19 +157,12 @@ func packReadErr(err error) error {
 	return fmt.Errorf("could not read it: %v", err)
 }
 
-// normalizePackSource drops a UTF-8 byte order mark and turns CRLF line
-// endings into LF.
 func normalizePackSource(s string) string {
 	return strings.ReplaceAll(bom.Trim(s), "\r\n", "\n")
 }
 
-// packCheckDirs are the directories pack reads Go files from.
 var packCheckDirs = []string{".", "entities"}
 
-// packCheckFiles lists the files the check compares, sorted: those in
-// scope at the app root and directly under entities/, the layout
-// pack reads. An entry in scope that is not a regular file (a symlink)
-// is skipped, as pack skips it, and returned with why.
 func packCheckFiles(root *os.Root) (files []string, skipped []packFileNote) {
 	for _, d := range packCheckDirs {
 		entries, err := appgen.RootReadDirEntries(root, d)
@@ -228,8 +190,6 @@ func packCheckFiles(root *os.Root) (files []string, skipped []packFileNote) {
 	return files, skipped
 }
 
-// packSection names the part of the spec a generated file carries, so a
-// note says what the packed spec may be missing.
 func packSection(rel string) string {
 	base := path.Base(rel)
 	switch {
@@ -247,7 +207,6 @@ func packSection(rel string) string {
 	return ""
 }
 
-// reportPackCheck prints the check through packNote.
 func reportPackCheck(c packCheck, toStderr bool) {
 	if len(c.HandWritten) > 0 {
 		packNote(toStderr, "pack: %d hand-written file(s) are not in the spec: %s", len(c.HandWritten), strings.Join(c.HandWritten, ", "))
@@ -266,14 +225,6 @@ func reportPackCheck(c packCheck, toStderr bool) {
 	}
 }
 
-// packNote is a pack warning. With no -o the YAML is stdout and
-// `pack > gofastr.yml` is the documented pipe, so the warning goes to
-// stderr: a line ahead of the document is not valid YAML.
-// The stderr spellings carry no color: yellow and red key on stdout's
-// terminal, not stderr's.
-//
-// The message names files and values from the app directory, so it is
-// scrubbed (packMessage) before it reaches the terminal.
 func packNote(toStderr bool, format string, args ...any) {
 	msg := packMessage(format, args...)
 	if toStderr {
@@ -283,7 +234,6 @@ func packNote(toStderr bool, format string, args ...any) {
 	cli.Warn("%s", msg)
 }
 
-// packFail reports a pack error and exits 1.
 func packFail(toStderr bool, format string, args ...any) {
 	msg := packMessage(format, args...)
 	if toStderr {
@@ -294,10 +244,6 @@ func packFail(toStderr bool, format string, args ...any) {
 	cli.OsExit(1)
 }
 
-// packMessage formats a pack note with every terminal-control and
-// invisible rune percent-encoded (textsafe.ScrubControlBytes): a file
-// name or source string carrying an ESC, an 8-bit CSI/OSC or a bidi
-// override would otherwise drive the terminal the note prints to.
 func packMessage(format string, args ...any) string {
 	return textsafe.ScrubControlBytes(fmt.Sprintf(format, args...))
 }

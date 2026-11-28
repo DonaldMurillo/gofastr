@@ -4,6 +4,7 @@ import (
 	"debug/elf"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
@@ -15,25 +16,26 @@ func TestLinuxDesktopBuildRejectsUnsupportedOptions(t *testing.T) {
 		name  string
 		flags desktopBuildFlags
 		exe   string
+		want  string
 	}{
-		{"sign", desktopBuildFlags{sign: "identity"}, "App"},
-		{"no-sign", desktopBuildFlags{noSign: true}, "App"},
-		{"notarize", desktopBuildFlags{notarize: true}, "App"},
-		{"entitlements", desktopBuildFlags{entitlements: "rights.plist"}, "App"},
-		{"invalid scheme", desktopBuildFlags{scheme: "Invalid Scheme"}, "App"},
-		{"icon", desktopBuildFlags{icon: "icon.png"}, "App"},
-		{"dot", desktopBuildFlags{}, "."},
-		{"parent", desktopBuildFlags{}, ".."},
+		{"sign", desktopBuildFlags{sign: "identity"}, "App", "macOS-only"},
+		{"no-sign", desktopBuildFlags{noSign: true}, "App", "macOS-only"},
+		{"notarize", desktopBuildFlags{notarize: true}, "App", "macOS-only"},
+		{"entitlements", desktopBuildFlags{entitlements: "rights.plist"}, "App", "macOS-only"},
+		{"invalid scheme", desktopBuildFlags{scheme: "Invalid Scheme"}, "App", "--scheme"},
+		{"icon", desktopBuildFlags{icon: "icon.png"}, "App", "icon packaging"},
+		{"dot", desktopBuildFlags{}, ".", "--name must name an executable"},
+		{"parent", desktopBuildFlags{}, "..", "--name must name an executable"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if err := buildLinuxDesktop(test.flags, test.exe); err == nil {
-				t.Fatal("unsupported build accepted")
+			if err := buildLinuxDesktop(test.flags, test.exe); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("unsupported build: err = %v, want one naming %q", err, test.want)
 			}
 		})
 	}
 	t.Setenv("GOARCH", "386")
-	if err := buildLinuxDesktop(desktopBuildFlags{}, "App"); err == nil {
-		t.Fatal("unsupported architecture accepted")
+	if err := buildLinuxDesktop(desktopBuildFlags{}, "App"); err == nil || !strings.Contains(err.Error(), "amd64 and arm64") {
+		t.Fatalf("unsupported architecture: err = %v", err)
 	}
 }
 

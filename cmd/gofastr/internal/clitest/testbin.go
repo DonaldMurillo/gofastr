@@ -8,11 +8,7 @@ import (
 	"sync"
 )
 
-// SharedGofastrBin is the one gofastr binary the whole test package drives.
-// Twenty tests used to run `go build -o <tempdir>/gofastr .` each; the
-// compile is served from the build cache, but every link of the full CLI
-// (framework + cgo sqlite) still costs seconds, and the suite paid it per
-// test. Build once, on first use, and let TestMain remove the directory.
+// SharedGofastrBin is the one gofastr binary a test package drives.
 var SharedGofastrBin struct {
 	once sync.Once
 	Dir  string
@@ -20,10 +16,7 @@ var SharedGofastrBin struct {
 	err  error
 }
 
-// GofastrTestBinary returns the path of the shared gofastr binary, building
-// it on the first call. The binary is built from the working tree's
-// cmd/gofastr, never a stale `gofastr` on PATH, by import path from the
-// module root: the calling package's directory is not the main package.
+// GofastrTestBinary returns the shared binary, built from the working tree on the first call.
 func GofastrTestBinary() (string, error) {
 	SharedGofastrBin.once.Do(func() {
 		if moduleRoot == "" {

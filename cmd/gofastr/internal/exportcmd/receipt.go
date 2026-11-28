@@ -18,23 +18,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// firstReceiptVersion is the first GoFastr release whose App.Start
-// writes framework.ExportReceiptFile. An app pinned to an older release
-// exports without one, so its exit status stays the only signal.
 const firstReceiptVersion = "v0.96.0"
 
-// maxReceiptBytes bounds the receipt read: it is a few dozen bytes.
 const maxReceiptBytes = 4 << 10
 
 type receiptPolicy int
 
 const (
-	// receiptUnknown: the app's framework may predate receipts (an older
-	// pin, a replace directive, no go.mod found), so a missing receipt
-	// is a warning.
 	receiptUnknown receiptPolicy = iota
-	// receiptRequired: the app's framework writes one, so a missing
-	// receipt means nothing was exported.
 	receiptRequired
 )
 
@@ -45,9 +36,6 @@ func (p receiptPolicy) String() string {
 	return "unknown"
 }
 
-// exportReceiptPolicy reads the go.mod around pkg (a directory path; an
-// import path falls back to the working directory) for the GoFastr
-// version the app builds against.
 func exportReceiptPolicy(pkg string) receiptPolicy {
 	dir := "."
 	if info, err := os.Stat(pkg); err == nil && info.IsDir() {
@@ -61,8 +49,6 @@ func exportReceiptPolicy(pkg string) receiptPolicy {
 	if root == "" {
 		return receiptUnknown
 	}
-	// A package inside this repository builds against the framework
-	// source next to it, which writes the receipt.
 	if mod == project.GofastrModule || strings.HasPrefix(mod, project.GofastrModule+"/") {
 		return receiptRequired
 	}
@@ -76,7 +62,6 @@ func exportReceiptPolicy(pkg string) receiptPolicy {
 	return receiptUnknown
 }
 
-// newExportRun mints the id the app writes back in its receipt.
 func newExportRun() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
@@ -85,8 +70,6 @@ func newExportRun() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// clearReceipt removes a receipt an earlier run left in dir, so it can
-// never stand in for this one.
 func clearReceipt(dir string) error {
 	err := os.Remove(filepath.Join(dir, framework.ExportReceiptFile))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -95,8 +78,6 @@ func clearReceipt(dir string) error {
 	return nil
 }
 
-// readReceipt returns the receipt in dir and removes it, so it does not
-// ship with the site. ok is false when there is none.
 func readReceipt(dir string) (run string, pages int, ok bool, err error) {
 	path := filepath.Join(dir, framework.ExportReceiptFile)
 	f, err := os.Open(path)

@@ -12,40 +12,20 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/contractsrun"
 )
 
-// devContractWatch reports contract findings in the dev loop, after the
-// reload rather than before it.
-//
-// The RFC's long-term goal is inline diagnostics as you type. This is the
-// practical approximation: you already save and wait for a rebuild, so
-// the findings arrive in that same beat, but they must not delay it.
-// Analysis takes about a second on a large tree, and a second added to
-// every save is the difference between a loop people use and one they
-// turn off. So the server restarts first, this runs behind it, and the
-// report prints when it is ready.
-//
-// Scoped with --changed semantics: a dev loop that prints findings from
-// code you have not touched is noise. The analysis still runs whole-tree
-// (route tables and entity lists are only meaningful whole); only the
-// reporting narrows.
 type devContractWatch struct {
-	root string
-	// mu guards running and pending, so a burst queues only one trailing pass.
-	mu      sync.Mutex
-	running bool
-	pending bool
-	// lastSummary suppresses reprinting an unchanged report. Saving a
-	// file with the same findings should be quiet, or the loop trains you
-	// to ignore it.
+	root        string
+	mu          sync.Mutex
+	running     bool
+	pending     bool
 	lastSummary string
 }
 
+// NewDevContractWatch returns the contract report for the project at root.
 func NewDevContractWatch(root string) *devContractWatch {
 	return &devContractWatch{root: root}
 }
 
-// Run analyses in the background and prints any findings. It returns
-// immediately; saves during an in-flight analysis coalesce into one
-// trailing pass over the latest source.
+// Run starts an analysis in the background and returns; calls during one queue a single trailing pass.
 func (w *devContractWatch) Run() {
 	w.mu.Lock()
 	if w.running {
@@ -79,9 +59,6 @@ func (w *devContractWatch) Run() {
 }
 
 func (w *devContractWatch) analyse() {
-	// Every failure of the analysis ITSELF is reported, once. A silent
-	// return here leaves the loop printing nothing while the analyzers
-	// have not actually looked, and in a loop, nothing reads as "clean".
 	baselinePath := contracts.BaselineFileName
 	if w.root != "" && w.root != "." {
 		baselinePath = strings.TrimSuffix(w.root, "/") + "/" + baselinePath
@@ -91,12 +68,6 @@ func (w *devContractWatch) analyse() {
 		w.printErrOnce(err)
 		return
 	}
-	// Narrow to what is actually being worked on. Outside a repository
-	// this returns nil and nothing narrows, which is the right fallback.
-	// A repository where the changed-set CANNOT be computed, whether
-	// from no commits yet or a broken index, also falls back to the
-	// whole tree, but says so: silently widening the report is how
-	// "what did I just break" becomes "what is wrong with everything".
 	var note string
 	files, cerr := contracts.ChangedFiles(w.root, "")
 	switch {
@@ -119,12 +90,6 @@ func (w *devContractWatch) analyse() {
 	w.printOnce(note + w.Summarise(report))
 }
 
-// printErrOnce reports a failure of the analysis itself, whether in
-// config, scan, run, or baseline, once per distinct message, under a
-// plain warning rather than the findings header. The "err:" key keeps
-// an error from colliding with a findings summary in the dedupe, and a
-// later clean or failing run replaces it, so recovery is announced like
-// any other transition.
 func (w *devContractWatch) printErrOnce(err error) {
 	key := "err:" + err.Error()
 	w.mu.Lock()
@@ -137,14 +102,7 @@ func (w *devContractWatch) printErrOnce(err error) {
 	cli.Warn("contracts: %v", err)
 }
 
-// Summarise renders the compact dev-loop form: one line per finding, with
-// the rule ID so `gofastr verify --explain` is one copy-paste away. The
-// full report, with reasons, examples, fixes, is what `gofastr verify` is
-// for; repeating it on every save would bury the loop. Location and
-// Message are repo-derived (file names, snippets) and pass through
-// scrubTerminalOutput before printing: the dev loop must not become the
-// one print boundary without the control-byte scrub `gofastr verify`
-// has (2026-09-05 red-probe round).
+// Summarise renders r as one line per finding, capped at devContractMaxLines.
 func (w *devContractWatch) Summarise(r *contracts.Report) string {
 	var b strings.Builder
 	shown := 0
@@ -158,17 +116,12 @@ func (w *devContractWatch) Summarise(r *contracts.Report) string {
 		shown++
 	}
 	fmt.Fprintf(&b, "    %s", "explain any of these: gofastr verify --explain <rule>")
-	// Only offer the fix when one is actually on the table. Suggesting it
-	// against a report full of rules that have no autofix teaches people
-	// the hint is noise.
 	if rule, ok := firstFixableRule(r); ok {
 		fmt.Fprintf(&b, "\n    fix %s: gofastr verify --rule %s --fix", rule, rule)
 	}
 	return b.String()
 }
 
-// firstFixableRule returns the rule ID of the first finding carrying a
-// mechanical fix, in the order they are reported.
 func firstFixableRule(r *contracts.Report) (string, bool) {
 	for _, d := range r.Diagnostics {
 		if d.Fix != nil && len(d.Fix.Edits) > 0 {
@@ -178,8 +131,6 @@ func firstFixableRule(r *contracts.Report) (string, bool) {
 	return "", false
 }
 
-// devContractMaxLines caps the dev-loop report. A wall of findings after
-// a save is something you scroll past, not something you read.
 const devContractMaxLines = 8
 
 func (w *devContractWatch) printOnce(summary string) {

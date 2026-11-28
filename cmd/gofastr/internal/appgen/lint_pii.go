@@ -10,53 +10,35 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/piicheck"
 )
 
-// unscopedFinding is one entity flagged by lintUnscopedEntities.
 type unscopedFinding struct {
 	Entity        string
 	AnonymousRead bool
 }
 
-// Message names who can read unscoped rows and how to limit read access.
+// Message names who can read the unscoped rows and the remedies that limit it.
 func (f unscopedFinding) Message() string {
 	readers := "every authenticated user"
 	if f.AnonymousRead {
 		readers = "anonymous callers"
 	}
 	return fmt.Sprintf(
-		"entity %q exposes unscoped reads via auto-CRUD/MCP. %s can read every row. Set owner_field: <column> for per-user rows, require a permission in access.read (RBAC), or set multi_tenant: true",
+		"entity %q exposes unscoped reads via auto-CRUD/MCP. %s can read every row. Set owner_field: <column> for per-user rows or require a permission in access.read (RBAC)",
 		f.Entity, readers)
 }
 
-// publicFinding is one entity explicitly opting into open reads and writes.
 type publicFinding struct {
 	Entity string
 }
 
-// Message names the entity and spells out exactly what "public" grants,
-// anonymous READ and WRITE rather than read alone, so `gofastr generate`'s
-// warning can't be mistaken for "this entity is merely readable".
+// Message names the entity and says that public grants anonymous reads and writes.
 func (f publicFinding) Message() string {
 	return fmt.Sprintf(
 		"entity %q is public: true, anonymous callers can read, create, update, AND delete every row (not just read). Confirm this is intentional; entities that want public reads with gated writes should use access: (a blank read: + a real create: permission) instead",
 		f.Entity)
 }
 
-// frameworkModulePath is the module every generated app imports. An app spec
-// whose own app.module sits UNDER this path claims a package namespace the
-// framework module also provides, and the Go toolchain refuses the ambiguity:
-//
-//	ambiguous import: found package <path> in multiple modules
-//
-// The in-repo example app specs legitimately declare such paths; they are
-// generated inside this module, where the local package wins. Copying one out
-// to learn from it (the documented way to start from an example) produces a
-// build that cannot be repaired by any go.mod edit, and the generator used to
-// print `go mod init <that same colliding path>` as the remedy, steering the
-// reader further in.
 const frameworkModulePath = "github.com/DonaldMurillo/gofastr"
 
-// moduleCollisionFinding is an app spec whose app.module collides with the
-// framework's own module path.
 type moduleCollisionFinding struct {
 	Module string
 }
@@ -67,8 +49,7 @@ func (f moduleCollisionFinding) Message() string {
 		f.Module, frameworkModulePath, lastPathSegment(f.Module))
 }
 
-// LintModuleCollision reports an app spec whose app.module is the framework
-// module or a subpath of it. Returns nil for every other module path.
+// LintModuleCollision reports an app spec whose app.module is the framework module or a subpath of it, and returns nil for any other module path.
 func LintModuleCollision(bp appspec.AppSpec) []moduleCollisionFinding {
 	m := strings.TrimSpace(bp.App.Module)
 	if m != frameworkModulePath && !strings.HasPrefix(m, frameworkModulePath+"/") {
@@ -84,14 +65,11 @@ func lastPathSegment(module string) string {
 	return module
 }
 
-// ownerUniqueFinding is one uniqueness rule on an owner-scoped entity that
-// leaves the owner column out: a unique field, or a unique index whose
-// columns do not include owner_field.
 type ownerUniqueFinding struct {
 	Entity     string
 	OwnerField string
-	Field      string // set for a field-level unique
-	Index      string // set for a unique index
+	Field      string
+	Index      string
 	Columns    []string
 }
 
@@ -107,15 +85,7 @@ func (f ownerUniqueFinding) Message() string {
 		f.Entity, f.OwnerField, what, strings.Join(cols, ", "))
 }
 
-// LintOwnerScopedUnique flags uniqueness that spans owners on an
-// owner-scoped entity: a unique field other than owner_field itself, or a
-// unique index whose columns do not include owner_field. Only values a
-// caller can write count: a read_only field is server-assigned (an
-// auto_generate: uuid order number), so no caller can collide with it or
-// probe it, and an index whose columns are all read_only or undeclared
-// (created_at) stays quiet too. A warning from `gofastr validate` and
-// `gofastr generate`, never an error: a value unique across all accounts
-// (a public handle) can be deliberate.
+// LintOwnerScopedUnique flags a writable unique field or unique index that spans owners on an owner-scoped entity.
 func LintOwnerScopedUnique(bp appspec.AppSpec) []ownerUniqueFinding {
 	var out []ownerUniqueFinding
 	for _, decl := range bp.Entities {
@@ -144,12 +114,6 @@ func LintOwnerScopedUnique(bp appspec.AppSpec) []ownerUniqueFinding {
 	return out
 }
 
-// lintPublicEntities returns one finding per app spec entity declaring
-// `public: true`, the full, deliberate opt-out from auto-CRUD's
-// secure-by-default session requirement. Every one of these is genuinely
-// reachable by an anonymous caller, so `gofastr generate` always surfaces
-// the list (never blocks: Public is an intentional declaration, not a
-// mistake to error on).
 func lintPublicEntities(bp appspec.AppSpec) []publicFinding {
 	var out []publicFinding
 	for _, decl := range bp.Entities {
@@ -160,7 +124,6 @@ func lintPublicEntities(bp appspec.AppSpec) []publicFinding {
 	return out
 }
 
-// lintUnscopedEntities warns on unscoped reads regardless of field names.
 func lintUnscopedEntities(bp appspec.AppSpec) []unscopedFinding {
 	var out []unscopedFinding
 	for _, decl := range bp.Entities {
@@ -169,7 +132,6 @@ func lintUnscopedEntities(bp appspec.AppSpec) []unscopedFinding {
 		if !appspec.EntityDeclarationCRUDEnabled(decl) && !exposure.MCP {
 			continue
 		}
-		// Explicitly public entities have their own warning.
 		access := exposure.Access
 		if exposure.Public || piicheck.Scoped(scope.OwnerField, scope.MultiTenant, access != nil && piicheck.GatesAccess(access.Read)) {
 			continue
@@ -182,8 +144,6 @@ func lintUnscopedEntities(bp appspec.AppSpec) []unscopedFinding {
 	return out
 }
 
-// signedOutFinding is an entity a screen draws in an app spec that wires
-// no sign-in.
 type signedOutFinding struct {
 	Entity  string
 	Screens []string
@@ -195,17 +155,7 @@ func (f signedOutFinding) Message() string {
 		strings.Join(f.Screens, ", "), f.Entity)
 }
 
-// LintSignedOutScreens flags a data block (entity_list, entity_detail,
-// entity_form) over an entity that needs a session in an app spec with
-// app.auth off. Nobody can sign in to such an app, so the generated
-// screen renders the "Not available" callout to every visitor: the
-// shortest spec there is (one entity, one list screen) generated an app
-// whose list never drew and whose own axe gate failed. A warning from
-// `gofastr validate` and `gofastr generate`, never an error: owned Go
-// can wire its own sign-in after generation. An entity with an access:
-// gate is left alone, since a blank read: there already opens its reads.
-// A fragment (generate app --add) is judged by the project's auth
-// (AppSpec.RouteApp), since its own app section is empty.
+// LintSignedOutScreens flags a data block over an entity that needs a session in an app spec with app.auth off.
 func LintSignedOutScreens(bp appspec.AppSpec) []signedOutFinding {
 	if bp.RouteApp().Auth.Enabled {
 		return nil

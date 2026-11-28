@@ -3,12 +3,9 @@ package desktopcmd
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
-	stdimage "image"
-	"image/draw"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -22,12 +19,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/devcmd"
-	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/internal/appid"
 	"github.com/DonaldMurillo/gofastr/internal/linuxbundle"
 )
 
+// RunDesktop runs `gofastr desktop <verb>` and exits non-zero when the
+// verb fails or is unknown.
 func RunDesktop(args []string) {
 	if len(args) == 0 {
 		printDesktopUsage()
@@ -54,8 +52,6 @@ func RunDesktop(args []string) {
 		cli.OsExit(2)
 	}
 }
-
-// ── gofastr desktop run ───────────────────────────────────────────────
 
 type desktopRunFlags struct {
 	dir   string
@@ -97,23 +93,12 @@ func runDesktopRun(args []string) {
 		return
 	}
 
-	// No --addr: the desktop host picks its own loopback port inside
-	// Run. GOFASTR_DEV=1 mounts the dev MCP and livereload injector in
-	// the window, exactly as `gofastr dev` does for the browser.
 	childEnv := devcmd.BuildDevChildEnv(runtimeIsolation.Env(os.Environ()), "")
 
 	var mu sync.Mutex
 	var child *exec.Cmd
 
-	// --watch owns SIGINT/SIGTERM from the start, so a signal during a
-	// build ends the build (devcmd.RunBuildWithHeartbeat) instead of
-	// waiting for it and the app it starts. shutdown closes on the first.
-	// Without --watch nothing owns the signal: the build gets a nil
-	// interrupt and stays in the terminal's process group, where Ctrl-C
-	// reaches it directly.
 	shutdown := make(chan struct{})
-	// watchCtx ends with the signal: the watcher's go list can stall on
-	// a module proxy, and shutdown does not wait for it.
 	watchCtx, endWatch := context.WithCancel(context.Background())
 	defer endWatch()
 	var buildInterrupt <-chan struct{}
@@ -128,9 +113,6 @@ func runDesktopRun(args []string) {
 		buildInterrupt = shutdown
 	}
 
-	// buildEnv is the build's environment, and the watcher's go list
-	// runs with the same one: CGO_ENABLED picks files, and files pick
-	// the imports the watch keeps.
 	buildEnv := append(os.Environ(), "CGO_ENABLED=0")
 
 	launch := func() bool {
@@ -165,8 +147,6 @@ func runDesktopRun(args []string) {
 		waitErr := make(chan error, 1)
 		go func() { waitErr <- run.Wait() }()
 		if !f.watch {
-			// Run once: block until the window closes, then exit with
-			// the child's status.
 			err := <-waitErr
 			code := 0
 			if err != nil {
@@ -180,8 +160,6 @@ func runDesktopRun(args []string) {
 		return true
 	}
 
-	// Scanned before the first build: FirstSnapshot keeps these times,
-	// so a save made during the build or the graph read rebuilds.
 	var (
 		since  time.Time
 		before map[string]time.Time
@@ -194,7 +172,6 @@ func runDesktopRun(args []string) {
 	if !launch() {
 		select {
 		case <-shutdown:
-			// Stopped during the first build: nothing ran, nothing failed.
 			if dir := devcmd.DevServerBinDir(); dir != "" {
 				_ = os.RemoveAll(dir)
 			}
@@ -213,9 +190,6 @@ func runDesktopRun(args []string) {
 
 	reload := make(chan struct{}, 1)
 	stop := make(chan struct{})
-	// A signal after the build but before here leaves shutdown closed:
-	// the loop below sees it on its first turn, and watchCtx has already
-	// ended the dependency query.
 	watch := devcmd.NewWatch(watchCtx, f.dir, f.pkg, buildEnv)
 	go watch.Notify(before, since, stop, reload)
 
@@ -248,8 +222,6 @@ func runDesktopRun(args []string) {
 	}
 }
 
-// exitCodeOf digs the exit status out of a Wait error without claiming
-// every failure is a crash.
 func exitCodeOf(err error) int {
 	var ee *exec.ExitError
 	if ok := asExitError(err, &ee); ok {
@@ -266,48 +238,25 @@ func asExitError(err error, target **exec.ExitError) bool {
 	return ok
 }
 
-// ── gofastr desktop build ─────────────────────────────────────────────
-
 type desktopBuildFlags struct {
-	format    string // Linux: empty/executable preserves the plain ELF output; tar.gz is opt-in.
-	formatSet bool
-	id        string
-	name      string
-	icon      string
-	pkg       string
-	version   string
-	out       string
-	// sign is a codesign identity on macOS ("" with noSign false means
-	// the default: ad-hoc when codesign exists), and on Windows a code
-	// signing certificate in the user's store: its SHA-1 thumbprint or a
-	// subject-name substring ("" means unsigned).
-	sign   string
-	noSign bool
-	// timestampURL is the RFC 3161 server a Windows signature is
-	// timestamped by ("" means the default, "none" skips it). zip
-	// writes the Windows update archive beside the build.
-	timestampURL string
-	zip          bool
-	// scheme is the build's custom URL scheme. macOS writes CFBundleURLTypes;
-	// Windows embeds it for per-user registration at startup. Linux embeds
-	// argv/session-bus handoff only, without installing an OS association.
-	scheme string
-	// notarize signs with --sign's identity under the hardened
-	// runtime, submits to Apple's notary service, staples, re-zips;
-	// any step failing fails the build. notaryProfile names the
-	// keychain profile from `xcrun notarytool store-credentials`
-	// (default "gofastr"); entitlements is a plist path (default: a
-	// generated empty-dict plist, the correct baseline for a Go
-	// binary hosting a WKWebView).
+	format        string // Linux: empty/executable preserves the plain ELF output; tar.gz is opt-in.
+	formatSet     bool
+	id            string
+	name          string
+	icon          string
+	pkg           string
+	version       string
+	out           string
+	sign          string
+	noSign        bool
+	timestampURL  string
+	zip           bool
+	scheme        string
 	notarize      bool
 	notaryProfile string
-	// launchArgs is --launch-args: arguments a double-clicked
-	// executable starts with (desktop.LaunchArgs), for a binary whose
-	// desktop mode is a subcommand. ldflags is --ldflags, appended to
-	// the build's own linker flags (-X main.version=...).
-	launchArgs   string
-	ldflags      string
-	entitlements string
+	launchArgs    string
+	ldflags       string
+	entitlements  string
 }
 
 func parseDesktopBuildFlags(args []string) (desktopBuildFlags, error) {
@@ -416,9 +365,6 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 			cli.OsExit(1)
 			return
 		}
-		// The --zip archive is an update download: the updater and
-		// `gofastr desktop feed` compare its ProductVersion as semver,
-		// so a "1.0" build would be refused at release time.
 		if f.zip {
 			if err := desktop.ValidateAppVersion(f.version); err != nil || len(f.version) > 64 {
 				cli.Fail("--version %q must be major.minor.patch with an optional -pre-release (no build metadata, no leading zeros), at most 64 characters, to build an update archive with --zip", f.version)
@@ -446,9 +392,6 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 		cli.OsExit(1)
 		return
 	}
-	// Info.plist's CFBundleShortVersionString is the running version the
-	// updater compares as semver: a bundle built with "1.0" would fail
-	// every update check, so refuse it before building.
 	if err := desktop.ValidateAppVersion(f.version); err != nil || len(f.version) > 64 {
 		cli.Fail("--version %q must be major.minor.patch with an optional -pre-release (no build metadata, no leading zeros), at most 64 characters", f.version)
 		cli.OsExit(1)
@@ -461,8 +404,6 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 		cli.OsExit(1)
 		return
 	}
-	// Checked before the previous bundle is removed: a build that cannot
-	// merge its slices must not leave the output directory empty.
 	if len(archs) > 1 {
 		if _, err := lookTool("lipo"); err != nil {
 			cli.Fail("A universal macOS build merges its two executables with lipo, which is not on PATH (it ships with the Xcode command line tools: xcode-select --install). Set GOARCH=arm64 or GOARCH=amd64 to build one architecture.")
@@ -540,9 +481,6 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 
 	cli.Success("Wrote %s", appDir)
 	if f.notarize {
-		// A signing or notarization failure is fatal here, unlike the
-		// best-effort ad-hoc default: a half-notarized bundle must not
-		// look like a shippable one.
 		if err := notarizeDesktopBundle(f, name, appDir); err != nil {
 			cli.Fail("Notarization failed: %v", err)
 			cli.OsExit(1)
@@ -554,179 +492,6 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 	signDesktopBundle(f, appDir)
 	cli.Info("Icon source: %s. Notarize before distributing a signed bundle.", iconSource)
 }
-
-// signDesktopBundle signs the finished bundle per the build flags.
-// --no-sign skips; --sign=<identity> uses that identity; the default
-// signs ad-hoc when codesign is on PATH. A signing failure is printed,
-// never fatal: an unsigned bundle still runs (only notifications need
-// a signature).
-func signDesktopBundle(f desktopBuildFlags, appDir string) {
-	if f.noSign {
-		cli.Info("The bundle is unsigned (--no-sign); macOS notifications will not work.")
-		return
-	}
-	identity := f.sign
-	if identity == "" {
-		if _, err := exec.LookPath("codesign"); err != nil {
-			cli.Info("The bundle is unsigned: no codesign on this host; macOS notifications will not work.")
-			return
-		}
-		identity = "-" // ad-hoc
-	}
-	out, err := runTool("codesign", "--force", "--deep", "--sign", identity, appDir)
-	if err != nil {
-		cli.Fail("Signing failed; the bundle stays unsigned: %v", toolDetail(out, err))
-		return
-	}
-	if f.sign == "" {
-		cli.Success("Signed %s ad-hoc (codesign --sign -); notifications work after the first-run Allow.", appDir)
-	} else {
-		cli.Success("Signed %s with identity %q.", appDir, f.sign)
-	}
-}
-
-// loadIconSource returns the PNG bytes for the bundle icon: --icon's
-// file, else a generated flat square (uihost.WithAppIcon has no default
-// icon of its own, so the CLI generates one, the no-binary-assets
-// posture).
-func loadIconSource(path string) ([]byte, string) {
-	if path != "" {
-		b, err := os.ReadFile(path)
-		if err != nil {
-			cli.Fail("Read --icon: %v", err)
-			cli.OsExit(1)
-		}
-		return b, path
-	}
-	img, err := fwimage.NewGradient(1024, 1024, "#0E7C86", "#0E7C86")
-	if err != nil {
-		cli.Fail("Generate default icon: %v", err)
-		cli.OsExit(1)
-	}
-	b, err := img.PNG().Bytes()
-	if err != nil {
-		cli.Fail("Encode default icon: %v", err)
-		cli.OsExit(1)
-	}
-	return b, "generated flat square (framework/image)"
-}
-
-// ── ICNS (pure Go, no iconutil) ───────────────────────────────────────
-
-// icnsEntry is one representation in the container: a 4-byte type code
-// and a PNG payload at the square size.
-type icnsEntry struct {
-	Type string
-	Size int
-}
-
-// icnsEntries per the brief: the sizes macOS reads from an .icns. The
-// @2x types (ic11..ic14) still carry their pixel payload sizes.
-var icnsEntries = []icnsEntry{
-	{"ic07", 128},
-	{"ic08", 256},
-	{"ic09", 512},
-	{"ic10", 1024},
-	{"ic11", 32},
-	{"ic12", 64},
-	{"ic13", 256},
-	{"ic14", 512},
-}
-
-// buildICNS assembles the ICNS container: big-endian "icns" header with
-// the total length, then entries of type(4) + length(4, header
-// included) + PNG payload. The source PNG is center-cropped to a square
-// and resized per entry.
-func buildICNS(png []byte) ([]byte, error) {
-	src, err := fwimage.DecodeBytes(png)
-	if err != nil {
-		return nil, fmt.Errorf("decode icon: %w", err)
-	}
-	square := squareCropStd(src.GoImage())
-
-	var entries bytes.Buffer
-	for _, e := range icnsEntries {
-		resized := fwimage.FromImage(square, fwimage.FormatPNG).Resize(e.Size, e.Size)
-		payload, err := resized.PNG().Bytes()
-		if err != nil {
-			return nil, fmt.Errorf("encode %s (%dpx): %w", e.Type, e.Size, err)
-		}
-		entries.WriteString(e.Type)
-		var lenBuf [4]byte
-		binary.BigEndian.PutUint32(lenBuf[:], uint32(len(payload)+8))
-		entries.Write(lenBuf[:])
-		entries.Write(payload)
-	}
-
-	body := entries.Bytes()
-	out := bytes.NewBuffer(make([]byte, 0, len(body)+8))
-	out.WriteString("icns")
-	var total [4]byte
-	binary.BigEndian.PutUint32(total[:], uint32(len(body)+8))
-	out.Write(total[:])
-	out.Write(body)
-	return out.Bytes(), nil
-}
-
-// buildWindowsICO converts the same PNG icon source used by macOS into
-// a multi-resolution ICO container. Its frames carry PNG payloads, which
-// Windows supports for desktop icons on current versions.
-func buildWindowsICO(pngBytes []byte) ([]byte, error) {
-	src, err := fwimage.DecodeBytes(pngBytes)
-	if err != nil {
-		return nil, fmt.Errorf("decode icon: %w", err)
-	}
-	square := squareCropStd(src.GoImage())
-	const count = 4
-	const headerBytes = 6 + count*16
-	out := make([]byte, headerBytes)
-	binary.LittleEndian.PutUint16(out[2:4], 1) // ICONDIR type
-	binary.LittleEndian.PutUint16(out[4:6], count)
-	offset := uint32(headerBytes)
-	for i, size := range []int{16, 32, 48, 256} {
-		resized := fwimage.FromImage(square, fwimage.FormatPNG).Resize(size, size)
-		payload, err := resized.PNG().Bytes()
-		if err != nil {
-			return nil, fmt.Errorf("encode Windows icon (%dpx): %w", size, err)
-		}
-		entry := 6 + i*16
-		if size < 256 {
-			out[entry], out[entry+1] = byte(size), byte(size)
-		}
-		binary.LittleEndian.PutUint16(out[entry+4:entry+6], 1)  // planes
-		binary.LittleEndian.PutUint16(out[entry+6:entry+8], 32) // bits per pixel
-		binary.LittleEndian.PutUint32(out[entry+8:entry+12], uint32(len(payload)))
-		binary.LittleEndian.PutUint32(out[entry+12:entry+16], offset)
-		out = append(out, payload...)
-		offset += uint32(len(payload))
-	}
-	return out, nil
-}
-
-// squareCropStd center-crops img to a square via the stdlib (NRGBA
-// SubImage when available, a draw otherwise), so a non-square --icon
-// does not stretch.
-func squareCropStd(img stdimage.Image) stdimage.Image {
-	b := img.Bounds()
-	w, h := b.Dx(), b.Dy()
-	side := cli.Min(w, h)
-	x0 := b.Min.X + (w-side)/2
-	y0 := b.Min.Y + (h-side)/2
-	rect := stdimage.Rect(x0, y0, x0+side, y0+side)
-	if sub, ok := img.(interface {
-		SubImage(r stdimage.Rectangle) stdimage.Image
-	}); ok {
-		return sub.SubImage(rect)
-	}
-	dst := stdimage.NewNRGBA(stdimage.Rect(0, 0, side, side))
-	draw.Draw(dst, dst.Bounds(), img, rect.Min, draw.Src)
-	// Return a fresh opaque square so the caller's bounds are stable.
-	filled := stdimage.NewNRGBA(stdimage.Rect(0, 0, side, side))
-	draw.Draw(filled, filled.Bounds(), dst, stdimage.Point{}, draw.Src)
-	return filled
-}
-
-// ── gofastr desktop types ─────────────────────────────────────────────
 
 type desktopTypesFlags struct {
 	pkg string
@@ -778,9 +543,6 @@ func writeDesktopTypes(f desktopTypesFlags) error {
 		return fmt.Errorf("Build failed: %w", err)
 	}
 
-	// One headless run of the real app: battery/desktop's Run freezes
-	// the registry, prints the manifest JSON, and exits before touching
-	// the shell or the listener.
 	cli.Info("Running the app for its manifest...")
 	run := exec.Command(bin)
 	run.Env = append(os.Environ(), desktop.ManifestEnv+"=1")
@@ -803,60 +565,5 @@ func writeDesktopTypes(f desktopTypesFlags) error {
 		return fmt.Errorf("Write %s: %w", f.out, err)
 	}
 	cli.Success("Wrote %s (%d capabilities)", f.out, len(manifest.Capabilities))
-	return nil
-}
-
-// lookTool finds an external tool of the build on PATH. Tests swap it
-// to build as a host without the tool.
-var lookTool = exec.LookPath
-
-// macDesktopArchs names the architectures a macOS bundle is built for,
-// from the caller's GOARCH. The shell (battery/desktop/macos) runs on
-// Apple silicon and on Intel, so no GOARCH means both, merged into one
-// universal executable; arm64 or amd64 means that one alone. Anything
-// else is refused: a bundle reported written must be one that launches.
-func macDesktopArchs(envArch string) ([]string, error) {
-	switch envArch {
-	case "":
-		return []string{"arm64", "amd64"}, nil
-	case "arm64", "amd64":
-		return []string{envArch}, nil
-	}
-	return nil, fmt.Errorf("macOS desktop builds target arm64 (Apple silicon), amd64 (Intel), or both when GOARCH is unset, not GOARCH=%s", envArch)
-}
-
-// buildMacExecutable compiles pkg for darwin into exe. One architecture
-// is a plain cross-compile. Two are compiled into a temporary directory
-// and merged by lipo into one universal Mach-O; the caller signs the
-// bundle afterwards, which covers every slice.
-func buildMacExecutable(pkg, ldflags, exe string, archs []string) error {
-	build := func(arch, out string) error {
-		cli.Info("Building %s (darwin/%s, CGO_ENABLED=0)...", pkg, arch)
-		cmd := exec.Command("go", "build", "-trimpath", "-ldflags", ldflags, "-o", out, pkg)
-		cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=darwin", "GOARCH="+arch)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
-	}
-	if len(archs) == 1 {
-		return build(archs[0], exe)
-	}
-	tmp, err := os.MkdirTemp("", "gofastr-desktop-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmp)
-	args := []string{"-create", "-output", exe}
-	for _, arch := range archs {
-		slice := filepath.Join(tmp, arch)
-		if err := build(arch, slice); err != nil {
-			return err
-		}
-		args = append(args, slice)
-	}
-	cli.Info("Merging %s into a universal executable (lipo)...", strings.Join(archs, " and "))
-	if out, err := runTool("lipo", args...); err != nil {
-		return fmt.Errorf("lipo: %w", toolDetail(out, err))
-	}
 	return nil
 }

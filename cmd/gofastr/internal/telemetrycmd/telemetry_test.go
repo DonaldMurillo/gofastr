@@ -337,6 +337,7 @@ func TestUsageErrors(t *testing.T) {
 		"bad level":        {"logs", "--dir", dir, "--level", "loud"},
 		"bad flag":         {"logs", "--dir", dir, "--failed"},
 		"limit zero":       {"logs", "--dir", dir, "--limit", "0"},
+		"limit over cap":   {"logs", "--dir", dir, "--limit", "100001"},
 		"negative since":   {"logs", "--dir", dir, "--since", "-1h"},
 		"stray argument":   {"logs", "--dir", dir, "extra"},
 		"no trace ID":      {"request", "--dir", dir},
@@ -345,6 +346,11 @@ func TestUsageErrors(t *testing.T) {
 	} {
 		if out, err := run(t, argv...); !errors.Is(err, errUsage) {
 			t.Errorf("%s: err = %v, want a usage error (printed %q)", name, err, out)
+		}
+	}
+	for _, limit := range []string{"1", "100000"} {
+		if _, err := run(t, "logs", "--dir", dir, "--limit", limit); err != nil {
+			t.Errorf("--limit %s: %v, want it accepted", limit, err)
 		}
 	}
 	if _, err := run(t, "logs", "--dir", filepath.Join(dir, "missing")); err == nil || errors.Is(err, errUsage) || !strings.Contains(err.Error(), "no telemetry directory") {

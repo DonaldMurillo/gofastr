@@ -161,3 +161,46 @@ func TestNavHrefEscapedSlashMatchesScreenRouter(t *testing.T) {
 		})
 	}
 }
+
+// The table is uihost's TestInternalRoutePathClassification: the lint
+// must take as a route exactly what the strict boot takes.
+func TestNavInternalPathClassifiesLikeUIHost(t *testing.T) {
+	for _, tc := range []struct {
+		href string
+		ok   bool
+	}{
+		{"/terms", true}, {"/terms#frag", true}, {"/terms?q=1", true},
+		{"#frag", false}, {"?q=1", false}, {"", false},
+		{"https://example.com/x", false}, {"mailto:a@b.c", false}, {"tel:+1555", false},
+		{"//cdn.example/x", false}, {"terms", false}, {"./terms", false},
+		{"/docs/{slug}", false}, {"/users/:id", false}, {"/files/:path*", false},
+		{"/report/<year>", false}, {`/bad\path`, false}, {"/time/10:30", true},
+		{"/docs/caf%C3%A9", true}, {"/a%2Fb", true}, {"%2Fdocs", false},
+		{"/q%3Fmark", true}, {"/bad%zz", true}, {"/trailing%", true}, {`/enc%5Cslash`, false},
+	} {
+		got, ok := navInternalPath(tc.href)
+		if ok != tc.ok {
+			t.Errorf("navInternalPath(%q) = (%q, %v), want ok %v", tc.href, got, ok, tc.ok)
+		}
+		if ok && strings.ContainsAny(got, "?#") && !strings.Contains(tc.href, "%3F") {
+			t.Errorf("navInternalPath(%q) = %q kept the query or fragment", tc.href, got)
+		}
+	}
+}
+
+func TestNavHrefSkipsFragmentsAndServesLLMMD(t *testing.T) {
+	frag := appspec.AppSpec{Screens: []appspec.AppSpecScreen{{Name: "page", Route: "/page"}}, Nav: []appspec.AppSpecNavItem{{Href: "/project-only"}}}
+	frag.MarkFragment()
+	if got := LintNavHrefs(frag, ""); len(got) != 0 {
+		t.Fatalf("a fragment cannot see the project's screens, want no finding, got %v", got)
+	}
+	bp := appspec.AppSpec{App: appspec.AppSpecApp{Name: "Demo", LLMMD: true}, Screens: []appspec.AppSpecScreen{{Name: "home", Route: "/"}, {Name: "page", Route: "/page"}},
+		Nav: []appspec.AppSpecNavItem{{Href: "/page/llm.md"}, {Href: "/llm.md"}}}
+	if got := LintNavHrefs(bp, ""); len(got) != 0 {
+		t.Fatalf("app.llm_md serves each screen's llm.md, want no finding, got %v", got)
+	}
+	bp.App.LLMMD = false
+	if got := LintNavHrefs(bp, ""); len(got) != 2 {
+		t.Fatalf("without app.llm_md the llm.md links are unserved, got %v", got)
+	}
+}

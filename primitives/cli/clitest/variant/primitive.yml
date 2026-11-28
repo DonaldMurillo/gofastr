@@ -1,0 +1,16 @@
+primitive: cli.clitest.variant
+summary: VariantBuild, the gate that lets a CLI test which builds a generated app run on a full run or when the change set touches its inputs, and skip otherwise.
+code:
+  - cmd/gofastr/internal/clitest/variant.go
+docs:
+  - docs/contributing.md
+on_change:
+  - A test that builds a generated app calls VariantBuild right before the toolchain step, after its in-process checks, so those still run on a pull request; appgen's TestUnionApp is the one generated build a pull request always runs.
+invariants:
+  - id: runs-on-full-run-or-its-inputs
+    rule: VariantBuild returns when GOFASTR_TEST_ALL is 1 or a line of GOFASTR_AFFECTED_FILES equals one of its file inputs or starts with one of its inputs that ends in "/", and skips the test otherwise, so a test with no inputs runs only on a full run.
+    enforced_by:
+      - test: cmd/gofastr/internal/clitest.TestVariantBuildRunsOnlyForTheFullRunOrItsInputs
+  - id: no-inputs-reads-no-change-set
+    rule: VariantBuild given no inputs never reads GOFASTR_AFFECTED_FILES, because Go keys a package's cached test results on every variable its tests read and the change set differs from run to run.
+    judge: Does this change make VariantBuild, or a test that calls it with no inputs, read GOFASTR_AFFECTED_FILES?

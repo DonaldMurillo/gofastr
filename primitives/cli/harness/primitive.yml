@@ -1,0 +1,76 @@
+primitive: cli.harness
+summary: "`gofastr harness` and `gofastr harness mcp`, which resolve the harness's directories, profile, repository keys and credential-store key, boot framework/experimental/harness with one session and attach the TUI, the REPL, a single --prompt run or a stdio MCP server to it; children own the creds subcommand and the browser chat page."
+code:
+  - cmd/gofastr/internal/harnesscmd/doc.go
+  - cmd/gofastr/internal/harnesscmd/harness.go
+  - cmd/gofastr/internal/harnesscmd/harness_mcp.go
+  - cmd/gofastr/internal/harnesscmd/repo_secrets.go
+  - cmd/gofastr/internal/harnesscmd/subcommand_usage.go
+docs:
+  - framework/docs/content/harness-architecture.md
+  - framework/docs/content/harness-e2e-testing.md
+invariants:
+  - id: no-key-no-boot
+    rule: With neither GOFASTR_HARNESS_PASSPHRASE nor GOFASTR_HARNESS_MACHINE_KEY set, gofastr harness and gofastr harness mcp exit 1 with noCredstoreKeyHelp before the harness is built.
+    enforced_by:
+      - test: cmd/gofastr/internal/harnesscmd.TestHarnessRefusesToBootWithoutACredstoreKey
+      - test: cmd/gofastr/internal/harnesscmd.TestHarnessMCPRefusesPublicCredstorePass
+  - id: machine-key-is-exactly-32-bytes
+    rule: machineKeyFromEnv accepts 32 raw bytes, 64 hex digits or base64 (standard or URL, padded or not) of 32 bytes, returns nil for an empty value and errors on anything else.
+    enforced_by:
+      - test: cmd/gofastr/internal/harnesscmd.TestMachineKeyFromEnv
+      - test: cmd/gofastr/internal/harnesscmd.TestMachineKeyEncodings
+  - id: built-in-profiles-come-from-the-binary
+    rule: Without --profile, loadProfile returns the embedded default or framework profile and never reads a profile file from the working directory; an explicit --profile that does not load is an error, never an embedded fallback.
+    enforced_by:
+      - test: cmd/gofastr/internal/harnesscmd.TestLoadProfileIgnoresWorkingDirectoryCopy
+      - test: cmd/gofastr/internal/harnesscmd.TestLoadProfile
+  - id: repo-keys-need-consent
+    rule: loadRepoSecrets uses a repository's .harness-secrets/env keys only with a remembered approval, --allow-repo-secrets, or a y or yes to its [y/N] prompt on an interactive run; a run with nobody to ask refuses them and says how to allow them, and every name or path it prints goes through the cli scrub.
+    enforced_by:
+      - test: cmd/gofastr/internal/harnesscmd.TestRepoSecretsRefusedWhenNobodyCanBeAsked
+      - test: cmd/gofastr/internal/harnesscmd.TestRepoSecretsAskOnceAndRemember
+      - test: cmd/gofastr/internal/harnesscmd.TestRepoSecretsDefaultAnswerIsNo
+      - test: cmd/gofastr/internal/harnesscmd.TestRepoSecretsFlagAllowsOneRun
+      - test: cmd/gofastr/internal/harnesscmd.TestRepoSecretsPromptAndRefusalCarryNoLiveEscapes
+      - test: cmd/gofastr/internal/harnesscmd.TestRepoSecretsHostileKeyNameStoppedAtSource
+  - id: mcp-never-prompts
+    rule: gofastr harness mcp loads repository keys with nobody to ask, because its stdin carries the MCP protocol.
+    judge: Does this change let gofastr harness mcp prompt for consent or read anything from stdin before the MCP server takes it?
+  - id: mcp-logs-to-stderr-only
+    rule: gofastr harness mcp writes its logs and errors to stderr only, so stdout carries nothing but JSON-RPC.
+    judge: Does this change make gofastr harness mcp write anything but the MCP server's JSON-RPC to stdout?
+  - id: provider-text-is-scrubbed
+    rule: The REPL and the --prompt run print a turn's text through streamOneTurn, which scrubs it with textsafe.ScrubTerminal.
+    enforced_by:
+      - test: cmd/gofastr/internal/harnesscmd.TestREPLTranscriptScrubTerminal
+      - test: cmd/gofastr/internal/harnesscmd.TestStreamOneTurnTextThenEnd
+  - id: web-sidecar-when-interactive
+    rule: The HTTP control plane binds when --listen or --web is given, or on an interactive terminal without --no-web or --prompt.
+    enforced_by:
+      - test: cmd/gofastr/internal/harnesscmd.TestWantWebSidecar
+decisions:
+  - id: no-default-passphrase
+    date: 2026-11-28
+    status: accepted
+    decision: The CLI refuses to boot the harness or open the credential store without an operator-supplied passphrase or machine key.
+    rejected:
+      - option: Fall back to a default passphrase.
+        why: A passphrase published in the repository is not encryption; every stored provider key would decrypt from the source tree.
+    upholds: [no-key-no-boot]
+  - id: embedded-profiles-only
+    date: 2026-11-28
+    status: accepted
+    decision: The default and framework profiles are always the ones built into the binary; an edited profile is tried with --profile.
+    rejected:
+      - option: Prefer framework/experimental/harness/profile/<name>.toml found from the working directory, for edits in the source tree.
+        why: The working directory of a cloned repo is attacker-authored, and its file's prompt_header became the system prompt outside the untrusted-content tags.
+    upholds: [built-in-profiles-come-from-the-binary]
+  - id: unwired-flags-accepted
+    date: 2026-11-28
+    status: accepted
+    decision: --no-listen and --auto-approve are parsed and ignored, because the Unix-socket listener and the multiplexer's auto-approve they would switch do not exist in the CLI yet.
+    rejected:
+      - option: Remove the flags until they work.
+        why: Scripts written against the documented flag set would fail to parse.
+    revisit_if: The multiplexer gains auto-approve or the CLI starts the Unix-socket control listener.

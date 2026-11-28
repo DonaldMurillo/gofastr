@@ -1,0 +1,84 @@
+primitive: cli
+summary: The gofastr command; this entry owns its entry point, which parses the subcommand and dispatches to the package under cmd/gofastr/internal that implements it, and each child owns one subcommand or shared part.
+code:
+  - cmd/gofastr/main.go
+docs:
+  - framework/docs/content/cli.md
+on_change:
+  - A new, renamed or removed subcommand or flag updates framework/docs/content/cli.md in the same commit.
+  - Each subcommand's code and tests live in its own package under cmd/gofastr/internal, which main only imports, so a change to one selects that package's tests and its importers and not the whole CLI.
+invariants:
+  - id: version-flag-only-in-the-command-slot
+    rule: --version or -v prints the version only as the first argument; after a command name it is that command's argument, so `test -v` reaches test and `dev -v` gets dev's unknown-flag refusal.
+    enforced_by:
+      - test: cmd/gofastr.TestVersionFlagIsGlobalOnlyInTheCommandSlot
+      - test: cmd/gofastr.TestDispatchDevDashVIsDevsFlag
+  - id: help-never-runs-a-command-without-its-own
+    rule: For a command whose spec does not set ownsHelp, and for an unknown name no plugin claims, --help or -h anywhere in the arguments prints the overview and runs nothing.
+    enforced_by:
+      - test: cmd/gofastr.TestHelpFlagNeverRunsACommandWithoutItsOwnHelp
+  - id: help-before-the-terminator-skips-plugins
+    rule: A command line with --help or -h before "--" runs the built-in directly, with no plugin override or hook, in --json mode as in any other.
+    enforced_by:
+      - test: cmd/gofastr.TestJSONHelpSkipsPluginHooks
+    applies:
+      - cmd/gofastr/internal/plugincmd/dispatch.go
+  - id: help-command-is-command-help
+    rule: "`gofastr help` prints the overview, `gofastr help <command>` runs `<command> --help` for a built-in, and `help <unknown>` gets the unknown-command answer."
+    enforced_by:
+      - test: cmd/gofastr.TestHelpCommand
+      - test: cmd/gofastr.TestHelpUnknownCommandIsUnknown
+  - id: unknown-command-exits-two
+    rule: A name that is neither a built-in nor claimed by a plugin namespace prints "Unknown command", a "Did you mean" line for each built-in or registered plugin name it prefixes or is within Levenshtein distance 2 of, the overview, and exits 2.
+    enforced_by:
+      - test: cmd/gofastr.TestDispatchUnknownCmdExits
+      - test: cmd/gofastr.TestDispatchUnknownCmdSuggests
+      - test: cmd/gofastr.TestHelpUnknownCommandIsUnknown
+      - test: cmd/gofastr.TestUnknownCommandSuggestsPluginsUnlessTheyAreOff
+  - id: builtin-bypasses-plugins
+    rule: A leading --builtin, or GOFASTR_NO_PLUGINS=1, runs the built-in without plugin overrides, hooks or namespaces and leaves plugins out of the unknown-command suggestions, and --builtin with no command after it is a usage error.
+    enforced_by:
+      - test: cmd/gofastr.TestOptInHooksOverridesAndBuiltinBypass
+      - test: cmd/gofastr.TestUnknownCommandSuggestsPluginsUnlessTheyAreOff
+      - test: cmd/gofastr.TestBuiltinNeedsACommand
+  - id: builtin-migrate-refuses-a-stripped-database-url
+    rule: "`--builtin migrate`, other than for help, exits 1 without migrating when plugin isolation stripped the caller's DATABASE_URL (GOFASTR_FILTERED_DATABASE_URL=1 and DATABASE_URL empty), so it never falls back to .env."
+    enforced_by:
+      - test: cmd/gofastr.TestMigrateBuiltinRefusesFilteredDB
+  - id: aliases-are-host-builtins
+    rule: Every command name and alias is registered with plugincmd.SetHostBuiltins, mapped to the command's canonical name, so a plugin can take neither.
+    enforced_by:
+      - test: cmd/gofastr.TestNativePluginLifecycle
+  - id: json-commands-own-stdout
+    rule: A command whose json predicate matches its arguments runs inside one cli.BeginJSON session, so stdout carries only its JSON document, and its --help goes to stderr.
+    enforced_by:
+      - test: cmd/gofastr.TestJSONHelpIsUsage
+      - test: cmd/gofastr.TestJSONStdoutParity
+      - test: cmd/gofastr.TestJSONModeDecisions
+  - id: version-check-on-project-commands
+    rule: The version-mismatch warning runs for every command marked versionChecked and never for a help request, and exactly init, version, docs, upgrade, help, telemetry and plugin, the commands that need no project, are unmarked.
+    enforced_by:
+      - test: cmd/gofastr.TestVersionCheckApplies
+      - test: cmd/gofastr.TestVersionCheckCoversEveryCommand
+  - id: version-warning-reads-the-target-project
+    rule: warnVersionMismatch writes its warning to stderr and checks the project the command works on, dev's last --dir or pack's app directory, else the working directory.
+    enforced_by:
+      - test: cmd/gofastr.TestPackVersionCheckUsesAppDirectory
+      - test: cmd/gofastr.TestProjectDirFlag
+decisions:
+  - id: version-flag-belongs-to-the-command
+    date: 2026-11-01
+    status: accepted
+    decision: --version and -v are global only in the command slot.
+    rejected:
+      - option: Answer --version or -v anywhere in the arguments.
+        why: "`gofastr test -v` printed the version and exited 0 without testing (a green CI step that tested nothing), and verify's own -v never reached verify."
+    upholds: [version-flag-only-in-the-command-slot]
+  - id: intercept-help-for-commands-without-it
+    date: 2026-11-01
+    status: accepted
+    decision: The dispatcher answers --help itself for any command that has no help path of its own, wherever the flag sits.
+    rejected:
+      - option: Pass --help through to every command.
+        why: A side-effectful command without its own help path, such as dev, would start a server on `dev --help`.
+    upholds: [help-never-runs-a-command-without-its-own]

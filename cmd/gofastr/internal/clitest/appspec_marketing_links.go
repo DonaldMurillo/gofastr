@@ -4,13 +4,8 @@ import (
 	"strings"
 )
 
-// MarketingLinksFixtureYAML is a marketing-layout app spec that registers only
-// the routes its screens declare: /, /pricing and (auth variant) /login. No
-// /about, /terms or /privacy screen exists, so any chrome href to those routes
-// points at a route the generated app never mounts (#312).
-//
-// meridian.yml cannot observe this bug: it is the one shipped app spec that
-// declares all four chrome routes.
+// MarketingLinksFixtureYAML is a marketing-layout app spec whose only
+// routes are /, /pricing and, with auth, /login.
 func MarketingLinksFixtureYAML(withAuth bool) string {
 	var sb strings.Builder
 	sb.WriteString(`

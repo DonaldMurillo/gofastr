@@ -1,0 +1,36 @@
+primitive: cli.migrate.generate
+summary: gofastr migrate generate - diff an app spec's entities against the committed schema snapshot and write the next versioned migration file through framework.GenerateMigrationFile, warning on every drop its Up runs.
+code:
+  - cmd/gofastr/internal/migratecmd/migrate_generate.go
+docs:
+  - framework/docs/content/migrations.md
+invariants:
+  - id: dialect-from-spec-or-flag
+    rule: --db or --driver picks the DDL dialect, and without either the spec's app.db.driver, or the engine a postgres:// app.db.url names, does; a driver that is neither SQLite nor Postgres is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateGenerateFollowsTheSpecDriver
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateGenerateRefusesSpecDriverWithoutDialect
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateGenerateRefusesUnknownDriver
+  - id: drops-are-named
+    rule: After writing a file, generate warns with every DROP TABLE and DROP COLUMN in its Up section, a SQLite rebuild's dropped column included, and ignores drops inside string literals, quoted identifiers, comments, routine bodies and the Down section.
+    enforced_by:
+      - test: cmd/gofastr/internal/migratecmd.TestGenerateWarnsOnDropTableAndDropColumn
+      - test: cmd/gofastr/internal/migratecmd.TestGenerateQuietWhenNothingDropped
+      - test: cmd/gofastr/internal/migratecmd.TestDestructiveDropsIgnoresLiterals
+      - test: cmd/gofastr/internal/migratecmd.TestDestructiveDropsAfterComments
+      - test: cmd/gofastr/internal/migratecmd.TestDestructiveDropsIgnoresRoutineBodies
+      - test: cmd/gofastr/internal/migratecmd.TestDestructiveDropsReadsRebuildNote
+      - test: cmd/gofastr/internal/migratecmd.TestGenerateSQLiteColumnDropApplies
+  - id: invalid-entities-refused
+    rule: An app spec with no entities, or an entity the registry refuses, exits 1 naming the entity, and writes no file.
+    enforced_by:
+      - test: cmd/gofastr/internal/migratecmd.TestGenerateRejectsInvalidEntities
+      - test: cmd/gofastr/internal/migratecmd.TestRunMigrateGenerateNoAppSpecExits
+decisions:
+  - id: one-generator
+    date: 2026-11-28
+    status: accepted
+    decision: The CLI writes migrations through framework.GenerateMigrationFile, the same call a host binary makes with its compiled registry.
+    rejected:
+      - option: A CLI-side renderer.
+        why: Two renderers drift apart on file naming, directive layout and snapshot format.

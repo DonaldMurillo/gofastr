@@ -131,3 +131,29 @@ func mountOutside(site *Site) { site.Register("/outside-screen", nil) }
 		}
 	}
 }
+
+func TestEndpointSourceRefusesSymlinkedLeaves(t *testing.T) {
+	outside, root := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "entities"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "entities", "real.go"), []byte("package entities\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "x.go"), []byte("package entities\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "x.go"), filepath.Join(root, "entities", "outsider.go")); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	files, err := readEntitiesFiles(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := files["entities/real.go"]; !ok {
+		t.Fatalf("control: real.go not read: %v", files)
+	}
+	if _, ok := files["entities/outsider.go"]; ok {
+		t.Error("SECURITY: [walkroot] the endpoint resolver read a leaf symlinked out of the project")
+	}
+}

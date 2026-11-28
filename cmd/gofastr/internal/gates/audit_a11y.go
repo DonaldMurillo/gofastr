@@ -1,23 +1,16 @@
 package gates
 
 import (
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
-	"github.com/DonaldMurillo/gofastr/framework/contracts"
-	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
 )
 
-// BuildA11yGateTo is buildA11yGate writing to the given streams, so
-// `gofastr dev` can also show the report on its hold page.
+// BuildA11yGateTo runs the accessibility lint over root, writes its
+// report to stdout and its error to stderr, and reports whether it passed.
 func BuildA11yGateTo(root string, stdout, stderr io.Writer) bool {
 	return lintGate(root, stdout, stderr, "accessibility lint", AuditA11y, FormatA11yReport)
 }
@@ -27,67 +20,20 @@ type A11yFinding struct {
 	File    string
 	Line    int
 	Message string
-	Element string // "Image", "Button", … parsed from the message for guidance lookup
+	Element string
 }
 
-// AuditA11y statically scans every non-test, non-generated .go file
-// under root for missing required accessibility fields on core-ui/html
-// element configs (check.LintA11yFile). Tests call this directly.
+// AuditA11y returns the check.LintA11yFile findings of every non-test,
+// non-generated .go file under root, sorted by file and line.
 func AuditA11y(root string) ([]A11yFinding, error) {
-	var all []A11yFinding
-	err := sourcewalk.Walk(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if path != filepath.Clean(root) && errors.Is(err, fs.ErrNotExist) {
-				return nil
-			}
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		body, err := os.ReadFile(path)
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil
-			}
-			return err
-		}
-		// Generated files are the generator's responsibility, not the
-		// developer's. Same policy as `gofastr verify`.
-		if contracts.IsGeneratedSource(body) {
-			return nil
-		}
-		res, lintErr := check.LintA11yFile(path)
-		if lintErr != nil {
-			// Mid-edit parse errors shouldn't kill the audit.
-			return nil
-		}
-		rel, _ := filepath.Rel(root, path)
-		if rel == "" {
-			rel = path
-		}
-		for _, v := range res.Violations {
-			all = append(all, A11yFinding{
-				File:    rel,
-				Line:    v.Line,
-				Message: v.Message,
-				Element: a11yElementFromMessage(v.Message),
-			})
-		}
-		return nil
-	})
+	violations, err := auditTree(root, ".go", check.LintA11yFile)
 	if err != nil {
 		return nil, err
 	}
-	sort.Slice(all, func(i, j int) bool {
-		if all[i].File != all[j].File {
-			return all[i].File < all[j].File
-		}
-		return all[i].Line < all[j].Line
-	})
+	all := make([]A11yFinding, 0, len(violations))
+	for _, v := range violations {
+		all = append(all, A11yFinding{File: v.File, Line: v.Line, Message: v.Message, Element: a11yElementFromMessage(v.Message)})
+	}
 	return all, nil
 }
 
@@ -101,8 +47,6 @@ func a11yElementFromMessage(msg string) string {
 	return ""
 }
 
-// a11yGuidance maps an element name to the one-paragraph fix hint shown
-// under each finding. The goal is to teach the rule rather than merely flag it.
 var a11yGuidance = map[string]string{
 	"Image":    `every image needs Alt. Informative image → describe what it shows ("Team photo at launch"). Decorative image → explicit empty Alt: "" so screen readers skip it. Never omit the field.`,
 	"Button":   `a button needs an accessible name. Visible text → Label carries it; icon-only button → Label describes the action ("Close dialog", "Copy code").`,
@@ -124,8 +68,8 @@ var a11yGuidance = map[string]string{
 	"Source":   `media sources need Src and Type so the browser can pick a playable stream.`,
 }
 
-// FormatA11yReport renders findings with a fix hint per finding. Quiet
-// (single line) when findings is empty.
+// FormatA11yReport renders findings with a fix hint per finding, or one
+// line when there are none.
 func FormatA11yReport(findings []A11yFinding) string {
 	if len(findings) == 0 {
 		return "No accessibility issues found.\n"

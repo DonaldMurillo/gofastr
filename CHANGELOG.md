@@ -45,6 +45,34 @@ few lines, and link the PR or the docs page for the rest.
   negotiated now gets `400`; send the negotiated one. An absent header is
   still served. See [MCP server](framework/docs/content/mcp.md)
   ([#943](https://github.com/DonaldMurillo/gofastr/pull/943)).
+- **BREAKING: `gofastr validate` refuses an `app.static_dir` with a
+  directory whose name starts with a dot**, such as `.git`, `.env.d` or
+  `public/.git`. The app would have served the repository's history or
+  config to anyone. Serve a directory of its own, such as `static`
+  ([#938](https://github.com/DonaldMurillo/gofastr/issues/938)).
+
+- **BREAKING: a `.json` app spec refuses `{}` where an access or database
+  setting takes a single value** (`read`, `create`, `update`, `delete`,
+  `role`, `owner_field`, `tenant_field`, `read_scope.unrestricted`,
+  `app.db.driver` and the rest). `{}` used to load as blank, the weakest
+  setting: `"read": {}` opened reads to everyone, and
+  `"unrestricted": {}` let every signed-in user past the read scope. Write
+  the value, or leave the key out
+  ([#937](https://github.com/DonaldMurillo/gofastr/issues/937)).
+
+- **BREAKING: `gofastr harness` and `gofastr harness mcp` read their
+  config directory (repository-key approvals, `permissions.json`, user
+  `skills/`, the credential salt and `creds.enc`) from
+  `$XDG_CONFIG_HOME/gofastr/harness`**, where `gofastr harness creds`
+  already wrote it. Before, they always read `~/.config/gofastr/harness`,
+  so with `XDG_CONFIG_HOME` set a stored credential was never seen. If you
+  set `XDG_CONFIG_HOME` and kept files under `~/.config/gofastr/harness`,
+  move them to the new directory. A relative `XDG_CONFIG_HOME` is now
+  ignored by all three commands, as the XDG spec says, and they use
+  `~/.config/gofastr/harness`: run inside a cloned repository, a relative
+  path named files the repository's author wrote. If `gofastr harness creds`
+  stored files under a relative `XDG_CONFIG_HOME`, move them to
+  `~/.config/gofastr/harness` or set an absolute path.
 - **BREAKING: a bare list control key no longer filters a same-named
   column.** `?direction=desc`, `?page=2`, `?sort=...` and the other
   control keys (`q` too, when the entity has `SearchFields`) are read only
@@ -103,6 +131,36 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **`gofastr generate app` no longer follows a font download's redirect
+  to another host or to plain http.** It asks only https fonts.googleapis.com
+  and fonts.gstatic.com for a theme's fonts, but followed any redirect
+  their answers named; a redirect within the same https host
+  still works ([#936](https://github.com/DonaldMurillo/gofastr/pull/936)).
+
+- **The app-spec PII lint no longer suggests `multi_tenant: true`**, which
+  `gofastr validate` refuses for a generated app. It names `owner_field` and
+  an `access.read` permission
+  ([#939](https://github.com/DonaldMurillo/gofastr/issues/939)).
+
+- **`gofastr generate`'s unscoped-read warning no longer suggests
+  `multi_tenant: true`**, which `gofastr validate` refuses for a generated
+  app. It names `owner_field` and an `access.read` permission
+  ([#939](https://github.com/DonaldMurillo/gofastr/issues/939)).
+
+- **`gofastr release --url` no longer prints the credentials in a URL it
+  refuses.** The error shows `https://REDACTED@host/...`, so a token in
+  the URL stays out of the terminal and CI logs
+  ([#934](https://github.com/DonaldMurillo/gofastr/pull/934)).
+
+- **`gofastr dev`'s hold page answers `/__livereload` only to its own host
+  names** on a loopback bind, as the page already did for the build output.
+  A page on a name rebound to 127.0.0.1 gets 403
+  ([#941](https://github.com/DonaldMurillo/gofastr/issues/941)).
+
+- **`gofastr telemetry … --json` escapes C1, bidi and zero-width runes**
+  in every subcommand, so a stored route or error cannot reach the terminal
+  raw. A byte that is not UTF-8 inside a stored line's string prints as the
+  escape for U+FFFD. A program reading the JSON decodes the same values.
 - **Toasts show on the top layer and wait out a modal** (#706). The
   toast stack's widget is a manual popover while it holds a toast, so a
   toast shows above menus, popovers and tooltips already open, including
@@ -120,6 +178,10 @@ few lines, and link the PR or the docs page for the rest.
 - **`repolint` flags a `go build ./cmd/vettool/` written with a trailing
   slash** that lacks `-buildvcs=false`, as it already did without the
   slash ([#924](https://github.com/DonaldMurillo/gofastr/pull/924)).
+- **Anchored popovers show on the top layer** (#706). An open popover
+  widget opened with `data-cui-popover-anchor` is a manual popover, so
+  a menu, toast or tooltip already open no longer covers it. The
+  runtime still places it and its arrow beside the trigger.
 - **Menu and dropdown panels show on the top layer** (#706). Where the
   browser has CSS anchor positioning, an open `ui.Menu` or
   `ui.Dropdown` panel is a manual popover anchored to its trigger, so a

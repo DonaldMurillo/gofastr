@@ -10,17 +10,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// renderEntityColumns emits one entity's typed column constants and include
-// names. Codegen-only; the framework itself defines NewStringColumn etc. so
-// the generator just instantiates.
 func renderEntityColumns(decl framework.EntityDeclaration) string {
 	struct_ := appspec.ToCamelCase(decl.Name)
 	var sb strings.Builder
 	sb.WriteString("// ====== " + struct_ + " column references ======\n\n")
 	sb.WriteString("var (\n")
-	// An entity keyed on the generated "id" gets its column here: Define
-	// adds the field, so Fields does not declare it. A declared key's
-	// columns are ordinary fields below.
 	keyIsID := appspec.DeclKeyIsID(decl)
 	if keyIsID {
 		ctor := "framework.NewUUIDColumn"
@@ -33,11 +27,6 @@ func renderEntityColumns(decl framework.EntityDeclaration) string {
 		if keyIsID && field.Name == "id" {
 			continue
 		}
-		// A typed column exists to be put in a WHERE or ORDER BY. Emitting
-		// one for a NoQuery field hands the developer a compiling, running
-		// way to query the very column the HTTP surface refuses. TypedQuery
-		// applies conditions straight to the builder without re-checking the
-		// schema. Leave it out; the field is still readable on the struct.
 		if field.NoQuery {
 			continue
 		}
@@ -50,7 +39,6 @@ func renderEntityColumns(decl framework.EntityDeclaration) string {
 	}
 	sb.WriteString(")\n\n")
 
-	// Include name constants per relation.
 	if len(decl.Relations) > 0 {
 		sb.WriteString("// " + struct_ + " include names: pass to framework.TypedQuery.Include or repo.Get(..., includes...).\n")
 		sb.WriteString("const (\n")
@@ -72,8 +60,6 @@ func %[1]sID(%[4]s) string {
 	return sb.String()
 }
 
-// columnConstructor maps a schema field type to the framework constructor
-// that produces a typed column for it.
 func columnConstructor(value string) string {
 	switch strings.ToLower(value) {
 	case "int", "integer":
@@ -87,19 +73,10 @@ func columnConstructor(value string) string {
 	case "uuid", "relation":
 		return "framework.NewUUIDColumn"
 	default:
-		// String, Text, Enum, JSON, Image, File all get StringColumn: they're
-		// all stored as TEXT and queried by string equality / LIKE.
 		return "framework.NewStringColumn"
 	}
 }
 
-// renderEntityEvents emits one entity's typed event wrappers
-// (On<Camel>Created/Updated/Deleted) and its record extractor. The bodies
-// they delegate to live once per package in entities/events.go
-// (renderEventHelpers): onEntityEvent, onEntityDeleted, and the generic
-// extractEntityRecord, which formerly were duplicated per entity file. Every
-// exported name and signature is unchanged, and each wrapper still returns
-// the cancel func from EventBus.Subscribe so callers can unsubscribe.
 func renderEntityEvents(decl framework.EntityDeclaration) string {
 	struct_ := appspec.ToCamelCase(decl.Name)
 	return fmt.Sprintf(`// On%sCreated subscribes to entity.created events scoped to %q.
@@ -125,15 +102,8 @@ func On%sDeleted(app *framework.App, fn func(ctx context.Context, id %s) error) 
 		struct_, decl.Name, struct_, goIDType(decl), deletedBody(decl))
 }
 
-// deletedBody is On<Entity>Deleted's body. An entity keyed on a string
-// "id" hands off to the shared onEntityDeleted, which reads the payload's
-// "id"; an integer id reads it in its own body and parses it, since the
-// callback takes an int. A declared key's payload carries each key column
-// under its wire key instead, so the body reads the record id from those.
 func deletedBody(decl framework.EntityDeclaration) string {
 	if intID(decl) {
-		// The payload's id is the string key; the callback takes the
-		// int the row's ID holds.
 		return fmt.Sprintf(`return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {
 		data, ok := ev.Data.(map[string]any)
 		if !ok || data["entity"] != %q {
@@ -176,15 +146,6 @@ func deletedBody(decl framework.EntityDeclaration) string {
 	})`, strings.Join(wire, ", "), decl.Name, stringSliceLiteral(names))
 }
 
-// renderEventHelpers emits entities/events.go, the fixed event-helper seam
-// for the generated entities package. It holds the bodies that
-// renderEntityEvents formerly emitted per entity: the record-lifecycle
-// subscription (on<Camel>Event, now onEntityEvent), the deleted-subscription
-// body (formerly inlined in every On<Camel>Deleted, now onEntityDeleted),
-// and the record extractor extractEntityRecord). Like register.go it
-// carries no entity-specific text,
-// so its bytes are identical for every project and additive generation
-// writes it only when absent.
 func renderEventHelpers() string {
 	return `package entities
 
@@ -248,9 +209,6 @@ func extractEntityRecord[T any](ev framework.Event, entity string) (*T, bool) {
 `
 }
 
-// enumValueType names the Go type an enum field's values take in the
-// entities package, <Entity><Field>Value, or "" for a field that is not an
-// enum with declared values.
 func enumValueType(struct_ string, field framework.FieldDeclaration) string {
 	if !strings.EqualFold(field.Type, "enum") || len(field.Values) == 0 {
 		return ""
@@ -258,8 +216,6 @@ func enumValueType(struct_ string, field framework.FieldDeclaration) string {
 	return struct_ + appspec.ToCamelCase(field.Name) + "Value"
 }
 
-// entityFieldGoType is a field's Go type in the entities package: the enum
-// value type for an enum with declared values, the plain mapping otherwise.
 func entityFieldGoType(struct_ string, field framework.FieldDeclaration) string {
 	if typ := enumValueType(struct_, field); typ != "" {
 		return typ
@@ -267,8 +223,6 @@ func entityFieldGoType(struct_ string, field framework.FieldDeclaration) string 
 	return goTypeForField(field.Type)
 }
 
-// entityMoveKeys lists every move key on the entity, System moves included:
-// the repo is Go code, the one caller a System move admits.
 func entityMoveKeys(decl framework.EntityDeclaration) []string {
 	if decl.States == nil {
 		return nil
@@ -282,10 +236,6 @@ func entityMoveKeys(decl framework.EntityDeclaration) []string {
 
 type identConst struct{ name, value string }
 
-// entityFileNames counts the top-level names one entity file declares
-// besides its enum and move constants: the model, the write shapes and
-// their nested cascade types, the repo and its constructor, the column vars and include constants, the
-// value and move types, and the event and registration funcs.
 func entityFileNames(decl framework.EntityDeclaration) map[string]int {
 	struct_ := appspec.ToCamelCase(decl.Name)
 	names := map[string]int{}
@@ -298,8 +248,6 @@ func entityFileNames(decl framework.EntityDeclaration) map[string]int {
 		names[name]++
 	}
 	for _, field := range decl.Fields {
-		// renderEntityColumns emits no column var for the generated id or a
-		// NoQuery field.
 		if !(appspec.DeclKeyIsID(decl) && field.Name == "id") && !field.NoQuery {
 			names[struct_+appspec.ToCamelCase(field.Name)]++
 		}
@@ -319,13 +267,6 @@ func entityFileNames(decl framework.EntityDeclaration) map[string]int {
 	return names
 }
 
-// identConsts derives one constant name per value: prefix plus the value
-// camel-cased. A value whose name is not an ASCII Go identifier, or whose
-// name taken counts more than once, gets no constant; it comes back in
-// unnamed so the emitter can say so. taken holds every name in the file,
-// these candidates included, so "past_due" next to "past-due", or "value"
-// on status against the type PostsStatusValue, both lose their constant.
-// The value itself only ever reaches a quoted literal.
 func identConsts(prefix string, values []string, taken map[string]int) (consts []identConst, unnamed []string) {
 	for _, v := range values {
 		camel := appspec.ToCamelCase(v)
@@ -338,8 +279,6 @@ func identConsts(prefix string, values []string, taken map[string]int) (consts [
 	return consts, unnamed
 }
 
-// writeConstBlock emits typ's constants, and a comment naming the values
-// identConsts could not name, which stay reachable as typ("<value>").
 func writeConstBlock(sb *strings.Builder, typ string, consts []identConst, unnamed []string) {
 	if len(consts) > 0 {
 		sb.WriteString("const (\n")
@@ -358,17 +297,9 @@ func writeConstBlock(sb *strings.Builder, typ string, consts []identConst, unnam
 	}
 }
 
-// renderEntityEnums emits, per enum field with declared values, a named
-// string type and one constant per value, and for an entity with moves,
-// <Entity>Move and one constant per move key. The model, the write shapes
-// and the enum column all take the named type, so PostsStatus.Eq(
-// PostsStatusLive) compiles and a plain string variable does not.
 func renderEntityEnums(decl framework.EntityDeclaration) string {
 	struct_ := appspec.ToCamelCase(decl.Name)
 	keys := entityMoveKeys(decl)
-	// Count every candidate constant before naming any, so a value loses
-	// its constant when any other name in the file, constants included,
-	// repeats it.
 	taken := entityFileNames(decl)
 	count := func(prefix string, values []string) {
 		for _, v := range values {
@@ -405,20 +336,6 @@ func renderEntityEnums(decl framework.EntityDeclaration) string {
 	return sb.String()
 }
 
-// renderEntityWriteShapes emits the repo's two write payloads.
-// <Entity>Input is the create payload: a required field with no default
-// is a value and always sent; every other field is a pointer whose nil
-// takes the column default. <Entity>Patch is the update payload, every
-// field a pointer: nil leaves the field as stored, a pointer to a zero
-// value writes it where the CRUD path keeps "" (dropEmptyFormValues keeps
-// it only for string and text). The model cannot be the write shape: a
-// value-typed field tagged omitempty marshals false, 0 and "" away, so a
-// create could not override a non-zero default and an update could never
-// clear a field.
-//
-// Hidden fields stay in both: the repo is server code, and WithServerWrites
-// lets it write them. writeShapeDrops removes what the CRUD path never
-// takes from a payload, the same set the HTTP client's shapes drop.
 func renderEntityWriteShapes(decl framework.EntityDeclaration, decls []framework.EntityDeclaration) string {
 	struct_ := appspec.ToCamelCase(decl.Name)
 	dropCreate, dropUpdate := writeShapeDrops(decl)
@@ -462,8 +379,6 @@ func renderEntityWriteShapes(decl framework.EntityDeclaration, decls []framework
 	sb.WriteString("}\n\n")
 	for _, rel := range cascadeRelations(decl) {
 		nested := struct_ + appspec.ToCamelCase(rel.Name) + "Nested"
-		// The child's own key column, not always id: the patch drops key
-		// columns, so this field is the only one that can address it.
 		key, keyType, keyTag := nestedKey(rel, decls)
 		empty := "an empty " + key + " creates one"
 		if rel.Type == framework.RelHasOne {
@@ -479,10 +394,6 @@ func renderEntityWriteShapes(decl framework.EntityDeclaration, decls []framework
 	return sb.String()
 }
 
-// cascadeRelations lists the relations whose children the write payloads
-// carry: cascade_write on a has_one, has_many or belongs_to, the three the
-// CRUD path writes through (crud/cascade_write.go). The model struct
-// carried them before the payloads replaced it as the write shape.
 func cascadeRelations(decl framework.EntityDeclaration) []framework.Relation {
 	var out []framework.Relation
 	for _, rel := range decl.Relations {
@@ -493,8 +404,6 @@ func cascadeRelations(decl framework.EntityDeclaration) []framework.Relation {
 	return out
 }
 
-// cascadeArity is the Go type prefix for a cascade relation's children:
-// a slice for has_many, a pointer for a single child.
 func cascadeArity(rel framework.Relation) string {
 	if rel.Type == framework.RelHasMany {
 		return "[]"
@@ -502,11 +411,6 @@ func cascadeArity(rel framework.Relation) string {
 	return "*"
 }
 
-// renderEntityRepo emits one entity's typed repository, wrapping a
-// CrudHandler so generated callers get Create/Get/Update/Delete + Query +
-// WithTx without re-implementing CRUD plumbing. Writes take the shapes
-// renderEntityWriteShapes emits, never the model; an entity with moves
-// also gets Transition.
 func renderEntityRepo(decl framework.EntityDeclaration) string {
 	repo := fmt.Sprintf(`// %[1]sRepo is the typed repository for %[2]s rows.
 // Event helpers: On%[1]sCreated/On%[1]sUpdated/On%[1]sDeleted in this package.
@@ -703,9 +607,6 @@ func (r *%[1]sRepo) Transition(ctx context.Context, %[2]s, move %[1]sMove) (*%[1
 `, appspec.ToCamelCase(decl.Name), goKeyParams(decl), typedKeyExpr(decl), keyDoc(decl))
 }
 
-// typedKeyExpr is the Go expression for a record's id inside a repo
-// method, the string key CrudHandler takes: the one key parameter, an
-// integer id in decimal, or <Entity>ID over a composite key's.
 func typedKeyExpr(decl framework.EntityDeclaration) string {
 	if intID(decl) {
 		return "strconv.Itoa(id)"
@@ -716,10 +617,6 @@ func typedKeyExpr(decl framework.EntityDeclaration) string {
 	return appspec.ToCamelCase(decl.Name) + "ID(" + keyArgs(decl) + ")"
 }
 
-// existsBody is the repo's Exists body. The generated id, string or
-// integer, has a typed column to query; a declared key's values arrive as
-// strings whatever the columns' types, so Exists reads the record the way
-// Get does.
 func existsBody(decl framework.EntityDeclaration) string {
 	if appspec.DeclKeyIsID(decl) {
 		return fmt.Sprintf("return r.Query().Where(%sID.Eq(id)).Exists(ctx)", appspec.ToCamelCase(decl.Name))

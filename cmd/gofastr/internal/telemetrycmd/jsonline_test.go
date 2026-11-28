@@ -9,7 +9,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	itel "github.com/DonaldMurillo/gofastr/internal/telemetry"
+	"github.com/DonaldMurillo/gofastr/internal/telemetry/telemetrytest"
 )
 
 // --json prints a stored line, and a terminal acts on what it is shown:
@@ -49,6 +51,52 @@ func TestJSONLineIsSafeToPrint(t *testing.T) {
 	}
 }
 
+// Every --json command escapes each rune textsafe.IsUnsafe names, not only C1
+// and bidi controls: zero-width, tag and line-separator runes hide or move text.
+func TestEveryJSONCommandEscapesUnsafeRunes(t *testing.T) {
+	dir := t.TempDir()
+	at := now.Add(-time.Minute)
+	id := strings.Repeat("e", 32)
+	route := "GET /a\u009b\u2028\u200b\U000E0041"
+	trace := itel.AppendTrace(nil, itel.Trace{Time: at, TraceID: id, Route: route, Path: "/a\u202e", Status: 500, Dur: time.Millisecond,
+		Error: true, Err: "boom\u2066\ufeff"})
+	telemetrytest.Append(t, dir, itel.KindTraces, at, trace)
+	telemetrytest.Append(t, dir, itel.KindLogs, at, []byte(`{"time":"`+at.Format(time.RFC3339Nano)+`","level":"INFO","msg":"m`+"\u2029\u200d"+`","trace_id":"`+id+`"}`+"\n"))
+	r := itel.NewRollup()
+	r.Observe(at, route, time.Millisecond, true, false)
+	telemetrytest.Append(t, dir, itel.KindStats, at.Add(time.Minute), r.Take(at.Add(time.Minute), true))
+	var astral map[string]string
+	if err := json.Unmarshal(jsonLine([]byte(`{"m":"a`+"\U000E0041"+`b"}`)), &astral); err != nil || astral["m"] != "a\U000E0041b" {
+		t.Errorf("a rune past U+FFFF is not escaped as a surrogate pair: %q, %v", astral["m"], err)
+	}
+	for _, args := range [][]string{
+		{"logs", "--dir", dir, "--json"},
+		{"requests", "--dir", dir, "--json"},
+		{"issues", "--dir", dir, "--json"},
+		{"stats", "--dir", dir, "--json"},
+		{"request", id, "--dir", dir, "--json"},
+	} {
+		out, err := run(t, args...)
+		if err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		if strings.TrimSpace(out) == "" {
+			t.Fatalf("%v printed nothing", args)
+		}
+		for _, r := range out {
+			if r != '\n' && textsafe.IsUnsafe(r) {
+				t.Errorf("%v printed %U raw: %q", args, r, out)
+				break
+			}
+		}
+		for line := range strings.Lines(out) {
+			if !json.Valid([]byte(line)) {
+				t.Errorf("%v printed a line that is not JSON: %q", args, line)
+			}
+		}
+	}
+}
+
 // Through the commands: logs --json and request --json print stored
 // lines, a torn one and one with a C1 control among them.
 func TestJSONOutputIsScrubbed(t *testing.T) {
@@ -76,6 +124,44 @@ func TestJSONOutputIsScrubbed(t *testing.T) {
 		}
 		if !strings.Contains(out, `\u009b`) {
 			t.Errorf("%v: the character is gone instead of escaped: %q", args, out)
+		}
+	}
+}
+
+func TestTornJSONLineEscapesUnsafeRunes(t *testing.T) {
+	torn := "{\"msg\":\"a\u009b2Jb\u202ec\u2066d\u200fe torn"
+	got := string(jsonLine([]byte(torn)))
+	for _, r := range got {
+		if r >= 0x20 && textsafe.IsUnsafe(r) {
+			t.Fatalf("U+%04X reached the output: %q", r, got)
+		}
+	}
+	var text string
+	if err := json.Unmarshal([]byte(got), &text); err != nil || text != torn {
+		t.Errorf("the torn line reads as %q (err %v), want %q", text, err, torn)
+	}
+}
+
+// json.Valid accepts bytes that are not UTF-8 inside a string, and a lone
+// 0x9b is the one-byte C1 CSI to a terminal that reads 8-bit controls. A
+// valid line that holds one prints it as U+FFFD escaped, what a decoder reads it as.
+func TestValidJSONLineEscapesBytesThatAreNotUTF8(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"{\"m\":\"a\x9b2Jb\"}", `{"m":"a\ufffd2Jb"}`},
+		{"{\"m\":\"a\x9b2Jb\u202ec\"}", `{"m":"a\ufffd2Jb\u202ec"}`},
+		{"{\"m\":\"ok \ufffd\"}", "{\"m\":\"ok \ufffd\"}"},
+	} {
+		got := string(jsonLine([]byte(tc.in)))
+		if got != tc.want {
+			t.Errorf("jsonLine(%q) = %q, want %q", tc.in, got, tc.want)
+			continue
+		}
+		var before, after map[string]string
+		if err := json.Unmarshal([]byte(tc.in), &before); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal([]byte(got), &after); err != nil || after["m"] != before["m"] {
+			t.Errorf("%q reads as %q (err %v), want %q", got, after["m"], err, before["m"])
 		}
 	}
 }

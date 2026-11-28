@@ -63,6 +63,14 @@ entities:
 	if msg := got[1].Message(); !strings.Contains(msg, "anonymous callers can read") || strings.Contains(msg, "session is already required") {
 		t.Fatalf("a create-only permission leaves anonymous reads open: %q", msg)
 	}
+	if msg := got[0].Message(); strings.Contains(msg, "multi_tenant") {
+		t.Fatalf("validate refuses multi_tenant for a generated app, so the message must not suggest it: %q", msg)
+	}
+	for _, remedy := range []string{"owner_field", "access.read"} {
+		if msg := got[0].Message(); !strings.Contains(msg, remedy) {
+			t.Errorf("the message must name the accepted remedy %s: %q", remedy, msg)
+		}
+	}
 }
 
 // Public entities get a separate warning about anonymous reads and writes.

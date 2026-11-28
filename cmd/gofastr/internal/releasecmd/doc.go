@@ -1,6 +1,4 @@
-// Package releasecmd implements `gofastr release`: cross-compiling a
-// CLI or service binary for every supported OS and CPU, packing each
-// build into an archive, and writing checksums.txt plus the install.sh
-// and install.ps1 scripts that download, verify and install the build
-// for the machine they run on.
+// Package releasecmd implements `gofastr release`: cross-compiled
+// archives of a CLI or service binary, checksums.txt, and the install.sh
+// and install.ps1 scripts that verify and install one.
 package releasecmd

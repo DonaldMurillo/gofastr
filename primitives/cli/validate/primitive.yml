@@ -1,0 +1,39 @@
+primitive: cli.validate
+summary: gofastr validate - load one app spec, check its module against go.mod, render the app in memory, and fail on unscoped PII, writing no file.
+code:
+  - cmd/gofastr/internal/validatecmd/
+docs:
+  - framework/docs/content/cli.md
+on_change:
+  - A check gofastr generate adds is added here too, as an error or through appgen.CommonLintFindings as a warning, so validate passes only what generate accepts.
+invariants:
+  - id: one-spec-no-flags
+    rule: validate exits 2 when the first argument is missing or starts with --, or when a second path or any flag follows it, and reports nothing valid.
+    enforced_by:
+      - test: cmd/gofastr/internal/validatecmd.TestValidateCmdMissingOrFlagOperandExits2
+      - test: cmd/gofastr/internal/validatecmd.TestValidateCmdRefusesExtraArguments
+      - test: cmd/gofastr/internal/validatecmd.TestValidateRefusesSecondPath
+  - id: module-checked-at-spec-dir
+    rule: The app.module check resolves go.mod from the app spec's own directory, not the working directory.
+    enforced_by:
+      - test: cmd/gofastr/internal/validatecmd.TestValidateCmdModuleMismatchExits1
+  - id: render-runs-without-fonts
+    rule: validate renders the whole app through appgen.RenderAppSpecCode, exits 1 on a render-only error, and fetches no webfont.
+    enforced_by:
+      - test: cmd/gofastr/internal/validatecmd.TestValidateRunsTheRender
+      - test: cmd/gofastr/internal/validatecmd.TestValidateFetchesNoFonts
+  - id: unscoped-pii-fails
+    rule: An entity that appspec.LintUnscopedPII flags makes validate exit 1, where gofastr generate only warns.
+    enforced_by:
+      - test: cmd/gofastr/internal/validatecmd.TestValidatePIIExits1
+      - test: cmd/gofastr/internal/validatecmd.TestValidateAuthOnPIIExits1
+      - test: cmd/gofastr/internal/validatecmd.TestValidatePIIOwnerFieldOk
+  - id: common-lints-warn
+    rule: validate prints every appgen.CommonLintFindings message as a warning prefixed with the spec path and still exits 0.
+    enforced_by:
+      - test: cmd/gofastr/internal/validatecmd.TestValidateWarnsOwnerScopedUnique
+      - test: cmd/gofastr/internal/validatecmd.TestValidateNavWarns
+  - id: errors-name-file-and-line
+    rule: A failure is printed as the spec path, a colon, and the error without its "app spec:" prefix, so a decoder error keeps its line number.
+    enforced_by:
+      - test: cmd/gofastr/internal/validatecmd.TestValidateCmdParseErrorHasLine

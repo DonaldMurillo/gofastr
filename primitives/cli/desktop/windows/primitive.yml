@@ -1,0 +1,53 @@
+primitive: cli.desktop.windows
+summary: The Windows side of gofastr desktop build and run - the GUI executable with its icon and version resources, the pinned WebView2 loader, signtool signing and the --zip update archive.
+code:
+  - cmd/gofastr/internal/desktopcmd/desktop_build_windows.go
+  - cmd/gofastr/internal/desktopcmd/desktop_sign_windows.go
+  - cmd/gofastr/internal/desktopcmd/desktop_windows_version.go
+  - cmd/gofastr/internal/desktopcmd/desktop_version_parts.go
+  - cmd/gofastr/internal/desktopcmd/desktop_run_windows.go
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - Every test here but TestWindowsVersionsUseCoreNumbers is built for Windows only, and the Windows job in .github/workflows/windows-init.yml runs each one an invariant here names; a new Windows-only enforcer joins that job's desktopcmd step in the same change, and GOOS=windows go vet checks the package builds.
+invariants:
+  - id: version-resource-from-core
+    rule: windowsVersionParts takes up to four numeric components from the version's core, dropping a valid semver pre-release, and refuses an invalid suffix, a fifth component or a version over 256 characters.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestWindowsVersionsUseCoreNumbers
+      - test: cmd/gofastr/internal/desktopcmd.TestWindowsVersionParts
+  - id: signtool-picks-the-certificate
+    rule: A 40-hex-digit --sign is a SHA-1 thumbprint (/sha1), anything else a subject substring (/n), signed with sha256 and timestamped with /tr unless --timestamp-url is none.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestSigntoolArgs
+      - test: cmd/gofastr/internal/desktopcmd.TestSignWindowsExecutableRunsSigntool
+  - id: newest-sdk-signtool
+    rule: signtool is taken from PATH, else from the Windows 10 SDK whose version sorts highest numerically for the host's architecture.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestCompareSDKPathsIsNumeric
+  - id: zip-is-a-feed-archive
+    rule: The --zip archive holds one <name>/ directory with <name>.exe and WebView2Loader.dll and no timestamps, refuses a name that is not one plain path element, and is renamed over the destination only once fully written.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestWindowsZipIsAFeedArchive
+      - test: cmd/gofastr/internal/desktopcmd.TestZipWindowsBundleRefusesAPathName
+      - test: cmd/gofastr/internal/desktopcmd.TestZipWindowsBundleKeepsTheOldArchiveOnFailure
+  - id: sign-last
+    rule: signtool runs after every resource update to the executable, and WebView2Loader.dll is never re-signed.
+    judge: Does this change write to the Windows executable after signWindowsExecutable runs, or sign WebView2Loader.dll?
+decisions:
+  - id: timestamp-by-default
+    date: 2026-11-28
+    status: accepted
+    decision: --timestamp-url defaults to a public RFC 3161 server.
+    rejected:
+      - option: Sign without a timestamp unless asked.
+        why: An untimestamped signature stops validating when the certificate expires; a timestamped one does not.
+    upholds: [signtool-picks-the-certificate]
+  - id: keep-microsoft-signature
+    date: 2026-11-28
+    status: accepted
+    decision: The pinned WebView2Loader.dll ships with Microsoft's signature only.
+    rejected:
+      - option: Sign it with the app's certificate too.
+        why: The updater checks the loader's Microsoft signature.
+    upholds: [sign-last]

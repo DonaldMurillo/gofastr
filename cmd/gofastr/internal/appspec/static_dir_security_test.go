@@ -1,8 +1,11 @@
 package appspec
 
 import (
+	"io/fs"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/packages"
 )
 
 // The generated app serves app.static_dir to anyone who asks. A
@@ -24,6 +27,8 @@ func TestStaticDirRefusesProjectFiles(t *testing.T) {
 		{"gen/js", ""},
 		{"siteheader", ""},
 		{"docpage", ""},
+		{"sitefooter/css", ""},
+		{"helpdocs", ""},
 		{"data", "file:data/app.db"},
 		{"data", "data/app.db?_pragma=busy_timeout(5000)"},
 		{"./data/", "file:./data/app.db"},
@@ -85,6 +90,42 @@ func TestStaticDirRefusesOutputDir(t *testing.T) {
 		got := err != nil && strings.Contains(err.Error(), "static_dir")
 		if got != c.refused {
 			t.Errorf("static_dir %q with output_dir %q: refused=%v, want %v (%v)", c.dir, c.out, got, c.refused, err)
+		}
+	}
+}
+
+// Every canonical package generate copies into an app is Go the app would otherwise serve.
+func TestStaticDirRefusesEveryCanonicalPackage(t *testing.T) {
+	entries, err := fs.ReadDir(packages.FS, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		bp := AppSpec{}
+		bp.App.StaticDir = e.Name()
+		if err := ValidateAppSpec(bp); err == nil || !strings.Contains(err.Error(), "static_dir") {
+			t.Errorf("static_dir %q, a package generate copies into the app, accepted: %v", e.Name(), err)
+		}
+	}
+}
+
+// static_dir: .git passed validate, so the app served the repository's history and config.
+func TestStaticDirRefusesDotDirectories(t *testing.T) {
+	for _, dir := range []string{".git", "./.git/", ".env.d", "public/.git", `assets\.ssh`, "web/.config/static", "../app/.git", "/srv/app/.git", "//.git", `\\server\share\.git`} {
+		bp := AppSpec{}
+		bp.App.StaticDir = dir
+		if err := ValidateAppSpec(bp); err == nil || !strings.Contains(err.Error(), "static_dir") || !strings.Contains(err.Error(), "starts with a dot") {
+			t.Errorf("static_dir %q: err = %v, want a refusal naming the dot directory", dir, err)
+		}
+	}
+	for _, dir := range []string{"static", "web/my.assets", "public/v1.2", "../static", "/srv/static"} {
+		bp := AppSpec{}
+		bp.App.StaticDir = dir
+		if err := ValidateAppSpec(bp); err != nil && strings.Contains(err.Error(), "static_dir") {
+			t.Errorf("static_dir %q refused: %v", dir, err)
 		}
 	}
 }

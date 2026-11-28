@@ -25,20 +25,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
-// RunSemantic dispatches `gofastr semantic <subcommand>`.
-//
-//   - index <path...>     One-shot: walk the path(s) and add every
-//     matching file to the local index.
-//   - watch <path...>     Index, then poll for changes until SIGINT.
-//   - query <text>        Print top-K hits as JSON.
-//   - stats               Print index stats as JSON.
-//   - clear               Delete the local snapshot + WAL for this cwd;
-//     refused while an index or watch holds the writer lock.
-//
-// When the GOFASTR_URL environment variable is set, query and stats
-// hit that server's /semantic/* endpoints instead of opening a local
-// index. index/watch/clear are always local: long-lived mutations
-// should run alongside the server, not through it.
+// RunSemantic implements `gofastr semantic <index|watch|query|stats|clear>`.
 func RunSemantic(args []string) {
 	if len(args) == 0 || cli.HasHelpFlagBeforeTerminator(args) {
 		printSemanticHelp()
@@ -106,9 +93,6 @@ func printSemanticHelp() {
 `, cli.Bold("gofastr semantic"), cli.Bold("Usage"), cli.Bold("Subcommands"), cli.Bold("Flags"), cli.Bold("Environment"), cli.Bold("Examples"))
 }
 
-// localSnapshotDir returns ~/.gofastr/semantic/<cwd-hash>. Distinct cwds
-// get distinct snapshot directories so we don't index different
-// projects into the same file.
 func localSnapshotDir() string {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -120,25 +104,6 @@ func localSnapshotDir() string {
 	return filepath.Join(home, ".gofastr", "semantic", tag)
 }
 
-// openLocalIndex constructs an Index. The embedder is chosen by
-// environment:
-//
-//   - SEMANTIC_BACKEND=ollama  → OllamaEmbedder (real semantic, requires
-//     a running Ollama-compatible server)
-//   - anything else            → StubEmbedder (deterministic, no setup,
-//     low retrieval quality, fine for dev/tests)
-//
-// SEMANTIC_BACKEND is preferred; EMBED_BACKEND is read as a deprecated
-// fallback and warns on stderr.
-//
-// Additional env knobs for the Ollama path:
-//
-//   - OLLAMA_URL    (default http://localhost:11434)
-//   - OLLAMA_MODEL  (default nomic-embed-text)
-//
-// readOnly opens beside a running `semantic watch` (query, stats): the
-// watcher holds the directory's writer lock, and a second writer
-// snapshotted and truncated the WAL the watcher was appending to.
 func openLocalIndex(readOnly bool) (semantic.Index, error) {
 	idx, err := semantic.Open(semantic.Options{
 		Embedder: chooseEmbedder(),
@@ -212,11 +177,6 @@ func embedIndex(paths []string, watch bool) {
 
 const queryUsage = "usage: gofastr semantic query \"<text>\" [-k N] [--hybrid] [--mmr 0.4]"
 
-// parseQueryArgs reads `semantic query` arguments: one query text and
-// the -k/--k, --hybrid and --mmr flags, before or after it, as
-// `-k 3` or `-k=3`. "--" ends the flags, for a query that starts with a
-// dash. It refuses a k below one, an empty query and a second word, which
-// an unquoted multi-word query is.
 func parseQueryArgs(args []string) (semantic.Query, error) {
 	q := semantic.Query{K: 5}
 	var text []string
@@ -369,17 +329,8 @@ func embedClear() {
 	cli.Success("cleared %s", dir)
 }
 
-// indexLockName is the writer lock battery/semantic keeps in an index
-// directory (lockIndexDir in persist.go).
 const indexLockName = "lock"
 
-// clearIndexDir empties an index directory under its writer lock and
-// keeps the lock file. Removing the whole directory unlinked the lock a
-// running `semantic watch` held, so the next writer locked a new file
-// and two processes wrote one WAL. A held lock refuses the clear; a
-// writer that starts mid-clear finds the same file locked and fails with
-// semantic.ErrIndexLocked instead of writing. A missing directory is
-// already clear.
 func clearIndexDir(dir string) error {
 	root, err := os.OpenRoot(dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -416,11 +367,6 @@ func clearIndexDir(dir string) error {
 	return nil
 }
 
-// remoteHTTPClient bounds every remote semantic call: a GOFASTR_URL peer
-// that accepts the connection but never responds fails the call within
-// the deadline instead of hanging the CLI (the bootProbeClient shape).
-// It refuses redirects: a call carries GOFASTR_SEMANTIC_TOKEN, which goes
-// to the server GOFASTR_URL names and nowhere a redirect points.
 var remoteHTTPClient = &http.Client{
 	Timeout: 2 * time.Second,
 	CheckRedirect: func(req *http.Request, _ []*http.Request) error {
@@ -428,9 +374,6 @@ var remoteHTTPClient = &http.Client{
 	},
 }
 
-// remoteDo sends req with the mount's bearer token when
-// GOFASTR_SEMANTIC_TOKEN is set (the token the server passed to
-// WithAuthToken).
 func remoteDo(req *http.Request) (*http.Response, error) {
 	if tok := os.Getenv("GOFASTR_SEMANTIC_TOKEN"); tok != "" {
 		req.Header.Set("Authorization", "Bearer "+tok)
@@ -438,10 +381,6 @@ func remoteDo(req *http.Request) (*http.Response, error) {
 	return remoteHTTPClient.Do(req)
 }
 
-// remoteMaxBodyBytes caps the bytes buffered from a remote semantic peer
-// (repo convention, 1 MiB like the generated clients): a peer that
-// dribbles a response body forever errors at the cap instead of pinning
-// unbounded heap in the CLI process.
 const remoteMaxBodyBytes = 1 << 20
 
 func remoteQuery(base string, q semantic.Query) ([]semantic.Hit, error) {

@@ -36,6 +36,9 @@ func TestDevRefusesMissingDir(t *testing.T) {
 			if r.code != 1 || !strings.Contains(r.out, dir) {
 				t.Errorf("dev --dir %s: exit %d, want 1 naming the dir:\n%s", dir, r.code, r.out)
 			}
+			if dir == file && !strings.Contains(r.out, "is not a directory") {
+				t.Errorf("dev --dir %s did not say it is not a directory:\n%s", dir, r.out)
+			}
 			if strings.Contains(r.out, "Dev server with hot reload") {
 				t.Errorf("dev --dir %s started the loop:\n%s", dir, r.out)
 			}

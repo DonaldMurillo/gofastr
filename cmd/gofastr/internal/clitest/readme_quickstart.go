@@ -8,16 +8,11 @@ import (
 	"testing"
 )
 
-// The app spec quickstart lives in the tutorial doc, not the README.
-// The README points at the CLI and the tutorial carries the executable
-// path. The gate follows the content: it extracts the tutorial's own
-// fences and runs them.
 const appSpecTutorialPath = "framework/docs/content/tutorial-app-spec.md"
 
 const ReadmeAppSpecHeading = "## 1. App spec → running app"
 
-// ReadmeSection returns the README text between `heading` and the next
-// heading of the same or higher level.
+// ReadmeSection returns the text after heading up to the next ## or ### heading.
 func ReadmeSection(content, heading string) (string, error) {
 	idx := strings.Index(content, heading)
 	if idx < 0 {
@@ -67,9 +62,8 @@ func appSpecTutorialContent(t *testing.T) string {
 	return string(raw)
 }
 
-// ReadmeQuickstartBlocks extracts the tutorial's app spec quickstart:
-// the gofastr.yml fence, the generate/dev command fence, and the
-// separate mkdir/go-mod-init fence that names the module.
+// ReadmeQuickstartBlocks returns the app spec tutorial's gofastr.yml,
+// generate and go mod init fences.
 func ReadmeQuickstartBlocks(t *testing.T) (yamlBlock, bashBlock, initBlock string) {
 	t.Helper()
 	section, err := ReadmeSection(appSpecTutorialContent(t), ReadmeAppSpecHeading)
@@ -91,8 +85,7 @@ func ReadmeQuickstartBlocks(t *testing.T) (yamlBlock, bashBlock, initBlock strin
 	return yamlBlock, bashBlock, initBlock
 }
 
-// QuickstartModule extracts <module> from the documented
-// `go mod init <module>` line.
+// QuickstartModule returns the module of bashBlock's `go mod init` line.
 func QuickstartModule(t *testing.T, bashBlock string) string {
 	t.Helper()
 	for _, line := range strings.Split(bashBlock, "\n") {

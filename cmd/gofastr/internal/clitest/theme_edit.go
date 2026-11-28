@@ -4,9 +4,7 @@ import (
 	"reflect"
 )
 
-// InjectEveryThemeString walks a struct and writes payload into every settable
-// string field, however deeply nested. Reflection rather than a hand-written
-// list, so the injection test covers fields nobody has written yet.
+// InjectEveryThemeString writes payload into every settable string reachable from v.
 func InjectEveryThemeString(v reflect.Value, payload string) {
 	switch v.Kind() {
 	case reflect.String:

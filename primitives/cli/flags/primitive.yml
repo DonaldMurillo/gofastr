@@ -1,0 +1,38 @@
+primitive: cli.flags
+summary: The CLI's shared argument parsing in cmd/gofastr/internal/cli - the hand-rolled flag parser, positional parsing around a flag.FlagSet, and the help and flag checks that stop at the "--" terminator.
+code:
+  - cmd/gofastr/internal/cli/flags.go
+docs:
+  - framework/docs/content/cli.md
+invariants:
+  - id: both-forms-and-lone-dash
+    rule: ParseFlags reads a valued flag as --name=value or as --name value and takes a lone "-" as a value, while IsFlagToken reports any other argument starting with a dash as a flag.
+    enforced_by:
+      - test: cmd/gofastr/internal/cli.TestParseFlagsBothForms
+  - id: no-silent-default
+    rule: ParseFlags refuses an unknown flag, a non-flag argument or a lone "-" in a flag's place, a bare flag given =value, and a valued flag that is last or followed by another flag, which it would otherwise take as the value.
+    enforced_by:
+      - test: cmd/gofastr/internal/cli.TestParseFlagsRefusals
+  - id: validated-before-stored
+    rule: ParseFlags runs every validator on a value before it stores it, so a refused value leaves the destination as it was.
+    enforced_by:
+      - test: cmd/gofastr/internal/cli.TestParseFlagsValidatesBeforeStoring
+  - id: positionals-around-flags
+    rule: ParsePositionals returns every non-flag argument in order whether it comes before, between or after the flags, and returns a parse error, flag.ErrHelp among them, unwrapped.
+    enforced_by:
+      - test: cmd/gofastr/internal/cli.TestParsePositionalsAroundFlags
+  - id: terminator-ends-the-scan
+    rule: HasHelpFlagBeforeTerminator and HasFlagBeforeTerminator ignore every argument after the first "--", while HasHelpFlag scans them all.
+    enforced_by:
+      - test: cmd/gofastr/internal/cli.TestHelpFlagBoundaries
+      - test: cmd/gofastr/internal/cli.TestFlagBeforeTerminator
+      - test: cmd/gofastr.TestJSONModeDecisions
+decisions:
+  - id: next-flag-is-not-a-value
+    date: 2026-11-01
+    status: accepted
+    decision: A valued flag followed by another flag is a missing value, and a value that starts with a dash is written --name=<value>.
+    rejected:
+      - option: Take the next argument as the value whatever it is.
+        why: "`--addr --no-a11y` took --no-a11y as the address and silently dropped the accessibility skip."
+    upholds: [no-silent-default]

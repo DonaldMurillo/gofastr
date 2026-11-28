@@ -1,0 +1,64 @@
+primitive: cli.output
+summary: The CLI's terminal output in cmd/gofastr/internal/cli - colour helpers, the status lines (Success, Fail, UsageFail, Info, Warn) and the fmt look-alikes (Printf, Print, Println, Fprintf, Fprintln), which scrub every argument before it reaches the terminal.
+code:
+  - cmd/gofastr/internal/cli/output.go
+docs:
+  - framework/docs/content/cli.md
+on_change:
+  - A new print helper scrubs every argument the way scrubbedf does, joins the helpers list in TestNoStyledArgumentReachesAStatusHelper and TestVetChecksHelperFormats, and forwards to fmt.Sprintf(format, args...) somewhere so go vet still reads it as a printf wrapper.
+invariants:
+  - id: colour-only-on-a-terminal
+    rule: Green, Red, Yellow, Bold and Dim return their input unchanged when StdoutIsTTY is false and wrap it in an SGR escape when it is true.
+    enforced_by:
+      - test: cmd/gofastr/internal/cli.TestColors_NoANSIWhenNotTTY
+      - test: cmd/gofastr.TestColorHelpersTTYBranch
+  - id: errors-on-stderr
+    rule: Fail and UsageFail write their line to stderr, while Success, Info and Warn write theirs to stdout.
+    enforced_by:
+      - test: cmd/gofastr/internal/cli.TestFailWritesToStderr
+      - test: cmd/gofastr/internal/cli.TestUsageFailPrintsToStderrAndExitsTwo
+      - test: cmd/gofastr.TestInfoWarnPrint
+  - id: usage-error-exits-two
+    rule: UsageFail prints its line as Fail does and then calls OsExit(2), the status every command uses for bad usage.
+    enforced_by:
+      - test: cmd/gofastr/internal/cli.TestUsageFailPrintsToStderrAndExitsTwo
+  - id: arguments-scrubbed-format-kept
+    rule: Every helper passes each text-bearing argument, formatted with its own verb, through textsafe.ScrubTerminal, Print and Println scrub their whole output, and the format string is never scrubbed, so the helper's own styling survives and an argument's escapes do not.
+    enforced_by:
+      - test: cmd/gofastr/internal/cli.TestScrubbingPrintsAreInert
+      - test: cmd/gofastr/internal/cli.TestHelpersKeepTheirOwnStyling
+  - id: arguments-keep-their-verbs
+    rule: A scrubbed argument keeps its verb, width and flags (%q still escapes, %5s pads, %x encodes), and a nil, bool or numeric argument is passed bare, so a %*d width stays an int.
+    enforced_by:
+      - test: cmd/gofastr/internal/cli.TestHelperArgumentsKeepTheirVerbs
+  - id: helpers-are-printf-wrappers
+    rule: go vet's printf check reads Success, Fail, UsageFail, Info, InfoString, Warn, Printf and Fprintf as printf wrappers and flags a call whose arguments do not match its format, because scrubbedf forwards format and args to fmt.Sprintf unchanged when there are no arguments.
+    enforced_by:
+      - test: cmd/gofastr/internal/cli.TestVetChecksHelperFormats
+  - id: styling-belongs-in-the-format
+    rule: No call under cmd/gofastr hands a value built with Bold, Green, Red, Yellow or Dim to a scrubbing helper as an argument, where the scrub would strip its escapes and print them as text.
+    enforced_by:
+      - test: cmd/gofastr/internal/cli.TestNoStyledArgumentReachesAStatusHelper
+    judge: Does this change hand a scrubbing helper an argument that holds a Bold, Green, Red, Yellow or Dim result through a variable, a field or a function's return, which the syntax-only test cannot see?
+    applies:
+      - cmd/gofastr/
+decisions:
+  - id: helpers-scrub-every-argument
+    date: 2026-11-01
+    status: accepted
+    decision: The shared helpers scrub every argument, so repo-derived text (a path, a key name, a subprocess's output) never reaches the terminal live, and styling comes only from the format or the helper.
+    rejected:
+      - option: Each command scrubs the values it prints on its own.
+        why: Commands forgot to, and a cloned repo's directory name drove the terminal of whoever ran validate, migrate generate or agents sync on it.
+      - option: Scrub the whole formatted line, format included.
+        why: It strips the helper's own colour along with the payload's.
+    upholds: [arguments-scrubbed-format-kept, styling-belongs-in-the-format]
+  - id: scrub-through-a-formatter
+    date: 2026-11-28
+    status: accepted
+    decision: "scrubArgs wraps each text-bearing argument in scrubbedArg, a fmt.Formatter that formats the value with its own verb and scrubs the result; fmt answers %T and %p from the wrapper itself, so those two verbs print scrubbedArg, which is accepted because no helper call uses them and a type or pointer has no text to scrub."
+    rejected:
+      - option: Replace each argument with its scrubbed fmt.Sprint text before formatting.
+        why: "The verb would then format a string, not the value, so %+v of a struct or %x of a []byte would print something else."
+    revisit_if: A helper call needs %T or %p on an argument.
+    upholds: [arguments-keep-their-verbs]

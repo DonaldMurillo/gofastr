@@ -101,3 +101,20 @@ func TestValidateRefusesSecondPath(t *testing.T) {
 		t.Fatalf("want a usage error naming the extra path, got:\n%s", out)
 	}
 }
+
+func TestValidateRunsTheRender(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gofastr.yml")
+	entity := func(name, move string) string {
+		return "  - name: " + name + "\n    fields:\n      - name: status\n        type: enum\n        values: [open, done]\n        default: open\n" +
+			"    states:\n      field: status\n      initial: [open]\n      transitions:\n        - key: " + move + "\n          from: [open]\n          to: done\n"
+	}
+	clitest.WriteFileAll(t, path, "app:\n  name: Demo\nentities:\n"+entity("orders", "mark_paid")+entity("paid_orders", "mark"))
+	var code int
+	out := clitest.CovT_capOutput(t, func() {
+		code = clitest.CovT_capExit(t, func() { RunValidate([]string{path}) })
+	})
+	if code != 1 || !strings.Contains(out, "MarkPaidOrders") {
+		t.Fatalf("want exit 1 naming the clash, got %d\n%s", code, out)
+	}
+}

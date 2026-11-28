@@ -1,0 +1,67 @@
+primitive: cli.desktop.macos
+summary: The macOS side of gofastr desktop build - the universal or one-architecture executable, Info.plist, the deterministic bundle zip, ad-hoc or identity signing, and the notarize, staple and re-zip pipeline.
+code:
+  - cmd/gofastr/internal/desktopcmd/desktop_build_macos.go
+  - cmd/gofastr/internal/desktopcmd/desktop_notarize.go
+  - cmd/gofastr/internal/desktopcmd/desktop_plist.go
+  - cmd/gofastr/internal/desktopcmd/desktop_zip.go
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - Signing and notarization reach codesign and xcrun only through runTool, the seam the tests replace; a new tool call goes through it too.
+invariants:
+  - id: archs-from-goarch
+    rule: With GOARCH unset the bundle's executable is one universal Mach-O merged by lipo from arm64 and amd64, GOARCH arm64 or amd64 builds that one, and any other GOARCH, or a universal build without lipo on PATH, is refused before the previous bundle is removed.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestMacDesktopArchs
+      - test: cmd/gofastr/internal/desktopcmd.TestMacBuildDefaultIsUniversal
+      - test: cmd/gofastr/internal/desktopcmd.TestMacBuildGOARCHPicksOneSlice
+      - test: cmd/gofastr/internal/desktopcmd.TestMacBuildRefusedArchKeepsBundle
+      - test: cmd/gofastr/internal/desktopcmd.TestMacBuildWithoutLipoKeepsBundle
+  - id: signing-is-best-effort
+    rule: Without --notarize, --no-sign leaves the bundle unsigned, --sign signs with that identity, the default signs ad-hoc when codesign is on PATH, and a signing failure is reported with the tool's output and never fails the build.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestSigningFailureKeepsTheUnsignedBundle
+      - test: cmd/gofastr/internal/desktopcmd.TestDesktopBuildIdentitySigningArgv
+      - test: cmd/gofastr/internal/desktopcmd.TestDesktopBuildAdhocSigningArgv
+  - id: notarize-needs-an-identity
+    rule: --notarize without --sign, or with --sign -, is refused with errNotarizeRequiresIdentity before any tool runs.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestDesktopBuildNotarizeRefusesAdhoc
+      - test: cmd/gofastr/internal/desktopcmd.TestNotarizeFlagsRefusalIsNamedError
+  - id: notarize-pipeline
+    rule: --notarize signs with the hardened runtime, a timestamp and the entitlements, zips, submits with notarytool --wait under the keychain profile, staples, and zips again so the distributed zip carries the staple; any failing step fails the build with the tool's output.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestNotarizePipelineArgv
+      - test: cmd/gofastr/internal/desktopcmd.TestNotarizedZipCarriesTheStaple
+      - test: cmd/gofastr/internal/desktopcmd.TestDesktopBuildNotarizeFailsBuild
+      - test: cmd/gofastr/internal/desktopcmd.TestNotarizeSubmitFailureMessage
+      - test: cmd/gofastr/internal/desktopcmd.TestNotarizeProfileAndEntitlements
+  - id: bundle-zip-is-deterministic
+    rule: zipAppBundle roots entries at the bundle's name, writes no timestamps, refuses a symlink or any non-regular file, and on a Windows host marks Contents/MacOS entries executable.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestZipBundleDeterministicBytes
+      - test: cmd/gofastr/internal/desktopcmd.TestZipBundleRefusesSymlink
+      - test: cmd/gofastr/internal/desktopcmd.TestZipBundleRoundTripModes
+  - id: plist-values-escaped
+    rule: Every Info.plist value is XML-escaped, and CFBundleURLTypes is written only when the build has a --scheme.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestInfoPlistSchemeIsXMLEscaped
+      - test: cmd/gofastr/internal/desktopcmd.TestInfoPlistEmitsURLTypesForScheme
+      - test: cmd/gofastr/internal/desktopcmd.TestInfoPlistOmitsURLTypesWithoutScheme
+decisions:
+  - id: empty-entitlements
+    date: 2026-11-28
+    status: accepted
+    decision: Without --entitlements the notarized signature uses a generated empty-dict plist.
+    rejected:
+      - option: Grant the JIT entitlement.
+        why: The JavaScript compiler runs in WebKit's own processes, which hold that entitlement themselves; the app process never JITs.
+  - id: unsigned-still-runs
+    date: 2026-11-28
+    status: accepted
+    decision: A failed default or --sign signature leaves the bundle unsigned and the build passing, while a --notarize failure fails the build.
+    rejected:
+      - option: Fail the build on any signing failure.
+        why: An unsigned bundle runs; only notifications need a signature, and a half-notarized bundle is the one that must not look shippable.
+    upholds: [signing-is-best-effort, notarize-pipeline]

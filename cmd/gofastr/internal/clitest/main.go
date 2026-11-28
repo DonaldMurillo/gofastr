@@ -5,16 +5,9 @@ import (
 	"testing"
 )
 
-// Main runs a CLI test package under one short temp root that goes when
-// the run ends. `gofastr dev` mints its build dir once per process
-// (devcmd.DevServerBinDir) and removes it only on a clean shutdown, which
-// in-process tests never reach; under this root it goes too. The root is
-// short so service IDs fit native Unix socket path limits, and the
-// package's shared trees (SharedTree) live in it. Main removes the shared
-// gofastr binary and the shared scratch packages, runs cleanup, then exits
-// with the tests' code. A package whose tests run `go vet` with the test
-// binary as the vettool hands off (verifycmd.RunAsVettoolIfMarked) before
-// calling Main.
+// Main runs a CLI test package under one short temp root, which it sets as
+// TMPDIR, TMP and TEMP; after the tests it removes the root, the shared
+// binary and scratch packages, runs cleanup, and exits with the tests' code.
 func Main(m *testing.M, cleanup ...func()) {
 	tmpRoot, err := os.MkdirTemp("", "gf-")
 	if err == nil {

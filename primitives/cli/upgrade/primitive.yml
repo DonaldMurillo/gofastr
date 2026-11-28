@@ -1,0 +1,87 @@
+primitive: cli.upgrade
+summary: gofastr upgrade - read the app's gofastr version from go.mod, print every migration note between it and the target with the lines each one points at, and with --apply run go get, tidy, vendor, build and test.
+code:
+  - cmd/gofastr/internal/upgradecmd/
+docs:
+  - framework/docs/content/cli.md
+  - framework/docs/content/upgrading.md
+invariants:
+  - id: exit-1-while-breaking-edits-remain
+    rule: Plan and apply both exit 1 while a BREAKING note has edit hits; check hits under a review note and hits under non-breaking notes leave the exit 0.
+    enforced_by:
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeExitsNonZeroOnRemainingBreakingHits
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeExitsZeroWithoutBreakingHits
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeReviewHitsLeaveExitZero
+  - id: compile-errors-are-edits
+    rule: A hit read from a compile error is listed under Edit these whatever its note says, and a review note's other hits under Check these.
+    enforced_by:
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeReportSplitsEditFromCheck
+  - id: downgrade-apply-needs-consent
+    rule: --apply on a target older than the current version exits 2 and runs no step unless --allow-downgrade is given.
+    enforced_by:
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeApplyRefusesDowngrade
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeApplyAllowDowngradeRunsSteps
+  - id: notes-print-without-a-scan
+    rule: When the scan cannot run, every note in range still prints with its guidance and no hits, and an empty range runs no scan.
+    enforced_by:
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeReportScansErrorShowsNotes
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeReportEmptyRangeSkipsScan
+  - id: report-shape
+    rule: Hits print sorted by file, line and column, at most 20 per note and per unexplained-error list, without a column for matchers that have none, and as (no position) when the go command gave none.
+    enforced_by:
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeReportRendersHits
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeReportCapsHitsAtTwenty
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeReportPositionlessError
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeReportListsUnexplained
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeReportListsUnscanned
+  - id: project-text-is-scrubbed
+    rule: Every hit field, file name and go.mod version reaches the terminal through textsafe.ScrubTerminal, and a go.mod version that does not parse exits 1.
+    enforced_by:
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeReportScrubsHitText
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeRefusesEscapeInGoModVersion
+  - id: stale-registry-warns-on-upper-bound
+    rule: When the newer end of the range, current or target, is past the registry's Through, the report says the registry may not know every note.
+    enforced_by:
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeDowngradeFromPastTheRegistryWarns
+  - id: apply-steps
+    rule: The steps are go get gofastr@target, go mod tidy, go mod vendor when vendor/modules.txt exists, go build ./... and go test ./..., in that order.
+    enforced_by:
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradePlanRevendorsVendoredApp
+  - id: latest-is-what-go-get-picks
+    rule: Without --to the target is the newest tagged release, or the newest prerelease when there is no release, listed with -mod=mod so a vendored app can resolve it.
+    enforced_by:
+      - test: cmd/gofastr/internal/upgradecmd.TestResolveLatestVersionVendoredAndPrerelease
+  - id: from-names-the-code-version
+    rule: --from replaces the go.mod version as the start of the range, and a target of equal precedence, build metadata aside, is already current.
+    enforced_by:
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeFromOverridesGoMod
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeSameReleaseWithBuildMetadata
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeBumpedGoModHintsFrom
+  - id: unmounted-copies-listed
+    rule: The report lists every unmounted copy, with the upstream compare URL for one older than the target and a by-hand note for one copied from a checkout.
+    enforced_by:
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeListsUnmountedDiffs
+  - id: flag-forms
+    rule: --from and --to take --flag=v or --flag v, an empty value or the next flag is refused, and only the first argument error is reported, each exiting 2.
+    enforced_by:
+      - test: cmd/gofastr/internal/upgradecmd.TestParseUpgradeArgsForms
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeValueFlagRefusesNextFlag
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeEmptyValueRefused
+      - test: cmd/gofastr/internal/upgradecmd.TestUpgradeFirstArgErrorWins
+decisions:
+  - id: edit-hits-gate-the-exit
+    date: 2026-11-28
+    status: accepted
+    decision: Only edit hits under BREAKING notes count toward the exit status.
+    rejected:
+      - option: Count every hit.
+        why: A check hit may already be right and never clears, so every run after a finished port would fail.
+    upholds: [exit-1-while-breaking-edits-remain]
+  - id: no-guided-downgrade
+    date: 2026-11-28
+    status: accepted
+    decision: --apply refuses a downgrade without --allow-downgrade.
+    rejected:
+      - option: Run the steps for a downgrade like an upgrade.
+        why: The steps and notes are written for moving forward; on a downgrade the notes describe what is being undone, not how to undo it.
+    upholds: [downgrade-apply-needs-consent]

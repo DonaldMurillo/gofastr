@@ -24,26 +24,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// `gofastr generate cli` emits a customer-facing terminal client for the
-// app's HTTP API: a standalone, stdlib-only `package main` under --out
-// (default cmd/<binary>/, so `go install <module>/cmd/<binary>@latest`
-// produces a correctly-named binary) that imports only the app's generated
-// entities/client package. It is the terminal twin of the typed client: every selected
-// entity gets list/get/create/update/patch/delete, the _batch verbs, and a
-// live `watch` (SSE), plus login/logout commands that store a scoped API
-// token. The output is derived: every run rebuilds the *.gen.go files from
-// the source and removes the ones it no longer produces. custom.go, the
-// dev-owned extension seam, is only ever created when absent.
-
-// cliVerbs is the full verb set, in help order.
 var cliVerbs = []string{
 	"list", "get", "create", "update", "patch", "delete",
 	"batch-create", "batch-update", "batch-delete", "watch",
 }
 
-// cliReservedFlags are flag names owned by the CLI itself on entity verbs;
-// a field whose derived flag collides fails generation (no auto-renaming;
-// the developer renames the field or excludes the entity).
 var cliReservedFlags = map[string]bool{
 	"url": true, "token": true, "o": true, "json": true, "param": true,
 	"sort": true, "page": true, "limit": true, "cursor": true,
@@ -51,42 +36,26 @@ var cliReservedFlags = map[string]bool{
 	"help": true, "h": true, "with-token": true,
 }
 
-// cliEndpointReservedFlags are the flags an endpoint command registers
-// besides its inputs (runEndpointVerb, parseGlobals, package flag), and
-// o, which the shared body builder skips.
 var cliEndpointReservedFlags = map[string]bool{"url": true, "json": true, "o": true, "help": true, "h": true}
 
 type CliOptions struct {
-	OutDir      string
-	Binary      string
-	ApiPrefix   string
-	only        []string
-	exclude     []string
-	verbs       string
-	force       bool
-	dryRun      bool
-	json        bool
-	FromOpenAPI string // spec file or URL; switches off the entity path
-	// apiPrefixSet: --api-prefix (or the entry's api_prefix) was given, so
-	// a settings default does not replace it, "" included.
-	apiPrefixSet bool
-	// fromSettings: run from a gofastr.settings.yml cli entry by `gofastr
-	// generate` or `gofastr build`. Unchanged files are not rewritten, and
-	// the run says nothing when the CLI is already current.
-	fromSettings bool
-	// flagSet names the selection flags given on the command line, empty
-	// ones included, so a settings entry fills only the rest.
-	flagSet map[string]bool
-	// settingsEntry: an explicit run took defaults from a cli entry, so its
-	// next steps need not print one to paste.
+	OutDir        string
+	Binary        string
+	ApiPrefix     string
+	only          []string
+	exclude       []string
+	verbs         string
+	force         bool
+	dryRun        bool
+	json          bool
+	FromOpenAPI   string
+	apiPrefixSet  bool
+	fromSettings  bool
+	flagSet       map[string]bool
 	settingsEntry bool
-	// entryIndex is the cli entry's position in codegen.generators, for
-	// errors about values it supplied.
-	entryIndex int
+	entryIndex    int
 }
 
-// selectionSource names where a selection value came from, so a typo in
-// a settings entry points at the entry, not at a flag nobody typed.
 func (o CliOptions) selectionSource(flag string) string {
 	if o.fromSettings || (o.settingsEntry && !o.flagSet[flag]) {
 		return fmt.Sprintf("codegen.generators[%d] (cli): config.%s", o.entryIndex, flag)
@@ -94,28 +63,21 @@ func (o CliOptions) selectionSource(flag string) string {
 	return "--" + flag
 }
 
-// cliField is the derived per-field model the renderers consume.
 type cliField struct {
-	Snake    string // declaration name (snake_case)
-	Wire     string // JSON wire key (camelCase)
-	Flag     string // CLI flag name (kebab-case)
-	Type     string // normalized declaration type
-	GoType   string // string|int|float64|bool|any
-	ReadOnly bool   // excluded from mutation flags
-	NoQuery  bool   // excluded from ALL filter flags (server rejects them)
-	// FilterOps are the suffixed operator flags the list verb offers,
-	// derived once from filter.FilterSuffixes ∩ filter.OpSuitsType.
+	Snake    string
+	Wire     string
+	Flag     string
+	Type     string
+	GoType   string
+	ReadOnly bool
+	NoQuery  bool
+	// FilterOps are the suffixed operator flags the list verb offers.
 	FilterOps []cliFilterOp
-	// NoEq marks a type that refuses equality (a JSON column takes no
-	// filter at all), so the list verb offers no bare flag for it.
+	// NoEq marks a type that refuses equality, so the list verb offers no bare flag.
 	NoEq   bool
 	Values []string
 }
 
-// cliFilterOp is one suffixed operator flag behind `<command> list`:
-// the dash spelling joined to the field flag (--status-ne), the
-// underscore spelling joined to the column for the query param
-// (status_ne), and the help fragment naming the operator.
 type cliFilterOp struct {
 	Flag  string
 	Param string
@@ -123,7 +85,6 @@ type cliFilterOp struct {
 	Op    filter.FilterOp
 }
 
-// cliOpHelp names each operator in help text.
 var cliOpHelp = map[filter.FilterOp]string{
 	filter.OpNe:   "not equal",
 	filter.OpGt:   "greater than",
@@ -134,13 +95,6 @@ var cliOpHelp = map[filter.FilterOp]string{
 	filter.OpIn:   "in (comma list)",
 }
 
-// cliFilterOps derives the operator flags a field's list verb offers
-// from filter.FilterSuffixes ∩ filter.OpSuitsType — the one type
-// predicate every server filter surface applies — so the CLI can never
-// offer a flag the list handler answers 400, nor hide one it accepts
-// (the old hardcoded Comparable/Likeable lists did both). OpIn gets its
-// own -in flag: the server reads a bare key as equality with the whole
-// value, so a comma list on the bare flag matched the literal "a,b".
 func cliFilterOps(t schema.FieldType) []cliFilterOp {
 	var ops []cliFilterOp
 	for _, s := range filter.FilterSuffixes {
@@ -157,60 +111,42 @@ func cliFilterOps(t schema.FieldType) []cliFilterOp {
 	return ops
 }
 
-// cliTransition is one derived non-system move: the subcommand word (the
-// key), its route segment, and the help line. System moves have no route
-// and appear nowhere in generated clients.
 type cliTransition struct {
-	Key     string // the move's key: subcommand word and route segment
-	Summary string // the CLI help line
+	Key     string
+	Summary string
 }
 
-// cliEntity is the derived per-entity model: the shared manifest shape a
-// future SDK generator (issue #86) should consume rather than re-deriving
-// from raw declarations.
 type cliEntity struct {
-	Struct      string   // Go type name in the client package (Posts)
-	Command     string   // CLI command word (kebab of the table)
-	Table       string   // route path segment
-	Keys        []string // key columns in order: one positional argument each
+	Struct      string
+	Command     string
+	Table       string
+	Keys        []string
 	Verbs       []string
 	Fields      []cliField
-	Uploads     []cliField      // Image and File fields: a file flag each on create/update/patch
-	Transitions []cliTransition // non-system state moves, one command each
-	Endpoints   []cliEndpoint   // gofastr.settings.yml endpoints, one command each
+	Uploads     []cliField
+	Transitions []cliTransition
+	Endpoints   []cliEndpoint
 	Search      bool
 	SoftDelete  bool
-	// StateField names the state column under enforced States: it keeps
-	// a create flag (a new record may start at an initial value) but
-	// update and patch never offer it — the server refuses the write,
-	// and transitions own the move.
+	// StateField names the enforced state column, which has a create flag only.
 	StateField string
-	// filterKeys spells each filter param: the suffix key, or the
-	// bracket key where the bare key reads two ways (a stage field
-	// beside stage_in), which the server answers 400. It knows every
-	// name the server's filter parser reads, not only Fields: the key
-	// column and the upload fields can make a key ambiguous too. The
-	// zero value spells every key with its suffix.
 	filterKeys filter.KeySpeller
 }
 
-// cliEndpoint is one settings endpoint's command: `<entity> <Command>`
-// takes the path values as positional arguments and the rest as flags.
 type cliEndpoint struct {
-	Command string   // kebab of the endpoint name
-	Func    string   // CamelCase, for the generated wrapper
-	Method  string   // HTTP method
-	Segs    []string // route segments, "{name}" for a path value
-	Query   bool     // flags go in the query string, not a JSON body
+	Command string
+	Func    string
+	Method  string
+	Segs    []string
+	Query   bool
 	Fields  []cliEndpointField
 	Summary string
 }
 
-// cliEndpointField is one flag of an endpoint command.
 type cliEndpointField struct {
 	Flag     string
 	Wire     string
-	Kind     string // fieldKind constant
+	Kind     string
 	Usage    string
 	Required bool
 }
@@ -218,14 +154,11 @@ type cliEndpointField struct {
 type cliSpec struct {
 	Binary       string
 	EnvPrefix    string
-	APIPrefix    string // "" or "/api" (leading slash, no trailing)
+	APIPrefix    string
 	ClientImport string
 	Entities     []cliEntity
 
-	// --from-openapi mode (see generate_cli_openapi.go): Ops replace
-	// Entities, SelfClient emits internal/client/ instead of importing
-	// the entity SDK, DefaultURL seeds the server URL from servers[0],
-	// and TokenHeader/TokenPrefix carry the spec's security scheme.
+	// Ops, SelfClient, DefaultURL, TokenHeader and TokenPrefix are the --from-openapi mode.
 	Ops         []cliOp
 	SelfClient  bool
 	DefaultURL  string
@@ -255,8 +188,6 @@ func RunGenerateCLI(args []string) {
 	generateCLI(opts)
 }
 
-// generateCLI generates the CLI from parsed options, from entities/ or from
-// an OpenAPI document.
 func generateCLI(opts CliOptions) {
 	if opts.FromOpenAPI != "" {
 		runGenerateCLIFromOpenAPI(opts)
@@ -295,9 +226,6 @@ func generateCLI(opts CliOptions) {
 	if opts.Binary == "" {
 		opts.Binary = strings.ToLower(filepath.Base(abs))
 	}
-	// Default layout is cmd/<binary>/, the standard installable-main
-	// convention, so `go install <module>/cmd/<binary>@latest` (public
-	// modules) names the binary correctly.
 	if opts.OutDir == "" {
 		opts.OutDir = filepath.ToSlash(filepath.Join("cmd", opts.Binary))
 	}
@@ -311,10 +239,6 @@ func generateCLI(opts CliOptions) {
 	emitCLIFiles(opts, spec)
 }
 
-// emitCLIFiles is the shared write tail for both generation sources. The
-// CLI is derived: every run rebuilds the *.gen.go files, removes the ones
-// the source no longer produces (an entity dropped, a verb deselected),
-// and creates custom.go only when it is absent.
 func emitCLIFiles(opts CliOptions, spec cliSpec) {
 	failWith := func(err error) {
 		if opts.json {
@@ -337,11 +261,6 @@ func emitCLIFiles(opts CliOptions, spec cliSpec) {
 		return
 	}
 
-	// custom.go is the dev-owned seam: created when absent, never
-	// overwritten. One written for the other generation mode imports a
-	// client this run does not build against, so the run refuses; --force
-	// moves it to custom.go.bak (never over an earlier backup) and writes
-	// a fresh one.
 	backupCustom := false
 	if stale := staleCustomClient(opts.OutDir, opts.OutDir, spec); stale != "" {
 		customPath := filepath.Join(opts.OutDir, cliCustomFile)
@@ -370,8 +289,6 @@ func emitCLIFiles(opts CliOptions, spec cliSpec) {
 		return
 	}
 	if opts.fromSettings {
-		// After planCLIRemovals: an unchanged file is still produced and
-		// must not read as stale.
 		files = dropUnchangedFiles(opts.OutDir, files)
 		if len(files) == 0 && len(removals) == 0 {
 			return
@@ -486,8 +403,6 @@ func emitCLIFiles(opts CliOptions, spec cliSpec) {
 	}
 }
 
-// splitCommaList splits a comma-separated flag value, trimming whitespace
-// and dropping empty items.
 func splitCommaList(v string) []string {
 	var out []string
 	for _, p := range strings.Split(v, ",") {
@@ -557,9 +472,6 @@ func parseCLIOptions(args []string) (CliOptions, error) {
 	return opts, checkCLIOptions(opts)
 }
 
-// checkCLIOptions refuses option combinations that cannot mean anything,
-// whether flags or a settings entry set them. --api-prefix applies in
-// both modes: with --from-openapi it replaces servers[0].url's path.
 func checkCLIOptions(opts CliOptions) error {
 	if opts.FromOpenAPI != "" {
 		if len(opts.only) > 0 || len(opts.exclude) > 0 || opts.verbs != "" {
@@ -569,8 +481,6 @@ func checkCLIOptions(opts CliOptions) error {
 	return nil
 }
 
-// cliAPIPrefix normalizes an API prefix to "" or "/a/b": a leading
-// slash, no trailing one.
 func cliAPIPrefix(p string) string {
 	if p = strings.Trim(strings.TrimSpace(p), "/"); p != "" {
 		return "/" + p
@@ -580,9 +490,6 @@ func cliAPIPrefix(p string) string {
 
 func isControlByte(r rune) bool { return r < 0x20 || r == 0x7f }
 
-// parseVerbSelection parses --verbs: either a bare global allow-list
-// ("list,get") or per-entity pairs ("posts=list,get;users=*"). Returns
-// (global, perEntity); both nil means all verbs everywhere.
 func parseVerbSelection(s string) ([]string, map[string][]string, error) {
 	if strings.TrimSpace(s) == "" {
 		return nil, nil, nil
@@ -631,8 +538,6 @@ func parseVerbSelection(s string) ([]string, map[string][]string, error) {
 	return nil, per, nil
 }
 
-// cliEntityMatches reports whether a selection name refers to decl, by
-// entity name, table, or the kebab command form, folding ASCII only.
 func cliEntityMatches(decl framework.EntityDeclaration, name string) bool {
 	n := asciicase.Lower(strings.TrimSpace(name))
 	table := declTable(decl)
@@ -641,8 +546,6 @@ func cliEntityMatches(decl framework.EntityDeclaration, name string) bool {
 		n == asciicase.Lower(strings.ReplaceAll(table, "_", "-"))
 }
 
-// cliAnyEntityMatches reports whether a selection name resolves to any
-// declared entity.
 func cliAnyEntityMatches(decls []framework.EntityDeclaration, name string) bool {
 	for _, d := range decls {
 		if cliEntityMatches(d, name) {
@@ -684,8 +587,6 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts CliOptions, clientIm
 	if err != nil {
 		return cliSpec{}, err
 	}
-	// Sorted, so --verbs naming two unknown entities is refused naming
-	// the same one on every run.
 	for _, name := range slices.Sorted(maps.Keys(perEntityVerbs)) {
 		if !cliAnyEntityMatches(decls, name) {
 			return cliSpec{}, fmt.Errorf("%s: no entity named %q", opts.selectionSource("verbs"), name)
@@ -698,14 +599,6 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts CliOptions, clientIm
 	if binary == "" {
 		return cliSpec{}, fmt.Errorf("--binary must not be empty")
 	}
-	// Binary lands in `binaryName = %q` (quoted, safe) but ALSO in the `//`
-	// header comment of the generated main.go, where a newline would put the
-	// remainder at statement position. Today that is only reachable from argv,
-	// so it is the operator injecting code into their own project rather than a
-	// privilege boundary, not a vulnerability. The guard is here because the
-	// sibling generator IS config-readable: `generate sdk` takes its name from a
-	// discovered gofastr.settings.yml, and if `generate cli` ever grows the same
-	// convenience this stops being operator-only without anyone noticing.
 	for _, r := range binary {
 		if r < 0x20 || r == 0x7f {
 			return cliSpec{}, fmt.Errorf("--binary %q contains a control character: it becomes a file name and a Go identifier's value", binary)
@@ -718,13 +611,10 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts CliOptions, clientIm
 		APIPrefix:    apiPrefix,
 		ClientImport: clientImport,
 	}
-	// The prefix is joined into every request URL; a control byte there is
-	// never a path, so refuse it here rather than ship a CLI that 404s.
 	if strings.ContainsFunc(apiPrefix, isControlByte) {
 		return cliSpec{}, fmt.Errorf("--api-prefix must not contain control characters: %q", opts.ApiPrefix)
 	}
-	// Derived struct names must be unique across the selection.
-	structOwners := map[string]string{} // derived struct name → declaring entity name
+	structOwners := map[string]string{}
 	for _, decl := range selected {
 		verbs := append([]string(nil), cliVerbs...)
 		if globalVerbs != nil {
@@ -741,11 +631,6 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts CliOptions, clientIm
 		if err != nil {
 			return cliSpec{}, err
 		}
-		// Distinct entities must derive distinct struct prefixes: events and
-		// Events both become struct Events, so runEventsList is defined twice
-		// across two individually-parsing files. The file-set guard only sees
-		// paths and each file parses, so the operator's first signal is a
-		// confusing compile error in code they were told is theirs.
 		if prev, dup := structOwners[ent.Struct]; dup {
 			return cliSpec{}, fmt.Errorf("entities %q and %q both derive the Go struct name %s: their generated command funcs collide and the CLI cannot compile. Rename one entity", prev, decl.Name, ent.Struct)
 		}
@@ -762,22 +647,12 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts CliOptions, clientIm
 	return spec, nil
 }
 
-// cliReservedCommands are command words (and scaffold file basenames) the
-// generated CLI owns: an entity whose command form collides would either
-// shadow a built-in command at dispatch or emit a duplicate filename,
-// including custom.go, whose create-if-absent handling would then silently
-// stop regenerating that entity.
 var cliReservedCommands = map[string]bool{
 	"main": true, "config": true, "auth": true, "output": true, "custom": true,
-	"verbs": true, // scaffold basename: the shared verb bodies (verbs.go)
+	"verbs": true,
 	"login": true, "logout": true, "version": true, "help": true,
 }
 
-// buildEntityModel derives the shared per-entity model (struct name, route
-// table, wire/snake field names, filterability) that both the generated CLI
-// and the generated SDKs (`gofastr generate sdk`) consume. It never fails.
-// CLI-specific validation (reserved commands, flag collisions) lives in
-// buildCLIEntity.
 func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntity {
 	table := declTable(decl)
 	ent := cliEntity{
@@ -792,16 +667,9 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 	if decl.States != nil && !decl.States.Advisory {
 		ent.StateField = decl.States.Field
 	}
-	// Stamps are server-set on every write path under enforced States, so
-	// they get no mutation flag. The state field keeps its create flag
-	// only: update and patch address the change table, which drops it.
 	stamps, _ := statesWriteDrops(decl.States)
 	uploads := uploadFields(decl)
 	keyIsID := appspec.DeclKeyIsID(decl)
-	// Every name the server's filter parser reads for this entity: the
-	// declared non-Hidden fields plus the columns the framework adds.
-	// A false positive only costs a bracket spelling, which the server
-	// reads the same way, so the added columns are named unconditionally.
 	filterNames := []string{"id", "created_at", "updated_at"}
 	for _, fd := range decl.Fields {
 		if !fd.Hidden {
@@ -816,9 +684,6 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 		typ := strings.ToLower(fd.Type)
 		switch typ {
 		case "image", "file":
-			// A file flag on the mutation verbs, sent as a multipart part,
-			// for the fields the client has an upload slot for; list and
-			// get leave the stored URL out of their tables.
 			if slices.ContainsFunc(uploads, func(u framework.FieldDeclaration) bool { return u.Name == fd.Name }) {
 				ent.Uploads = append(ent.Uploads, cliField{Snake: fd.Name, Wire: appspec.WireKey(fd.Name), Flag: strings.ReplaceAll(fd.Name, "_", "-"), Type: typ})
 			}
@@ -834,22 +699,9 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 			NoQuery:  fd.NoQuery,
 			Values:   fd.Values,
 		}
-		// A NoQuery field stays on the CLI for reads and writes; only its
-		// filter flags are suppressed, because the server answers every one
-		// of them with 400 "cannot be filtered". The operator set comes
-		// from the one predicate every filter surface applies, so a flag
-		// the server refuses (--flag-like on a Bool) is never emitted.
-		// fd.Field() resolves the canonical schema type; an unknown type
-		// string reads as String, the same tolerance goTypeForField has
-		// always had here (the generated app's own registration refuses
-		// the declaration).
 		if !f.NoQuery {
 			sf, err := fd.Field()
 			if err != nil {
-				// An unknown type string is a declaration error the
-				// generated app's own registration refuses; the CLI
-				// derives its flags the way it always has — as a text
-				// column, goTypeForField's default arm.
 				sf = schema.Field{Type: schema.String}
 			}
 			f.FilterOps = cliFilterOps(sf.Type)
@@ -857,11 +709,6 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 		}
 		ent.Fields = append(ent.Fields, f)
 	}
-	// One command per non-system move (the route and the MCP tools serve
-	// the same set, Advisory entities included). System moves have no
-	// route and appear nowhere.
-	// The CLI's help prints the summary raw, so the declaration's state
-	// values reach it with terminal-control and bidi runes dropped.
 	for _, t := range crud.RoutableTransitions(decl.States) {
 		summary := "move " + decl.States.Field + " from " + strings.Join(t.From, " or ") + " to " + t.To
 		if t.Stamp != "" {
@@ -875,7 +722,6 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 	return ent
 }
 
-// buildCLIEndpoint derives an endpoint's command from its declaration.
 func buildCLIEndpoint(ep framework.Endpoint, table string) cliEndpoint {
 	_, rest, inQuery := endpointInput(ep)
 	summary := ep.Description
@@ -906,8 +752,6 @@ func buildCLIEndpoint(ep framework.Endpoint, table string) cliEndpoint {
 	return ce
 }
 
-// cliEndpointKind maps an endpoint input's type to the fieldKind constant
-// the shared endpoint body switches on.
 func cliEndpointKind(t schema.FieldType) string {
 	switch t {
 	case schema.Int:
@@ -925,16 +769,6 @@ func cliEndpointKind(t schema.FieldType) string {
 
 func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity, error) {
 	ent := buildEntityModel(decl, verbs)
-	// The CLI re-emits declaration strings into Go source: ent.Struct in
-	// identifier position (run%sList, %sCommands) and ent.Table inside
-	// "/%s/" route literals — table slots go through url.PathEscape at
-	// the emitter, so path-shaping bytes (?, #, spaces) survive as data
-	// even past the literal gate below. The app spec path into
-	// entities/ is guarded
-	// upstream (validateAppSpec: isGoIdentifier + query.SafeIdent), but
-	// packReadEntities also reads hand-written entity files, so the guard
-	// belongs at this emitter too: refuse what would break out of the
-	// emitted code rather than munge it, mirroring validateAppSpec.
 	if !project.IsGoIdentifier(ent.Struct) {
 		return cliEntity{}, fmt.Errorf("entity %q does not produce a valid Go identifier (%q); it is emitted as generated function names. Rename it to letters, digits and underscores starting with a letter", decl.Name, ent.Struct)
 	}
@@ -944,24 +778,11 @@ func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity
 	if cliReservedCommands[ent.Command] {
 		return cliEntity{}, fmt.Errorf("entity %q: its command form %q collides with a CLI built-in. Exclude it with --exclude=%s, or rename the table", decl.Name, ent.Command, decl.Name)
 	}
-	seen := map[string]string{} // flag name → field, to catch duplicates
+	seen := map[string]string{}
 	for _, f := range ent.Fields {
-		// Field names land in identifier positions with no re-escaping:
-		// fld%s/flt%s variable declarations and their *fld%s reads. The
-		// entity/table guards above cover the declaration's other strings;
-		// the field was the one input without its own boundary. token.
-		// IsIdentifier is unicode-aware (Go identifiers allow unicode
-		// letters), matching what the derived name can legally be. The raw
-		// name (not %q) goes in the message: a quote or newline in the name
-		// must survive verbatim so tooling can match on it.
 		if ident := appspec.ToCamelCase(f.Flag); !token.IsIdentifier(ident) {
 			return cliEntity{}, fmt.Errorf("entity %q: field %s does not derive a valid Go identifier (it is emitted as generated variable names); rename it to letters, digits and underscores starting with a letter", decl.Name, f.Snake)
 		}
-		// The full flag set the list verb registers for this field,
-		// derived from the same FilterOps the emitter uses, so the
-		// duplicate check can never miss a flag that ships (it missed
-		// -ne: a spec with `status` and `status_ne` passed validation
-		// and panicked flag.FlagSet at runtime).
 		flags := []string{f.Flag}
 		for _, op := range f.FilterOps {
 			flags = append(flags, f.Flag+op.Flag)
@@ -976,7 +797,6 @@ func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity
 			seen[name] = f.Snake
 		}
 	}
-	// A file flag shares the mutation verbs' flag set with the field flags.
 	for _, f := range ent.Uploads {
 		if !token.IsIdentifier(appspec.ToCamelCase(f.Flag)) {
 			return cliEntity{}, fmt.Errorf("entity %q: field %s does not derive a usable CLI flag; rename it to letters, digits and underscores starting with a letter", decl.Name, f.Snake)
@@ -992,9 +812,6 @@ func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity
 	if err := validateDeclarationStates(decl); err != nil {
 		return cliEntity{}, fmt.Errorf("entity %q: %w", decl.Name, err)
 	}
-	// An endpoint's flags share the command's flag set with --url, --json
-	// and the flag package's own -h/--help. Inputs are unique by wire
-	// name, which has no dash, so two never derive one flag.
 	for _, ep := range ent.Endpoints {
 		for _, f := range ep.Fields {
 			if cliEndpointReservedFlags[f.Flag] {
@@ -1005,14 +822,6 @@ func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity
 	return ent, nil
 }
 
-// validateDeclarationStates refuses a declaration whose states block the
-// app would refuse at boot. `gofastr gen cli/sdk` read hand-written
-// entities/*.go through packReadEntities — files that never passed
-// entity.Define — so the generators re-run the ONE boot check (the move-key
-// grammar, the reserved-name set, duplicates, the guarded columns) from
-// framework/entity instead of re-implementing any of it here. The boot
-// check runs Define first, so the guards see the injected
-// framework-managed columns the app sees.
 func validateDeclarationStates(decl framework.EntityDeclaration) error {
 	if decl.States == nil {
 		return nil
@@ -1042,8 +851,7 @@ func CLIEnvPrefix(binary string) string {
 	return out
 }
 
-// RenderCLIFiles renders the CLI tree. Every file but custom.go is
-// derived and named *.gen.go, so `ls` shows which files a run rebuilds.
+// RenderCLIFiles renders the CLI tree; every file but custom.go is derived and named *.gen.go.
 func RenderCLIFiles(spec cliSpec) []GeneratedFile {
 	files := []GeneratedFile{
 		{Name: "main.gen.go", Content: renderCLIMain(spec)},
@@ -1052,9 +860,6 @@ func RenderCLIFiles(spec cliSpec) []GeneratedFile {
 		{Name: "output.gen.go", Content: renderCLIOutput(spec)},
 		{Name: cliCustomFile, Content: renderCLICustom(spec)},
 	}
-	// One shared verb-body file per CLI (pruned to the selected verbs);
-	// the per-entity files keep one-line run wrappers and per-entity
-	// flag/field tables over these bodies.
 	if cliAnyVerb(spec, "list") || cliAnyVerb(spec, "get") || cliAnyVerb(spec, "delete") ||
 		cliAnyVerb(spec, "create") || cliAnyVerb(spec, "update") || cliAnyVerb(spec, "patch") ||
 		cliAnyVerb(spec, "batch-create") || cliAnyVerb(spec, "batch-update") ||
@@ -1227,7 +1032,6 @@ func groupUsage(group string, args []string) int {
 	return sb.String()
 }
 
-// exampleCommandName picks a real command for the doc comment.
 func exampleCommandName(spec cliSpec) string {
 	for _, ent := range spec.Entities {
 		if len(ent.Verbs) > 0 {
@@ -1449,13 +1253,6 @@ func runLogout(args []string) int {
 `
 }
 
-// cliInvisibleRunes renders, as a Go case list, every rune
-// core/textsafe.IsInvisible names: the bidi overrides and zero-width
-// runes the generated CLI's scrubTerminal drops beside C0, DEL and C1.
-// The generated CLI may live in a module with no GoFastr dependency
-// (--from-openapi), so it cannot call textsafe; the set is read from
-// textsafe at generation time instead of copied by hand, so the two
-// cannot drift.
 func cliInvisibleRunes() string {
 	var cases []string
 	for r := rune(0); r <= unicode.MaxRune; r++ {
@@ -1994,13 +1791,8 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 	hasWrapper := has("list") || has("get") || has("delete") || has("batch-create") ||
 		has("batch-update") || has("batch-delete") || has("watch") || len(ent.Transitions) > 0 ||
 		len(ent.Endpoints) > 0
-	// Import needs shrink with the shared verb bodies (verbs.go): this
-	// file holds the command table, the one-line wrappers, and the
-	// per-entity flag/field tables. Only the batch wrappers reference
-	// http method identifiers directly; list/get/delete/watch and the
-	// create/update/patch plumbing are verbs.go's.
 	needsHTTP := has("batch-create") || has("batch-update")
-	needsClient := has("watch") // wrapper passes the typed Watch method expression
+	needsClient := has("watch")
 
 	var imports []string
 	if needsHTTP {
@@ -2014,10 +1806,8 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 	} else {
 		sb.WriteString("package main\n\n")
 	}
-	// base is the pre-escaped collection path every wrapper binds to.
 	base := "/" + url.PathEscape(ent.Table)
 
-	// Command table. The bare entity command prints its subcommand list.
 	fmt.Fprintf(&sb, "func %sCommands() []command {\n\treturn []command{\n", lowerFirst(ent.Struct))
 	fmt.Fprintf(&sb, "\t\t{name: %q, summary: %q, run: func(args []string) int { return groupUsage(%q, args) }},\n",
 		ent.Command, "manage "+ent.Table+" (run for subcommands)", ent.Command)
@@ -2060,8 +1850,6 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 		fmt.Fprintf(&sb, "// Verb wrappers: each binds this entity's command names and pre-escaped\n// base path %q to the shared verb bodies in verbs.go.\n\n", base)
 	}
 
-	// The key columns are literals, like every other declaration-derived
-	// string here.
 	keys := "[]string{" + quoteList(ent.Keys) + "}"
 	if has("list") {
 		renderCLIListTables(&sb, ent)
@@ -2075,12 +1863,6 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 	changeFields := lowerFirst(ent.Struct) + "MutationFields"
 	if hasMutation {
 		renderCLIMutationFields(&sb, ent, false)
-		// A declared key's columns are fields, set on create. The path
-		// names the record on update and patch, and the server never
-		// writes a key column there, so those verbs offer no flag for one.
-		// An enforced state field leaves the same way: the server refuses
-		// the write, so the flag would always fail — transitions own the
-		// move.
 		hasKeyFlag := slices.ContainsFunc(ent.Fields, func(f cliField) bool { return slices.Contains(ent.Keys, f.Snake) })
 		if (has("update") || has("patch")) && (hasKeyFlag || ent.StateField != "") {
 			renderCLIMutationFields(&sb, ent, true)
@@ -2129,14 +1911,9 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 	return sb.String()
 }
 
-// renderCLIEndpoint emits one endpoint's call table and its wrapper over
-// runEndpointVerb. Every declaration-derived string is a literal.
 func renderCLIEndpoint(sb *strings.Builder, ent cliEntity, ep cliEndpoint, base string) {
 	v := lowerFirst(ent.Struct) + ep.Func + "Call"
 	if !project.IsGoIdentifier(v) {
-		// The settings decoder holds names to snake_case, so this never
-		// fires; the generated build failing on the missing run func is
-		// the loud backstop, never a non-identifier in a declaration.
 		return
 	}
 	fmt.Fprintf(sb, "// %s is the route and flag table behind `%s %s`.\n", v, goCommentSafe(ent.Command), goCommentSafe(ep.Command))
@@ -2173,10 +1950,6 @@ func verbFuncSuffix(verb string) string {
 	}
 }
 
-// renderCLIListTables emits the per-entity list data: the filter-flag
-// table (one entry per flag, in the order the former inline body
-// declared them) and the -o table columns. The mechanics live once in
-// verbs.go (runListVerb); this is the part that genuinely varies.
 func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 	p := lowerFirst(ent.Struct)
 	fmt.Fprintf(sb, "// %sListFilters is the filter-flag table behind `%s list`: one entry\n// per flag, in help order, each bound to the query param it sets.\n", p, goCommentSafe(ent.Command))
@@ -2196,10 +1969,6 @@ func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 			help += " [" + strings.Join(f.Values, "|") + "]"
 		}
 		fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", f.Flag, ent.filterKeys.Key(f.Snake, filter.OpEq), help)
-		// One row per operator the field's type accepts, from the same
-		// FilterOps derivation: the table cannot name a param the server
-		// refuses, and a new operator in filter.FilterSuffixes lands
-		// here without a second list.
 		for _, op := range f.FilterOps {
 			fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", f.Flag+op.Flag, ent.filterKeys.Key(f.Snake, op.Op), "filter: "+f.Snake+" "+op.Help)
 		}
@@ -2217,13 +1986,6 @@ func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 	fmt.Fprintf(sb, "var (\n\t%sListHeaders = []string{%s}\n\t%sListKeys    = []string{%s}\n)\n\n", p, quoteList(headers), p, quoteList(keys))
 }
 
-// renderCLIMutationFields emits the per-entity field table behind the
-// mutation verbs: one entry per writable field, in declaration order,
-// each binding the CLI flag to the JSON wire key it sets. The mechanics
-// live once in verbs.go (runMutationVerb); this is the part that
-// genuinely varies. Field names are string literals here, never
-// identifiers. With change set, it emits <entity>ChangeFields instead:
-// the table less the key columns, behind update and patch.
 func renderCLIMutationFields(sb *strings.Builder, ent cliEntity, change bool) {
 	p := lowerFirst(ent.Struct)
 	if change {
@@ -2259,9 +2021,6 @@ func renderCLIMutationFields(sb *strings.Builder, ent cliEntity, change bool) {
 	sb.WriteString("}\n\n")
 }
 
-// cliFieldKindConst maps the derived Go type to the fieldKind constant
-// the shared mutation body switches on. Fixed vocabulary: no declaration
-// string reaches an identifier slot.
 func cliFieldKindConst(goType string) string {
 	switch goType {
 	case "int":
@@ -2277,8 +2036,6 @@ func cliFieldKindConst(goType string) string {
 	}
 }
 
-// cliAnyTransition reports whether any selected entity holds a non-system
-// move; it gates the shared transition body in verbs.go.
 func cliAnyTransition(spec cliSpec) bool {
 	for _, ent := range spec.Entities {
 		if len(ent.Transitions) > 0 {
@@ -2288,8 +2045,6 @@ func cliAnyTransition(spec cliSpec) bool {
 	return false
 }
 
-// cliAnyEndpoint reports whether any selected entity has a settings
-// endpoint; it gates the shared endpoint body in verbs.go.
 func cliAnyEndpoint(spec cliSpec) bool {
 	for _, ent := range spec.Entities {
 		if len(ent.Endpoints) > 0 {
@@ -2299,8 +2054,6 @@ func cliAnyEndpoint(spec cliSpec) bool {
 	return false
 }
 
-// cliAnyUpload reports whether any selected entity takes a file on a
-// mutation verb; it gates the multipart body in verbs.go.
 func cliAnyUpload(spec cliSpec) bool {
 	for _, ent := range spec.Entities {
 		if len(ent.Uploads) > 0 && (slices.Contains(ent.Verbs, "create") || slices.Contains(ent.Verbs, "update") || slices.Contains(ent.Verbs, "patch")) {
@@ -2310,8 +2063,6 @@ func cliAnyUpload(spec cliSpec) bool {
 	return false
 }
 
-// cliAnyVerb reports whether any selected entity kept the verb; it gates
-// which shared bodies verbs.go needs.
 func cliAnyVerb(spec cliSpec, verb string) bool {
 	for _, ent := range spec.Entities {
 		for _, v := range ent.Verbs {
@@ -2323,8 +2074,6 @@ func cliAnyVerb(spec cliSpec, verb string) bool {
 	return false
 }
 
-// fileFlagConst is the fieldKind of a file flag, declared only for a
-// selection with file fields.
 func fileFlagConst(uploads bool) string {
 	if !uploads {
 		return ""
@@ -2332,8 +2081,6 @@ func fileFlagConst(uploads bool) string {
 	return "\tfieldFile\n"
 }
 
-// fileFlagArm is fieldFlags' case for a file flag, which stores the path
-// as an uploadPath; only a selection with file fields has one.
 func fileFlagArm(uploads bool) string {
 	if !uploads {
 		return ""
@@ -2343,8 +2090,6 @@ func fileFlagArm(uploads bool) string {
 `
 }
 
-// mutationSend is the send step of runMutationVerb: a body holding a file
-// flag goes out as multipart when the selection has file fields.
 func mutationSend(uploads bool) string {
 	if !uploads {
 		return `	if err := g.client.Do(g.ctx, method, path, body, &out); err != nil {
@@ -2364,8 +2109,6 @@ func mutationSend(uploads bool) string {
 `
 }
 
-// cliUploadHelpers is the multipart half of the mutation verbs, emitted
-// when a selected entity has an Image or File field.
 const cliUploadHelpers = `// uploadPath is a file flag's value in a mutation body: a path, or - for
 // stdin. A body holding one goes out as multipart.
 type uploadPath string
@@ -2417,16 +2160,6 @@ func sendMultipart(ctx context.Context, c *client.Client, method, path string, f
 
 `
 
-// renderCLIVerbsFile emits verbs.go, the shared verb bodies. The former
-// per-entity copies (run<Ent>List/Get/Create/Update/Patch/Delete/
-// BatchCreate/BatchUpdate/BatchDelete/Watch inside every <entity>.go)
-// differed only in the command name, the pre-escaped base path, and
-// per-entity flag/column/field tables, so each verb now has ONE body here
-// and the entity files keep one-line wrappers binding theirs plus the
-// tables those bodies walk (issue #417 moved create/update/patch over:
-// their per-field flag declarations became rows in a mutationField
-// table). Emitted only when some entity kept a verb, pruned to the
-// selected verbs.
 func renderCLIVerbsFile(spec cliSpec) string {
 	list := cliAnyVerb(spec, "list")
 	get := cliAnyVerb(spec, "get")
@@ -2437,7 +2170,7 @@ func renderCLIVerbsFile(spec cliSpec) string {
 	watch := cliAnyVerb(spec, "watch")
 	transition := cliAnyTransition(spec)
 	endpoint := cliAnyEndpoint(spec)
-	fields := mutation || endpoint // the field-flag table and its parser
+	fields := mutation || endpoint
 	uploads := cliAnyUpload(spec)
 
 	var imports []string
@@ -2445,10 +2178,10 @@ func renderCLIVerbsFile(spec cliSpec) string {
 		imports = append(imports, "\t\"context\"")
 	}
 	if list {
-		imports = append(imports, "\t\"encoding/json\"") // the raw list envelope
+		imports = append(imports, "\t\"encoding/json\"")
 	}
 	if fields || list {
-		imports = append(imports, "\t\"flag\"") // list visits its flags for a given --cursor
+		imports = append(imports, "\t\"flag\"")
 	}
 	if list || del || batchDel || watch || fields {
 		imports = append(imports, "\t\"fmt\"")
@@ -2460,7 +2193,7 @@ func renderCLIVerbsFile(spec cliSpec) string {
 		imports = append(imports, "\t\"net/url\"")
 	}
 	if list || batchDel || endpoint || uploads {
-		imports = append(imports, "\t\"os\"") // usage errors go to stderr; files open from disk
+		imports = append(imports, "\t\"os\"")
 	}
 	if uploads {
 		imports = append(imports, "\t\"path/filepath\"")

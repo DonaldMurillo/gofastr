@@ -2,24 +2,17 @@ package project
 
 import (
 	"fmt"
-	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"os"
 	"path/filepath"
 
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"golang.org/x/mod/modfile"
 )
 
-// GofastrModule is the module path both go.mod inspection and the
-// mechanical upgrade steps operate on.
+// GofastrModule is the framework's module path.
 const GofastrModule = "github.com/DonaldMurillo/gofastr"
 
-// GoModGofastrVersion reads root/go.mod and returns the required
-// gofastr version plus whether a replace directive overrides it (a
-// local replace means the version in go.mod may not be what actually
-// builds). It parses with golang.org/x/mod/modfile, the go command's
-// own grammar, so only a require names the version: a gofastr line in
-// an exclude, retract or replace block (single-line or block form) is
-// never misread as one.
+// GoModGofastrVersion returns the gofastr version root/go.mod requires and whether a replace overrides it.
 func GoModGofastrVersion(root string) (version string, replaced bool, err error) {
 	body, err := os.ReadFile(filepath.Join(root, "go.mod"))
 	if err != nil {

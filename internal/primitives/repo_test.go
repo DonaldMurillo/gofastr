@@ -292,6 +292,50 @@ var ownedPackages = []string{
 	"cmd/primitives",
 	"cmd/repolint",
 	"cmd/vettool",
+	// cmd/gofastr, scaffolding and project tools.
+	"cmd/gofastr/internal/agentscmd",
+	"cmd/gofastr/internal/auditcmd",
+	"cmd/gofastr/internal/docscmd",
+	"cmd/gofastr/internal/generatecmd",
+	"cmd/gofastr/internal/initcmd",
+	"cmd/gofastr/internal/migratecmd",
+	"cmd/gofastr/internal/newcmd",
+	"cmd/gofastr/internal/semanticcmd",
+	"cmd/gofastr/internal/themecmd",
+	"cmd/gofastr/internal/unmountcmd",
+	"cmd/gofastr/internal/upgradecmd",
+	"cmd/gofastr/internal/validatecmd",
+	// cmd/gofastr, the CLI shell and the site packages.
+	"cmd/gofastr",
+	"cmd/gofastr/internal/cli",
+	"cmd/gofastr/internal/clitest",
+	"cmd/gofastr/packages",
+	"cmd/gofastr/packages/docpage",
+	"cmd/gofastr/packages/sitefooter",
+	"cmd/gofastr/packages/siteheader",
+	// cmd/gofastr, the dev loop.
+	"cmd/gofastr/internal/loopback",
+	"cmd/gofastr/internal/testcmd",
+	"cmd/gofastr/internal/telemetrycmd",
+	"cmd/gofastr/internal/projectfs",
+	"cmd/gofastr/internal/harnesscmd",
+	"cmd/gofastr/internal/devcmd",
+	// cmd/gofastr: build and ship
+	"cmd/gofastr/internal/buildcmd",
+	"cmd/gofastr/internal/deploycmd",
+	"cmd/gofastr/internal/desktopcmd",
+	"cmd/gofastr/internal/exportcmd",
+	"cmd/gofastr/internal/releasecmd",
+	"cmd/gofastr/internal/gates",
+	"cmd/gofastr/internal/packcmd",
+	// cmd/gofastr group E: the app spec and the project model.
+	"cmd/gofastr/internal/project",
+	"cmd/gofastr/internal/appspec",
+	// cmd/gofastr group F: the app generator.
+	"cmd/gofastr/internal/appgen",
+	// cmd/gofastr, owned by contracts and cliplugin.
+	"cmd/gofastr/internal/verifycmd",
+	"cmd/gofastr/internal/plugincmd",
 }
 
 //gofastr:test-reads primitives/ *.go

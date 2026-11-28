@@ -8,6 +8,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 )
 
+// RunGenerate implements `gofastr generate`: a named generator, or with only
+// flags the derived generators and extensions in the codegen config.
 func RunGenerate(args []string) {
 	if cli.HasHelpFlagBeforeTerminator(args) && (len(args) == 1 || strings.HasPrefix(args[0], "-")) {
 		printGenerateHelp()

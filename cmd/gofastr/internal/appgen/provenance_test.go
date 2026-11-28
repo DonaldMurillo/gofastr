@@ -8,6 +8,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 	"github.com/DonaldMurillo/gofastr/codegen"
+	"github.com/DonaldMurillo/gofastr/core/settings"
 )
 
 // A scaffold marker names a release or says dev: a checkout build's
@@ -135,5 +136,32 @@ func TestGenerateConfigRunWarnsEdited(t *testing.T) {
 	out := clitest.CovT_capStdout(t, func() { clitest.CovT_capExit(t, func() { GenerateProject([]string{"--config=gofastr.settings.yml"}) }) })
 	if !strings.Contains(out, filepath.Join("gen", "out.txt")+" was edited since the last `gofastr generate`") {
 		t.Fatalf("second run did not warn:\n%s", out)
+	}
+}
+
+func TestStampKeepsAnExistingMarker(t *testing.T) {
+	styled, err := stampFile("styles", "x.go", "package x\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	restamped, err := stampFile("app", "x.go", styled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, _, ok := codegen.ReadMarker("x.go", restamped); !ok || m.Generator != "styles" {
+		t.Fatalf("the app generator re-stamped a styles file: %+v\n%s", m, restamped)
+	}
+}
+
+func TestSettingsFileStaysUnmarked(t *testing.T) {
+	files, err := StampGeneratedFiles("app", []GeneratedFile{{Name: settings.FileName, Content: "endpoints: []\n"}, {Name: "main.go", Content: "package main\n"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files[0].Content != "endpoints: []\n" {
+		t.Errorf("the settings file was stamped:\n%s", files[0].Content)
+	}
+	if _, _, ok := codegen.ReadMarker("main.go", files[1].Content); !ok {
+		t.Errorf("main.go was not stamped:\n%s", files[1].Content)
 	}
 }

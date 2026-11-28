@@ -10,17 +10,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/astbase"
 )
 
-// reverseNodeBlock reads the three spellings appgen's
-// renderAppSpecBlockForScreen gives a node block:
-//
-//	noderender.RenderTrustedNode(uinode.Node{…})
-//	island.NewIsland("name", nodeComponent{node: uinode.Node{…}}).Render()
-//	component.NewWidget("name", nodeComponent{node: uinode.Node{…}}).Render()
-//
-// The node literal carries the block's kind, props and children as the
-// generator wrote them, so the block reads straight back. Without this
-// pack dropped every plain section, heading, div and island or widget
-// wrapper, and the recovered spec regenerated the screen without them.
 func reverseNodeBlock(call *ast.CallExpr) (appspec.AppSpecBlock, bool) {
 	if callSel(call) == "noderender.RenderTrustedNode" && len(call.Args) == 1 {
 		return reverseNodeLit(call.Args[0])
@@ -53,8 +42,6 @@ func reverseNodeBlock(call *ast.CallExpr) (appspec.AppSpecBlock, bool) {
 	return b, true
 }
 
-// reverseNodeLit reads one uinode.Node{Kind, Props, Children} literal.
-// A child written with its type elided (gofmt -s) reads the same.
 func reverseNodeLit(e ast.Expr) (appspec.AppSpecBlock, bool) {
 	lit, ok := e.(*ast.CompositeLit)
 	if !ok {
@@ -72,8 +59,6 @@ func reverseNodeLit(e ast.Expr) (appspec.AppSpecBlock, bool) {
 		return appspec.AppSpecBlock{}, false
 	}
 	var b appspec.AppSpecBlock
-	// `kind: section` is the catalog's ui.Section; the node renderer's
-	// plain <section> is the `type: section` spelling (typeNamesCatalogKind).
 	if strings.EqualFold(kind, "section") {
 		b.Type = kind
 	} else {
@@ -94,15 +79,10 @@ func reverseNodeLit(e ast.Expr) (appspec.AppSpecBlock, bool) {
 	return b, true
 }
 
-// packScreenAction is one component.On registration in a screen's
-// Actions method, in the order the generator wrote it.
 type packScreenAction struct {
 	name, clientJS string
 }
 
-// packScreenActions reads each screen type's Actions method:
-// component.On(name, handler, component.WithClientJS(js)) per action,
-// keyed by receiver type name.
 func packScreenActions(file *ast.File) map[string][]packScreenAction {
 	out := map[string][]packScreenAction{}
 	for _, d := range file.Decls {
@@ -134,12 +114,6 @@ func packScreenActions(file *ast.File) map[string][]packScreenAction {
 	return out
 }
 
-// packAttachActions turns the action markers the node renderer writes
-// into a block's props back into its actions: data-action names the
-// first action (data-action-type its input/change/submit event), and
-// data-action-<event> names each later one. A marker counts only when
-// the screen registers an action by that name, so an author's own
-// data-action-* prop stays a prop.
 func packAttachActions(blocks []appspec.AppSpecBlock, actions []packScreenAction) {
 	if len(actions) == 0 {
 		return
@@ -184,12 +158,6 @@ func packAttachActions(blocks []appspec.AppSpecBlock, actions []packScreenAction
 	}
 }
 
-// packIsSynthesizedHeader reports whether e is the page header the
-// generator puts first on a screen nothing else draws an <h1> on:
-// ui.PageHeader(ui.PageHeaderConfig{Title: …}) with Title its only
-// field. A page_header block always writes Title, Subtitle and Eyebrow,
-// so the spellings never meet. Read as a block, the header would come
-// back as an authored one; skipped, the next generate writes it again.
 func packIsSynthesizedHeader(e ast.Expr) bool {
 	call, ok := e.(*ast.CallExpr)
 	if !ok || callSel(call) != "ui.PageHeader" || len(call.Args) != 1 {

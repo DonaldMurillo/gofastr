@@ -8,8 +8,6 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-// printUnmountedForUpgrade lists the copies an upgrade does not touch,
-// each older one with its upstream diff to the target.
 func printUnmountedForUpgrade(root, target string) {
 	_, entries, err := project.UnmountedSettings(root)
 	if err != nil {

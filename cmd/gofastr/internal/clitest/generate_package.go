@@ -5,9 +5,7 @@ import (
 	"testing"
 )
 
-// WriteTestModule writes a minimal go.mod resolving the framework
-// through a replace to the repo root, the shape every generated-module
-// gate in this package uses.
+// WriteTestModule writes a go.mod that replaces the framework with the repo root.
 func WriteTestModule(t *testing.T, dir string) {
 	t.Helper()
 	repoRoot := RepoRootDir(t)

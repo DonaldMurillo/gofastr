@@ -15,8 +15,6 @@ func generatorNames() string {
 	return strings.Join(names, ", ")
 }
 
-// generatorHelp renders the registry for `gofastr generate --help`,
-// grouped by kind.
 func generatorHelp() string {
 	var b strings.Builder
 	for _, kind := range []appgen.GeneratorKind{appgen.ScaffoldKind, appgen.DerivedKind} {

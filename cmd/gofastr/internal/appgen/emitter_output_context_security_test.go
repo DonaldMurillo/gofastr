@@ -409,6 +409,9 @@ func TestFontFetchOnlyTrustsGstatic(t *testing.T) {
 		"http://fonts.gstatic.com/s/x.woff2",              // downgraded scheme
 		"https://attacker.test/collect?f=.woff2",          // metachar in query
 		"https://fonts.gstatic.com@attacker.test/x.woff2", // userinfo host confusion
+		"https://evilgstatic.com/x.woff2",                 // bare suffix match
+		"https://other.gstatic.com/x.woff2",               // sibling subdomain
+		"https://fonts.gstatic.com:8443/x.woff2",          // explicit port
 	}
 	for _, u := range bad {
 		css := "/* latin */\n@font-face { src: url(" + u + ") format('woff2'); }"

@@ -1,8 +1,7 @@
 //gofastr:allow-file(GOFASTR1801) a gofastr.yml fixture: its theme map (background, text) is spec data, not a CSS rule
 package clitest
 
-// TestAppSpecYAML is the app spec the end-to-end app tests generate from:
-// every construct the generator emits, in one spec.
+// TestAppSpecYAML is the app spec the end-to-end app tests generate from.
 func TestAppSpecYAML() string {
 	return `
 app:

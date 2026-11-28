@@ -1,0 +1,64 @@
+primitive: cli.telemetry
+summary: "`gofastr telemetry` (stats, logs, requests, issues, request), which opens the directory battery/telemetry writes and reads it through internal/telemetry, so it works over SSH and while the app is down."
+code:
+  - cmd/gofastr/internal/telemetrycmd/
+docs:
+  - framework/docs/content/telemetry.md
+  - framework/docs/content/cli.md
+on_change:
+  - The --app default directory is battery/telemetry's (telemetry.DefaultDir); a change to where battery/telemetry writes is checked here.
+invariants:
+  - id: table-text-is-one-scrubbed-line
+    rule: Text from the files printed in a table or a sentence goes through clean, textsafe.ScrubTerminal with newline, carriage return and tab turned to spaces, so a stored message can neither drive the terminal nor start a line that looks like another entry; a stack is cleaned line by line so its own breaks stay.
+    enforced_by:
+      - test: cmd/gofastr/internal/telemetrycmd.TestLogs
+      - test: cmd/gofastr/internal/telemetrycmd.TestStats
+      - test: cmd/gofastr/internal/telemetrycmd.TestRequestShowsTheErrorAndTheStack
+  - id: json-escapes-unsafe-runes
+    rule: Every --json line of every subcommand passes through jsonLine, which writes each rune at or above U+0020 that textsafe.IsUnsafe names as a JSON escape (a surrogate pair past U+FFFF), so what a program decodes is unchanged and nothing a terminal obeys is printed raw.
+    enforced_by:
+      - test: cmd/gofastr/internal/telemetrycmd.TestEveryJSONCommandEscapesUnsafeRunes
+      - test: cmd/gofastr/internal/telemetrycmd.TestJSONLineIsSafeToPrint
+      - test: cmd/gofastr/internal/telemetrycmd.TestJSONOutputIsScrubbed
+  - id: json-escapes-bytes-that-are-not-utf8
+    rule: A --json line that json.Valid accepts but that holds a byte that is not UTF-8, which json.Valid allows inside a string, prints that byte as the JSON escape of U+FFFD, the rune a decoder reads it as, so a lone 0x9b never reaches the terminal as an 8-bit CSI; a U+FFFD already in the line is left as it is.
+    enforced_by:
+      - test: cmd/gofastr/internal/telemetrycmd.TestValidJSONLineEscapesBytesThatAreNotUTF8
+  - id: torn-line-prints-as-a-string
+    rule: A stored line that is not valid JSON is printed under --json as a JSON string of itself, with bytes that are not UTF-8 replaced and the same unsafe-rune escapes a valid line gets.
+    enforced_by:
+      - test: cmd/gofastr/internal/telemetrycmd.TestJSONLineIsSafeToPrint
+      - test: cmd/gofastr/internal/telemetrycmd.TestTornJSONLineEscapesUnsafeRunes
+  - id: usage-errors-exit-two
+    rule: A command-line mistake (no or unknown subcommand, a bad flag or value, a stray or missing argument, --dir with --app, an --app that is a path, --limit outside 1 to 100000, stats with --since under a minute) is errUsage, which RunTelemetry reports with the usage on stderr and exit 2; any other failure exits 1.
+    enforced_by:
+      - test: cmd/gofastr/internal/telemetrycmd.TestUsageErrors
+      - test: cmd/gofastr/internal/telemetrycmd.TestRunTelemetryUsageErrorExitsTwoOnStderr
+      - test: cmd/gofastr/internal/telemetrycmd.TestRunTelemetryMissingSubcommandExitsTwo
+  - id: trace-id-anywhere-any-case
+    rule: request takes its trace ID before or after the flags and in either case.
+    enforced_by:
+      - test: cmd/gofastr/internal/telemetrycmd.TestRequest
+  - id: stats-answers-any-window
+    rule: stats reads its window in at most about a thousand whole-minute steps, so any --since of a minute or more answers, starting at most one step before the time asked.
+    enforced_by:
+      - test: cmd/gofastr/internal/telemetrycmd.TestStats
+  - id: app-reads-the-default-directory
+    rule: --app <name> reads telemetry.DefaultDir(name), the directory battery/telemetry writes when its Config.Dir is empty.
+    enforced_by:
+      - test: cmd/gofastr/internal/telemetrycmd.TestAppFlagFindsTheDefaultDirectory
+  - id: request-logs-cover-the-whole-window
+    rule: request prints every log line carrying its trace ID within the trace's log window, even for a trace of the longest duration.
+    enforced_by:
+      - test: cmd/gofastr/internal/telemetrycmd.TestRequestFindsLinkedLogsAtMaximumDuration
+decisions:
+  - id: escape-not-scrub-under-json
+    date: 2026-11-28
+    status: accepted
+    decision: --json escapes the runes a terminal obeys instead of removing them, writes a byte that is not UTF-8 as the escape of U+FFFD, and leaves every other byte of a stored line as it is.
+    rejected:
+      - option: Scrub --json output like the tables.
+        why: --json is the line as stored for a program to read; removing runes would change the values it decodes, while an escape means the same character.
+      - option: Print a valid line that holds bytes that are not UTF-8 as a JSON string, like a torn line.
+        why: A program reading the output would get a string where it expects the object, when escaping the byte keeps the object and decodes the same as the stored line.
+    upholds: [json-escapes-unsafe-runes, json-escapes-bytes-that-are-not-utf8]
