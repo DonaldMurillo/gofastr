@@ -77,10 +77,14 @@ func unsupportedVersionError(requested string) *RPCError {
 	if len(requested) > maxEchoedVersionBytes {
 		requested = requested[:maxEchoedVersionBytes]
 	}
+	message := "Unsupported protocol version"
+	if slices.Contains(handshakeProtocolVersions, requested) {
+		message = "Unsupported protocol version: " + requested + " is negotiated with initialize, not declared per request"
+	}
 	return &RPCError{
 		Code:    ErrUnsupportedProtocolVersion,
-		Message: "Unsupported protocol version",
-		Data:    map[string]any{"supported": SupportedProtocolVersions(), "requested": requested},
+		Message: message,
+		Data:    map[string]any{"supported": append([]string(nil), modernProtocolVersions...), "requested": requested},
 	}
 }
 

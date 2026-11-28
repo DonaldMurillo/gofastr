@@ -111,7 +111,7 @@ invariants:
       - test: core/mcp.TestVersionHeaderRefusalNullsInvalidID
       - test: core/mcp.TestModernHeaderMismatchNullsInvalidID
   - id: modern-requests-are-stateless
-    rule: A request whose params._meta carries io.modelcontextprotocol/protocolVersion is served without initialize under that revision; a non-string value answers -32602 and a revision outside the modern list (2026-07-28) answers -32022 with data.supported listing SupportedProtocolVersions and data.requested echoing at most 64 bytes of the request.
+    rule: A request whose params._meta carries io.modelcontextprotocol/protocolVersion is served without initialize under that revision; a non-string value answers -32602 and a revision outside the modern list (2026-07-28) answers -32022 with data.supported listing only the modern revisions and data.requested echoing at most 64 bytes of the request, and a handshake revision is refused with a message naming initialize, so a client retrying from supported cannot loop.
     enforced_by:
       - test: core/mcp.TestModernUnsupportedVersion
       - test: core/mcp.TestModernOverStdio
@@ -134,8 +134,10 @@ invariants:
       - test: core/mcp.TestModernHTTPHeaders
       - test: core/mcp.TestModernHTTPStatusMapping
   - id: modern-http-status
-    rule: Over HTTP, -32020, -32021 and -32022 answer 400, a modern -32601 answers 404, and every other response, legacy -32601 included, answers 200; a GET under a modern MCP-Protocol-Version header answers 405.
+    rule: Over HTTP, -32020, -32021 and -32022 answer 400, a modern -32601 answers 404, and every other response, legacy -32601 included, answers 200; a 400 or 404 is a JSON body even when Accept names only text/event-stream; a notification POST under a modern MCP-Protocol-Version header answers 202; a GET under a modern MCP-Protocol-Version header answers 405.
     enforced_by:
+      - test: core/mcp.TestModernNotificationAccepted
+      - test: core/mcp.TestModernErrorOverStreamAcceptIsJSON
       - test: core/mcp.TestModernHTTPStatusMapping
       - test: core/mcp.TestModernGETRefused
   - id: listen-delivers-only-what-was-asked

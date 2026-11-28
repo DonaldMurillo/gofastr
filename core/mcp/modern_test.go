@@ -100,12 +100,17 @@ func TestModernUnsupportedVersion(t *testing.T) {
 	out := handleJSON(t, s, `{"jsonrpc":"2.0","id":4,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2099-01-01"}}}`)
 	e, _ := out["error"].(map[string]any)
 	data, _ := e["data"].(map[string]any)
-	if errCode(out) != ErrUnsupportedProtocolVersion || data["requested"] != "2099-01-01" || len(data["supported"].([]any)) != len(SupportedProtocolVersions()) {
-		t.Fatalf("unsupported version = %v, want -32022 echoing the request and listing %v", out, SupportedProtocolVersions())
+	supported, _ := data["supported"].([]any)
+	if errCode(out) != ErrUnsupportedProtocolVersion || data["requested"] != "2099-01-01" || len(supported) != 1 || supported[0] != LatestProtocolVersion {
+		t.Fatalf("unsupported version = %v, want -32022 echoing the request and listing only the per-request revisions", out)
 	}
 	handshake := handleJSON(t, s, `{"jsonrpc":"2.0","id":4,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2025-11-25"}}}`)
-	if errCode(handshake) != ErrUnsupportedProtocolVersion {
-		t.Fatalf("handshake revision in _meta = %v, want -32022: it needs initialize", handshake)
+	he, _ := handshake["error"].(map[string]any)
+	hd, _ := he["data"].(map[string]any)
+	hs, _ := hd["supported"].([]any)
+	msg, _ := he["message"].(string)
+	if errCode(handshake) != ErrUnsupportedProtocolVersion || !strings.Contains(msg, "initialize") || len(hs) != 1 || hs[0] != LatestProtocolVersion {
+		t.Fatalf("handshake revision in _meta = %v, want -32022 naming initialize and listing only per-request revisions, so a client retrying from supported cannot loop", handshake)
 	}
 	bad := handleJSON(t, s, `{"jsonrpc":"2.0","id":4,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":20260728}}}`)
 	if errCode(bad) != ErrInvalidParams {
@@ -293,5 +298,37 @@ func TestModernHeaderMismatchNullsInvalidID(t *testing.T) {
 	status, out := modernPOST(t, modernServer(t), body, map[string]string{ProtocolVersionHeader: "2026-07-28"})
 	if id, ok := out["id"]; status != http.StatusBadRequest || errCode(out) != ErrHeaderMismatch || !ok || id != nil {
 		t.Fatalf("= %d %v, want 400 -32020 under a null id", status, out)
+	}
+}
+
+// A notification POST under a 2026-07-28 header is accepted with 202: the revision defines no header rules for
+// notification POSTs, and the server speaks that revision.
+func TestModernNotificationAccepted(t *testing.T) {
+	s := modernServer(t)
+	for name, h := range map[string]http.Handler{"ServeHTTP": s, "ServeSSE": s.ServeSSE("/mcp")} {
+		r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}`))
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set(ProtocolVersionHeader, "2026-07-28")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusAccepted {
+			t.Errorf("%s notification under 2026-07-28 = %d %s, want 202", name, w.Code, w.Body)
+		}
+	}
+}
+
+// A request that accepts only an event stream still gets a 4xx answer as a JSON body, so clients that read the body of
+// a 400 or 404 to tell a modern server from a legacy one can.
+func TestModernErrorOverStreamAcceptIsJSON(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"nope/nope","params":{`+modernMeta+`}}`))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Accept", "text/event-stream")
+	r.Header.Set(ProtocolVersionHeader, "2026-07-28")
+	r.Header.Set(MethodHeader, "nope/nope")
+	w := httptest.NewRecorder()
+	modernServer(t).ServeSSE("/mcp").ServeHTTP(w, r)
+	var out map[string]any
+	if w.Code != http.StatusNotFound || w.Header().Get("Content-Type") != "application/json" || json.Unmarshal(w.Body.Bytes(), &out) != nil || errCode(out) != ErrMethodNotFound {
+		t.Fatalf("= %d %q %s, want 404 with a JSON -32601 body", w.Code, w.Header().Get("Content-Type"), w.Body)
 	}
 }
