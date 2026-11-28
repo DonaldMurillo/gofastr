@@ -108,3 +108,11 @@ decisions:
     rejected:
       - option: Set a session cookie for a new account.
         why: battery/auth answers a new and an existing address with the same redirect so the form cannot reveal who has an account, and a cookie only for new accounts would.
+  - id: one-go-mod-edit
+    date: 2026-11-28
+    status: accepted
+    decision: init sets the go line, the toolchain line and the gofastr require in one go mod edit, for release and development CLIs alike.
+    rejected:
+      - option: One go mod edit per directive.
+        why: Once the go line changes, the next go invocation can switch to the minimum toolchain before it sees the preferred patch release in the toolchain line.
+    upholds: [go-floor-matches-the-framework]

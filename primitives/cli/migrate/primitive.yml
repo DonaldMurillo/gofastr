@@ -64,6 +64,11 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/migratecmd.TestMigrateAcceptsDBFlag
       - test: cmd/gofastr/internal/migratecmd.TestMigrateDriverFollowsPostgresURL
+  - id: group-column-only-for-groups
+    rule: status prints a migration's group only when an applied or pending migration belongs to a group other than the default, and an all-default status prints none.
+    enforced_by:
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateStatusShowsDrift
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateStatusDirtyNamesARunnableGroup
 decisions:
   - id: no-apply-from-spec
     date: 2026-11-28
@@ -73,3 +78,11 @@ decisions:
       - option: Keep migrate diff.
         why: It made the app spec authoritative over a running database, and schema change belongs in a migration a person reviews and can roll back.
     upholds: [diff-is-removed]
+  - id: group-column-when-groups-exist
+    date: 2026-11-28
+    status: accepted
+    decision: status adds the group column only when a migration outside the default group exists.
+    rejected:
+      - option: Always print the group.
+        why: Most apps have only the default group, and their status output would change for a column that says nothing.
+    upholds: [group-column-only-for-groups]
