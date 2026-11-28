@@ -39,12 +39,13 @@ invariants:
       - test: cmd/gofastr/internal/appspec.TestAuthBasePathMustBeClean
       - test: cmd/gofastr/internal/appspec.TestAdminPathMustBeClean
   - id: static-dir-serves-no-app-file
-    rule: app.static_dir is refused when it is the app root or above it, inside a directory the generator writes Go into, at, under or above app.output_dir, or holding the SQLite file app.db.url names; an absolute path or one outside the app is left to the deployer, and a backslash reads as a slash.
+    rule: app.static_dir is refused when it is the app root or above it, inside a directory the generator writes Go into, at, under or above app.output_dir, holding the SQLite file app.db.url names, or with a directory whose name starts with a dot, such as .git; an absolute path or one outside the app is left to the deployer, and a backslash reads as a slash.
     enforced_by:
       - test: cmd/gofastr/internal/appspec.TestStaticDirRefusesProjectFiles
       - test: cmd/gofastr/internal/appspec.TestStaticDirRefusesOutputDir
       - test: cmd/gofastr/internal/appspec.TestStaticDirReadsBackslashesAsSlashes
       - test: cmd/gofastr/internal/appspec.TestStaticDirRefusesEveryCanonicalPackage
+      - test: cmd/gofastr/internal/appspec.TestStaticDirRefusesDotDirectories
   - id: base-url-is-an-origin
     rule: app.base_url is a bare http or https origin with no path, query or fragment.
     enforced_by:
@@ -211,9 +212,3 @@ decisions:
       - option: Warn on the key too.
         why: The key is the row's address, so a key shared across accounts answers 409 for a row the caller cannot see and tells them it exists; a global unique value such as a public handle can be deliberate.
     upholds: [owner-scoped-keys-hold-the-owner]
-  - id: static-dir-dot-directories-are-served
-    date: 2026-11-28
-    status: accepted
-    decision: Kept for now as an open security finding, tracked in issue 938; staticDirProblem refuses no dot-directory, so app.static_dir .git, or any other directory whose name starts with a dot, passes validate and the app would serve the repository's history and config to anyone.
-    revisit_if: Issue 938 is decided, on whether a static_dir with any segment starting with a dot is refused, as mount-paths-are-clean already does for app.auth.base_path and app.admin.path.
-    upholds: [static-dir-serves-no-app-file]

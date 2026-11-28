@@ -23,12 +23,13 @@ invariants:
       - test: cmd/gofastr/internal/appspec.TestAuthDevModeDefaultsTrue
       - test: cmd/gofastr/internal/appspec.TestAuthDevModeRejectsFuzzyBool
   - id: posture-strings-are-single-values
-    rule: app.db driver and url, app.admin.role, a screen's access.role, an entity's owner_field, tenant_field and cross_owner_read, each access permission and each read_scope field, op, value and unrestricted must be a single value; a list or a non-empty map there is an error, and a YAML null there reads as blank, as does an empty map, which is what {} in a .json spec decodes to.
+    rule: app.db driver and url, app.admin.role, a screen's access.role, an entity's owner_field, tenant_field and cross_owner_read, each access permission and each read_scope field, op, value and unrestricted must be a single value; a list, a map or an empty JSON object {} there is an error, and a YAML null or bare key there reads as blank.
     enforced_by:
       - test: cmd/gofastr/internal/appspec.TestDecodeRefusals
       - test: cmd/gofastr/internal/packcmd.TestAppSpecRedPostureScalarsRefuseShapes
       - test: cmd/gofastr/internal/packcmd.TestDBConfigRejectsNonScalarTypes
       - test: cmd/gofastr/internal/appspec.TestReadScopeRefusesNonScalarNodes
+      - test: cmd/gofastr/internal/appspec.TestJSONAppSpecRefusesEmptyObjectForASingleValue
       - test: cmd/gofastr/internal/appspec.TestExampleAppSpecsLoad
   - id: api-prefix-defaults-to-api
     rule: app.api_prefix is api when omitted and is stored with its slashes trimmed, so an explicit empty api_prefix mounts entity APIs at the root.
@@ -156,9 +157,11 @@ decisions:
       - option: Leave them to entity.Define at registration.
         why: Define panics there, which for a generated app means one that dies at boot instead of a generate-time error.
     upholds: [named-columns-are-checked-at-decode, read-scope-shape]
-  - id: json-empty-map-reads-as-blank
+  - id: json-empty-object-is-marked
     date: 2026-11-28
     status: accepted
-    decision: "Kept for now as an open security finding, tracked in issue 937: requireScalarString reads an empty map as blank, the shape a YAML null takes, so in a .json spec \"read\": {}, \"role\": {}, \"driver\": {} and \"unrestricted\": {} load as blank, the weakest setting, instead of being refused as a shape, and a blank unrestricted lets every signed-in caller past the read scope."
-    revisit_if: Issue 937 is decided, on whether yamlNodeFromJSON should mark an empty JSON object so requireScalarString refuses it while a YAML bare key still reads as blank.
+    decision: yamlNodeFromJSON gives a JSON {} a jsonEmptyObject Value, so requireScalarString refuses it as a map while a YAML bare key, which core/yaml parses to the same empty map, still reads as blank.
+    rejected:
+      - option: Refuse every empty map in requireScalarString.
+        why: core/yaml gives a bare key followed by a sibling the same empty map, and a bare key has always meant blank in a YAML spec.
     upholds: [posture-strings-are-single-values]

@@ -211,3 +211,15 @@ func TestAxeReportFlagsLoginOnly(t *testing.T) {
 		t.Fatalf("login-only run claimed clean: %s", report)
 	}
 }
+
+// The framework writes every <loc> with the app's production BaseURL, while the audit usually runs against a local server.
+func TestA11ySitemapReadsAnotherOriginAsALocalPath(t *testing.T) {
+	read := sitemapFixture(map[string]string{
+		"/sitemap.xml":   `<sitemapindex><sitemap><loc>https://myapp.example/sitemap/1.xml</loc></sitemap></sitemapindex>`,
+		"/sitemap/1.xml": `<urlset><url><loc>https://myapp.example/pricing</loc></url><url><loc>https://myapp.example/</loc></url></urlset>`,
+	})
+	pages, err := discoverA11yPages(read)
+	if want := []string{"/pricing", "/"}; err != nil || !slices.Equal(pages, want) {
+		t.Fatalf("discovered %v, error %v, want %v read on the --url origin", pages, err, want)
+	}
+}

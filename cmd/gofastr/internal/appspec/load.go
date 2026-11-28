@@ -156,10 +156,15 @@ func mergeAppNode(dst, src *coreyaml.Node, keyPath, file string, seen map[string
 	return nil
 }
 
+type jsonEmptyObject struct{}
+
 func yamlNodeFromJSON(value any) *coreyaml.Node {
 	switch v := value.(type) {
 	case map[string]any:
 		out := &coreyaml.Node{Kind: coreyaml.Map, Map: map[string]*coreyaml.Node{}, Line: 1, Column: 1}
+		if len(v) == 0 {
+			out.Value = jsonEmptyObject{}
+		}
 		for key, child := range v {
 			out.Map[key] = yamlNodeFromJSON(child)
 		}

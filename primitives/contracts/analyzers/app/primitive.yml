@@ -96,7 +96,7 @@ invariants:
       - test: framework/contracts/analyzers.TestSweepAppAcronymStaysOneToken
       - test: framework/contracts/analyzers.TestSweepAppPIIMatchesWholeTokens
   - id: app-spec-pii-auth-is-no-remedy
-    rule: Enabling app.auth suppresses no app-spec PII finding, and the finding's message names owner_field, an access.read permission and multi_tenant as remedies and never auth.
+    rule: Enabling app.auth suppresses no app-spec PII finding, and the finding's message names owner_field and an access.read permission as remedies, and never auth or multi_tenant, which cli.appspec.validate refuses for a generated app.
     enforced_by:
       - test: cmd/gofastr/internal/appspec.TestPIIUnscopedFlagged
       - test: cmd/gofastr/internal/appspec.TestPIIAuthAloneStillFlagged
@@ -199,10 +199,4 @@ decisions:
     rejected:
       - option: List enabling auth as a remedy.
         why: SessionMiddleware is pass-through, so auth alone leaves the rows world-readable.
-    upholds: [app-spec-pii-auth-is-no-remedy]
-  - id: pii-message-names-a-refused-remedy
-    date: 2026-11-28
-    status: accepted
-    decision: Kept for now as an open finding, tracked in issue 939; LintUnscopedPII's message suggests multi_tenant true, which cli.appspec.validate refuses for a generated app (no-generated-multi-tenant), so an author who follows it gets a second error; TestPIIUnscopedFlagged pins multi_tenant in the message today.
-    revisit_if: Issue 939 is decided, on whether the app-spec message drops multi_tenant or the generator learns to emit a tenant resolver.
     upholds: [app-spec-pii-auth-is-no-remedy]

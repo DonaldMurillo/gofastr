@@ -34,6 +34,21 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Changed
 
+- **BREAKING: `gofastr validate` refuses an `app.static_dir` with a
+  directory whose name starts with a dot**, such as `.git`, `.env.d` or
+  `public/.git`. The app would have served the repository's history or
+  config to anyone. Serve a directory of its own, such as `static`
+  ([#938](https://github.com/DonaldMurillo/gofastr/issues/938)).
+
+- **BREAKING: a `.json` app spec refuses `{}` where an access or database
+  setting takes a single value** (`read`, `create`, `update`, `delete`,
+  `role`, `owner_field`, `tenant_field`, `read_scope.unrestricted`,
+  `app.db.driver` and the rest). `{}` used to load as blank, the weakest
+  setting: `"read": {}` opened reads to everyone, and
+  `"unrestricted": {}` let every signed-in user past the read scope. Write
+  the value, or leave the key out
+  ([#937](https://github.com/DonaldMurillo/gofastr/issues/937)).
+
 - **BREAKING: `gofastr harness` and `gofastr harness mcp` read their
   config directory (repository-key approvals, `permissions.json`, user
   `skills/`, the credential salt and `creds.enc`) from
@@ -110,10 +125,22 @@ few lines, and link the PR or the docs page for the rest.
   and fonts.gstatic.com for a theme's fonts, but followed any redirect
   their answers named; a redirect within the same https host
   still works ([#936](https://github.com/DonaldMurillo/gofastr/pull/936)).
+
+- **The app-spec PII lint no longer suggests `multi_tenant: true`**, which
+  `gofastr validate` refuses for a generated app. It names `owner_field` and
+  an `access.read` permission
+  ([#939](https://github.com/DonaldMurillo/gofastr/issues/939)).
+
 - **`gofastr release --url` no longer prints the credentials in a URL it
   refuses.** The error shows `https://REDACTED@host/...`, so a token in
   the URL stays out of the terminal and CI logs
   ([#934](https://github.com/DonaldMurillo/gofastr/pull/934)).
+
+- **`gofastr dev`'s hold page answers `/__livereload` only to its own host
+  names** on a loopback bind, as the page already did for the build output.
+  A page on a name rebound to 127.0.0.1 gets 403
+  ([#941](https://github.com/DonaldMurillo/gofastr/issues/941)).
+
 - **`gofastr telemetry … --json` escapes C1, bidi and zero-width runes**
   in every subcommand, so a stored route or error cannot reach the terminal
   raw. A byte that is not UTF-8 inside a stored line's string prints as the

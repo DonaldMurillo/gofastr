@@ -3,6 +3,7 @@ package appspec
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -101,5 +102,33 @@ func TestJSONAppSpecStillParses(t *testing.T) {
 func TestJSONAppSpecRejectsTrailingData(t *testing.T) {
 	if _, err := decodeJSONAppSpec(t, `{"app": {"name": "a"}} {"app": {"name": "b"}}`); err == nil {
 		t.Fatal(".json app spec with a second value after the first decoded")
+	}
+}
+
+// An empty JSON object read as blank, the weakest setting: open reads, or no unrestricted gate.
+func TestJSONAppSpecRefusesEmptyObjectForASingleValue(t *testing.T) {
+	spec := func(app, access, readScope, screenAccess string) string {
+		return `{"app": {"name": "a"` + app + `},
+ "entities": [{"name": "post", "crud": true, "fields": [{"name": "status", "type": "string"}]` + access + readScope + `}],
+ "screens": [{"name": "home", "route": "/", "body": []` + screenAccess + `}]}`
+	}
+	if _, err := decodeJSONAppSpec(t, spec(`, "db": {"driver": "sqlite"}, "admin": {"role": "admin"}`,
+		`, "access": {"read": "member", "delete": "admin"}`,
+		`, "read_scope": {"unrestricted": "posts:review", "filter": [{"field": "status", "value": "published"}]}`,
+		`, "access": {"role": "member"}`)); err != nil {
+		t.Fatalf("the spec with every value set must load: %v", err)
+	}
+	for _, tc := range []struct{ key, body string }{
+		{"read", spec("", `, "access": {"read": {}}`, "", "")},
+		{"delete", spec("", `, "access": {"delete": {}}`, "", "")},
+		{"unrestricted", spec("", "", `, "read_scope": {"unrestricted": {}, "filter": [{"field": "status", "value": "published"}]}`, "")},
+		{"role", spec("", "", "", `, "access": {"role": {}}`)},
+		{"driver", spec(`, "db": {"driver": {}}`, "", "", "")},
+		{"role", spec(`, "admin": {"role": {}}`, "", "", "")},
+	} {
+		_, err := decodeJSONAppSpec(t, tc.body)
+		if err == nil || !strings.Contains(err.Error(), `"`+tc.key+`" must be a single value`) {
+			t.Errorf("SECURITY: %q: {} loaded as blank instead of being refused: err = %v\n%s", tc.key, err, tc.body)
+		}
 	}
 }
