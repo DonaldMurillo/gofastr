@@ -19,11 +19,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/astbase"
 )
 
-// =============================================================================
-// AST readers: reconstruct a App spec from a generated app's Go source.
-// The generator emits a known, finite grammar; these readers reverse it.
-// =============================================================================
-
 func packParseFile(path string, mode parser.Mode) (*ast.File, error) {
 	root, err := os.OpenRoot(filepath.Dir(path))
 	if err != nil {
@@ -45,16 +40,6 @@ func packParsePhrases(path string) (*ast.File, error) {
 	return packResolvePhrases(file), nil
 }
 
-// returnValue returns the first expression of the named func's return stmt.
-//
-// A `return <name>` is followed back to the composite literal that `name` was
-// assigned. Once a sidebar had to resolve its auth control per request, its
-// builder stopped being a single `return ui.SidebarConfig{…}` and became
-// `cfg := ui.SidebarConfig{…}` … `return cfg`, at which point this returned
-// an *ast.Ident, every caller's type assertion to *ast.CompositeLit failed,
-// and pack silently reconstructed an empty nav. Silently, because a failed
-// assertion here returns "no nav found", which is indistinguishable from an
-// app that declares none.
 func returnValue(file *ast.File, fn string) ast.Expr {
 	body := appgen.FuncBody(file, fn)
 	for _, stmt := range body {
@@ -74,9 +59,6 @@ func returnValue(file *ast.File, fn string) ast.Expr {
 	return nil
 }
 
-// assignedLiteral finds the composite literal assigned to name in body, taking
-// the LAST assignment so a later rebind wins; the same answer the running
-// program produces.
 func assignedLiteral(body []ast.Stmt, name string) ast.Expr {
 	var found ast.Expr
 	for _, stmt := range body {
@@ -95,17 +77,10 @@ func assignedLiteral(body []ast.Stmt, name string) ast.Expr {
 	return found
 }
 
-// packHookStubComment matches the line renderAppSpecStubs writes above a
-// hook stub: `// <handler> implements hook "<id>" (entity <e>, <when>): <desc>`.
 var packHookStubComment = regexp.MustCompile(`^// (\w+) implements hook ("(?:[^"\\]|\\.)*") \(entity [^,]*, [^)]*\): ?(.*)$`)
 
-// packHelperStubComment matches the body of a helper stub:
-// `// TODO: implement helper "<name>".`
 var packHelperStubComment = regexp.MustCompile(`^// TODO: implement helper ("(?:[^"\\]|\\.)*")\.$`)
 
-// packStubName turns the CamelCase root a stub was emitted under back into
-// a spec name. The emitter applied toCamelCase, which is lossy, so pack
-// keeps whichever spelling toCamelCase maps back to the same root.
 func packStubName(camel string) string {
 	if snake := appspec.ToSnakeCase(camel); appspec.ToCamelCase(snake) == camel {
 		return snake
@@ -113,12 +88,6 @@ func packStubName(camel string) string {
 	return camel
 }
 
-// packReadStubs reconstructs middleware:, plugins:, helpers: and hooks:
-// from their wiring (app.go's Use and RegisterPlugin calls, main.go's
-// RegisterHook calls) and the stubs renderAppSpecStubs wrote in stubs.go.
-// The wiring decides what exists and in which order; stubs.go only adds
-// the names and descriptions the wiring cannot carry. A stub whose body
-// the author has since written still packs, since its wiring is unchanged.
 func packReadStubs(dir string, bp *appspec.AppSpec) error {
 	stubs, stubComments := map[string]*ast.FuncDecl{}, map[string]string{}
 	var helpers []appspec.AppSpecNamedStub
@@ -222,8 +191,6 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 	for when, expr := range appspec.AppSpecHookTypes {
 		lifecycles[strings.TrimPrefix(expr, "framework.")] = when
 	}
-	// A hook owns its stub, so a handler registered twice by hand packs as
-	// its first registration; the check then names main.go.
 	seen := map[string]bool{}
 	ast.Inspect(mainFile, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
@@ -257,15 +224,6 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 	return nil
 }
 
-// packReadSeed reconstructs seed data from stubs.go seedData(). The
-// emitted seedEntity carries the recipe beside the rows: Count generated
-// rows after Authored authored ones, shaped by Weights. Pack keeps the
-// authored rows and the recipe, and regenerates the rest to check them:
-// two recipes that expand to the same rows stay apart in the packed spec.
-// A generated row that was hand-edited no longer matches what the recipe
-// regenerates, so pack keeps every row as explicit data and drops the
-// recipe — the edit survives; regenerating from the packed spec keeps the
-// edited rows as authored ones.
 func packReadSeed(dir string, entities map[string]framework.EntityDeclaration) ([]appspec.AppSpecSeedEntity, error) {
 	path := filepath.Join(dir, "stubs.go")
 	file, err := packParsePhrases(path)
@@ -300,12 +258,6 @@ func packReadSeed(dir string, entities map[string]framework.EntityDeclaration) (
 	return out, nil
 }
 
-// packSeedRecipeOrRows decides what one seedEntity's data means: a
-// verifiable recipe (authored rows + count + weights, the generated rows
-// regenerated and checked) or every row as explicit data with no recipe.
-// The recipe is dropped when it cannot be checked (no entity
-// declaration), does not line up with the rows (wrong count, rows beyond
-// the recipe), or a generated row was hand-edited.
 func packSeedRecipeOrRows(entity string, rows []map[string]any, count, authored int, weights map[string]map[string]int, entities map[string]framework.EntityDeclaration) ([]map[string]any, int, map[string]map[string]int) {
 	if count <= 0 || authored < 0 || authored > len(rows) || authored+count != len(rows) {
 		return rows, 0, nil
@@ -323,10 +275,6 @@ func packSeedRecipeOrRows(entity string, rows []map[string]any, count, authored 
 	return rows[:authored], count, weights
 }
 
-// packSeedRowEqual compares a regenerated row against the one read back
-// from stubs.go. The emitter writes ints as int literals and decimals as
-// strings; AstAny reads numbers back as int64/float64, so compare by the
-// value's canonical text, which is stable across both spellings.
 func packSeedRowEqual(want, got map[string]any) bool {
 	if len(want) != len(got) {
 		return false
@@ -340,9 +288,6 @@ func packSeedRowEqual(want, got map[string]any) bool {
 	return true
 }
 
-// normalizeSeedNumber renders int64 and float64 the emitter's %d/%%v
-// spellings would have produced, so a decoded 7 (int64) equals a
-// generated 7 (int).
 func normalizeSeedNumber(v any) any {
 	switch n := v.(type) {
 	case int64:
@@ -355,8 +300,6 @@ func normalizeSeedNumber(v any) any {
 	return v
 }
 
-// packReadSeedWeights reads the Weights map literal the emitter writes
-// (map[string]map[string]int, keys sorted). Anything else reads as nil.
 func packReadSeedWeights(e ast.Expr) map[string]map[string]int {
 	lit, ok := e.(*ast.CompositeLit)
 	if !ok {
@@ -390,8 +333,6 @@ func packReadSeedWeights(e ast.Expr) map[string]map[string]int {
 	return out
 }
 
-// packReadNav reconstructs the sidebar nav from app.go
-// sidebarConfig() ui.SidebarConfig{Items: []ui.SidebarItem{...}}.
 func packReadNav(dir string) ([]appspec.AppSpecNavItem, error) {
 	path := filepath.Join(dir, "app.go")
 	file, err := packParsePhrases(path)
@@ -408,8 +349,6 @@ func packReadNav(dir string) ([]appspec.AppSpecNavItem, error) {
 	return packNavItems(appspec.FieldVals(cfg)["Items"]), nil
 }
 
-// packNavItems reads one []ui.SidebarItem literal, and each item's
-// Children the same way.
 func packNavItems(e ast.Expr) []appspec.AppSpecNavItem {
 	itemsLit, ok := e.(*ast.CompositeLit)
 	if !ok {
@@ -433,9 +372,6 @@ func packNavItems(e ast.Expr) []appspec.AppSpecNavItem {
 	return out
 }
 
-// packOutputDir recovers app.output_dir from main.go's import of the
-// entities package: renderAppSpecMain imports <module>/<output_dir>/entities,
-// so whatever sits between the module and /entities is the output dir.
 func packOutputDir(mainFile *ast.File, module string) string {
 	if module == "" {
 		return ""
@@ -456,8 +392,6 @@ func packOutputDir(mainFile *ast.File, module string) string {
 	return ""
 }
 
-// packIconName reads the icon name out of the ui.Icon("name",
-// ui.IconConfig{}) call renderNavItemGo emits.
 func packIconName(e ast.Expr) string {
 	call, ok := e.(*ast.CallExpr)
 	if !ok || appspec.AstSelLast(call.Fun) != "Icon" || len(call.Args) == 0 {
@@ -466,11 +400,6 @@ func packIconName(e ast.Expr) string {
 	return appspec.AstString(call.Args[0])
 }
 
-// ----- P3: app config + theme + auth + admin --------------------------------
-
-// packReadApp reconstructs the app config from app.go and main.go:
-// appspec.ReadGeneratedApp reads what the generator writes into source,
-// and pack adds the theme, the output dir and the secrets kept in .env.
 func packReadApp(dir string) (appspec.AppSpecApp, error) {
 	appPath := filepath.Join(dir, "app.go")
 	appFile, err := packParsePhrases(appPath)
@@ -487,10 +416,6 @@ func packReadApp(dir string) (appspec.AppSpecApp, error) {
 		app.OutputDir = packOutputDir(mainFile, app.Module)
 	}
 
-	// Secrets moved out of committed source into the generated .env
-	// (JWT_SECRET, DATABASE_URL, ADMIN_SEED_PASSWORD). Recover them from
-	// there so pack round-trips the authored app spec. Absent .env → the
-	// fields stay as recovered from source (empty for the env-backed ones).
 	env := packReadDotEnv(filepath.Join(dir, ".env"))
 	if v := env["JWT_SECRET"]; v != "" {
 		app.Auth.JWTSecret = v
@@ -504,11 +429,6 @@ func packReadApp(dir string) (appspec.AppSpecApp, error) {
 	return app, nil
 }
 
-// packReadDotEnv parses a generated .env into a map using the SAME
-// parser the generated app boots with (core/dotenv); a private
-// re-implementation here silently diverged on quoted values, so pack
-// read back a different secret than the app ran with. Missing or
-// unparseable file → empty map.
 func packReadDotEnv(path string) map[string]string {
 	f, err := os.Open(path)
 	if err != nil {
@@ -522,8 +442,6 @@ func packReadDotEnv(path string) map[string]string {
 	return out
 }
 
-// packReadTheme parses appTheme()'s assignments back into the authored
-// theme map (colors + font_heading/font_body) + the dark-scheme overrides.
 func packReadTheme(file *ast.File) (map[string]string, map[string]string) {
 	var light, dark map[string]string
 	for _, stmt := range appgen.FuncBody(file, "appTheme") {
@@ -531,11 +449,6 @@ func packReadTheme(file *ast.File) (map[string]string, map[string]string) {
 		if !ok || len(asn.Lhs) != 1 || len(asn.Rhs) != 1 {
 			continue
 		}
-		// The generator's overlay spelling: one index assignment per key
-		// the spec names, theme.DarkColors["background"] = "#15141B". A
-		// right side that is not a literal is the ink the generator
-		// derives for a fill named without its -fg; the spec never said
-		// it, so it is not packed.
 		if ix, ok := asn.Lhs[0].(*ast.IndexExpr); ok {
 			if p := selectorPath(ix.X); len(p) == 2 && p[1] == "DarkColors" {
 				key := appspec.AstString(ix.Index)
@@ -574,7 +487,6 @@ func packReadTheme(file *ast.File) (map[string]string, map[string]string) {
 	return light, dark
 }
 
-// selectorPath flattens a.b.c.d into ["a","b","c","d"].
 func selectorPath(e ast.Expr) []string {
 	switch t := e.(type) {
 	case *ast.Ident:
@@ -585,8 +497,6 @@ func selectorPath(e ast.Expr) []string {
 	return nil
 }
 
-// firstFontFamily extracts the authored family from a generated font stack:
-// "'Hanken Grotesk', ui-sans-serif, …" → "Hanken Grotesk".
 func firstFontFamily(stack string) string {
 	first := stack
 	if i := strings.IndexByte(stack, ','); i >= 0 {

@@ -1,0 +1,38 @@
+primitive: cli.pack.yaml
+summary: Pack's YAML writer - nested maps and lists written in the block style core/yaml reads, with quoting, escapes and key orders chosen so the text decodes back to the same values.
+code:
+  - cmd/gofastr/internal/packcmd/pack_yaml.go
+docs:
+  - framework/docs/content/cli.md
+invariants:
+  - id: empty-map-item-is-a-bare-dash
+    rule: An empty map in a list is written as a bare "-", which core/yaml reads as an empty map, never as "- {}" or the Go value.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPack_EmptyMapsRoundTrip
+      - test: cmd/gofastr/internal/packcmd.TestPackEmptyMapEmissionRoundTrips
+  - id: floats-stay-floats
+    rule: A float64 with no fraction is written with ".0", so it decodes as a float64, not an int64.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackFloatStaysAFloat
+  - id: unprintable-is-escaped
+    rule: A value holding a rune unicode.IsPrint rejects is double-quoted with that rune escaped, and a map key holding one, or invalid UTF-8, is refused with the dotted path of the map it was in.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackOutputCarriesNoTerminalControls
+      - test: cmd/gofastr/internal/packcmd.TestYAMLKeyRejectReason_EachVectorIndependently
+      - test: cmd/gofastr/internal/packcmd.TestPackSeedRowKeyInjection
+      - test: cmd/gofastr/internal/packcmd.TestPackEntityPropertiesKeyInjection
+      - test: cmd/gofastr/internal/packcmd.TestPack_InvalidUTF8ValueRefused
+  - id: orders-name-every-key
+    rule: Every key appSpecToMap emits for a construct is in that construct's order list, so no key ships unsorted.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackSerializerCoversEveryConstructField
+      - test: cmd/gofastr/internal/packcmd.TestPackSerializerCoversEveryAppSpecField
+decisions:
+  - id: order-for-readers
+    date: 2026-11-28
+    status: accepted
+    decision: Keys are written in the order the app spec docs present them; the decoder ignores order.
+    rejected:
+      - option: Sort keys alphabetically.
+        why: name and kind would land in the middle of each entry, and the packed file would read unlike every hand-written gofastr.yml.
+    upholds: [orders-name-every-key]

@@ -20,7 +20,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/freeze"
 )
 
-// decodeAppSpecString parses a gofastr.yml from a string into a App spec.
 func decodeAppSpecString(yml string) (appspec.AppSpec, error) {
 	node, err := coreyaml.Parse(yml)
 	if err != nil {
@@ -29,20 +28,6 @@ func decodeAppSpecString(yml string) (appspec.AppSpec, error) {
 	return appspec.DecodeAppSpec(node)
 }
 
-// =============================================================================
-// pack.go: a lossy app→app spec snapshot. encodeAppSpecYAML serializes a App spec
-// back to gofastr.yml; the AST readers (further down) reconstruct a App spec
-// from a generated app's Go source so `gofastr pack <dir>` recovers the
-// authoring YAML. The invariant the round-trip test gates:
-//
-//	parse(meridian.yml)  deep-equals  parse(pack(generate(meridian.yml)))
-//
-// i.e. encodeAppSpecYAML is the exact inverse of decodeAppSpec (modulo
-// comments + formatting). When a new app spec construct is added, BOTH the
-// decoder and this serializer must learn it or the round-trip test fails.
-// =============================================================================
-
-// encodeAppSpecYAML serializes an app spec or reports an unrepresentable key or value.
 func encodeAppSpecYAML(bp appspec.AppSpec) (string, error) {
 	root := appSpecToMap(bp)
 	if at := invalidUTF8At(reflect.ValueOf(root), "app spec"); at != "" {
@@ -55,14 +40,8 @@ func encodeAppSpecYAML(bp appspec.AppSpec) (string, error) {
 	return sb.String(), nil
 }
 
-// ----- App spec -> nested map[string]any (mirrors the decoders) -------------
-
 func appSpecToMap(bp appspec.AppSpec) map[string]any {
 	m := map[string]any{}
-	// A fragment has no app: section: writing the decoder's zero App
-	// (api_prefix: "") would turn it into a whole app that mounts its CRUD
-	// API at the root, and the next decode would run the checks a
-	// fragment skips.
 	if app := appToMap(bp.App); len(app) > 0 && !bp.IsFragment() {
 		m["app"] = app
 	}
@@ -89,9 +68,6 @@ func appSpecToMap(bp appspec.AppSpec) map[string]any {
 			sm := map[string]any{"entity": s.Entity}
 			putInt(sm, "count", s.Count)
 			if len(s.Weights) > 0 {
-				// Values are int here and int after decodeSeedWeights
-				// re-parses them, unlike rows, whose native parser types
-				// (int64) pass through anyMap unchanged.
 				w := make(map[string]any, len(s.Weights))
 				for col, vals := range s.Weights {
 					vw := make(map[string]any, len(vals))
@@ -145,9 +121,6 @@ func appSpecToMap(bp appspec.AppSpec) map[string]any {
 	return m
 }
 
-// stubsToAny mirrors decodeNamedStubs: a stub with no description is a bare
-// scalar (the form hand-authored app specs use), one with a description is
-// a name/description map. Both decode back to the same AppSpecNamedStub.
 func stubsToAny(stubs []appspec.AppSpecNamedStub) []any {
 	out := make([]any, len(stubs))
 	for i, s := range stubs {
@@ -176,8 +149,6 @@ func appToMap(a appspec.AppSpecApp) map[string]any {
 	}
 	putStr(m, "static_dir", a.StaticDir)
 	putStr(m, "output_dir", a.OutputDir)
-	// api_prefix defaults to "api"; only the value that survives a re-parse
-	// matters, so emit it whenever it isn't the bare default.
 	if a.APIPrefix != "api" {
 		m["api_prefix"] = a.APIPrefix
 	}
@@ -188,7 +159,6 @@ func appToMap(a appspec.AppSpecApp) map[string]any {
 	if a.Auth.Enabled || a.Auth.BasePath != "" || a.Auth.JWTSecret != "" || !a.Auth.DevMode {
 		auth := map[string]any{}
 		putBool(auth, "enabled", a.Auth.Enabled)
-		// dev_mode defaults to true; emit it explicitly so a false survives.
 		auth["dev_mode"] = a.Auth.DevMode
 		putStr(auth, "base_path", a.Auth.BasePath)
 		putStr(auth, "jwt_secret", a.Auth.JWTSecret)
@@ -320,9 +290,6 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 	if len(e.Fields) > 0 {
 		fields := make([]any, 0, len(e.Fields))
 		for _, f := range e.Fields {
-			// Drop the hidden owner column the generator synthesizes from
-			// owner_field: the author never wrote it, so packing it back
-			// would diverge from the source app spec.
 			if e.Scope != nil && e.Scope.OwnerField != "" && f.Name == e.Scope.OwnerField && f.Hidden {
 				continue
 			}
@@ -339,7 +306,6 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 			putStr(rm, "type", relationTypeToString(r.Type))
 			putStr(rm, "name", r.Name)
 			putStr(rm, "entity", r.Entity)
-			// One column packs as a scalar, as foreign_key always read.
 			if len(r.ForeignKey) == 1 {
 				putStr(rm, "foreign_key", r.ForeignKey[0])
 			} else {
@@ -476,16 +442,10 @@ func actionToMap(a appspec.AppSpecAction) map[string]any {
 	return m
 }
 
-// relationTypeToString returns the app spec YAML spelling of t ("has_one",
-// "belongs_to", ...), via the shared relationKinds table.
 func relationTypeToString(t framework.RelationType) string {
 	return appgen.RelationKindFor(t).Yaml
 }
 
-// displayToMap and statesToMap serialize the entity's display and states
-// groups back into their YAML shape. Keys are the snake_case names the
-// decoder reads; a form item keeps its three shapes (bare field string,
-// row list, section map).
 func displayToMap(d *fwentity.DisplayConfig) map[string]any {
 	m := map[string]any{}
 	putStr(m, "singular", d.Singular)
@@ -592,8 +552,6 @@ func strsToAny(values []string) []any {
 	return out
 }
 
-// endpointToMap writes one endpoint with the keys of the settings
-// file's endpoints: section.
 func endpointToMap(e settings.Endpoint) map[string]any {
 	m := map[string]any{}
 	putStr(m, "name", e.Name)
@@ -644,9 +602,6 @@ func statesToMap(st *fwentity.StatesConfig) map[string]any {
 	return m
 }
 
-// anyMap deep-copies a map[string]any so list/map children are []any/map[string]any
-// (the shape the generic writer expects). Values are already the parser's native
-// types (string/int64/float64/bool/nil/[]any/map[string]any).
 func anyMap(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
 	for k, v := range in {
@@ -654,8 +609,6 @@ func anyMap(in map[string]any) map[string]any {
 	}
 	return out
 }
-
-// ----- omit-zero setters -----------------------------------------------------
 
 func putStr(m map[string]any, k, v string) {
 	if v != "" {
@@ -685,16 +638,6 @@ func putStrs(m map[string]any, k string, v []string) {
 	}
 }
 
-// packAppSpec reconstructs a full App spec from a generated app directory.
-// secretsInAppSpec reports whether the packed app spec carries any of
-// the three values packReadDotEnv recovers from .env.
-// secretsInAppSpec decides whether pack prints its do-NOT-commit
-// warning. It defers to dsnredact.HasSecret for the DSN rather than
-// testing for "@": the generator already uses the same predicate to
-// decide what to redact, and the two disagreeing means pack stays silent
-// about a secret the generator considered worth hiding. A keyword/value
-// DSN ("host=db user=app password=hunter2") is the case that fell
-// through -- it carries a password and no "@" at all.
 func secretsInAppSpec(bp appspec.AppSpec) bool {
 	return bp.App.Auth.JWTSecret != "" ||
 		bp.App.Admin.SeedPassword != "" ||
@@ -719,9 +662,6 @@ func packAppSpec(dir string) (appspec.AppSpec, error) {
 	if bp.Screens, err = packReadScreens(dir); err != nil {
 		return bp, err
 	}
-	// The /login screen generate synthesized for an app spec with auth on
-	// and no login form was not authored: drop it, so the packed spec
-	// regenerates it in the same place, as it does a list's create screen.
 	read := bp
 	bp.Screens = slices.DeleteFunc(slices.Clone(bp.Screens), func(s appspec.AppSpecScreen) bool {
 		return appspec.IsSynthesizedLoginScreen(read, s)
@@ -742,19 +682,14 @@ func packAppSpec(dir string) (appspec.AppSpec, error) {
 	if err = packReadStubs(dir, &bp); err != nil {
 		return bp, err
 	}
-	// Endpoints live in the settings file generate app wrote them to.
 	if bp.Endpoints, _, err = appgen.ExistingEndpoints(dir); err != nil {
 		return bp, err
 	}
 	return bp, nil
 }
 
-// packOmitProp carries an edit form's omitted fields from the screen
-// reader to packResolveOmits, which knows the entity's fields.
 const packOmitProp = "\x00omit"
 
-// packResolveOmits turns each edit form's omitted fields back into the
-// fields allowlist the app spec wrote: the entity's fields it did not omit.
 func packResolveOmits(bp appspec.AppSpec) {
 	fieldsOf := map[string][]framework.FieldDeclaration{}
 	for _, d := range bp.Entities {
@@ -783,9 +718,6 @@ func packResolveOmits(bp appspec.AppSpec) {
 	}
 }
 
-// packFoldRecordKeys turns a composite-key record screen's mounted route
-// back into the route the app spec wrote: the run of one segment per key
-// column, as appSpecScreenPattern expanded it, is the record's {id}.
 func packFoldRecordKeys(bp appspec.AppSpec) {
 	for i := range bp.Screens {
 		s := &bp.Screens[i]
@@ -871,7 +803,6 @@ func RunPack(args []string) {
 		return
 	}
 	dir, out := opts.dir, opts.out
-	// With no -o the YAML is stdout, so everything else goes to stderr.
 	toStderr := out == ""
 	bp, err := packAppSpec(dir)
 	if err != nil {
@@ -888,26 +819,14 @@ func RunPack(args []string) {
 		packFail(toStderr, "pack: could not decode the packed YAML: %v", err)
 		return
 	}
-	// The seed password lives only in .env. Without it the packed spec
-	// seeds no admin, and the check below then names app.go and main.go;
-	// say why first.
 	if bp.App.Admin.SeedEmail != "" && bp.App.Admin.SeedPassword == "" {
 		packNote(toStderr, "pack: the app seeds admin %s, but %s holds no ADMIN_SEED_PASSWORD, so the packed spec seeds no admin; add seed_password under app.admin before generating from it", bp.App.Admin.SeedEmail, filepath.Join(dir, ".env"))
 	}
-	// The check regenerates from the packed spec and names every file it
-	// does not reproduce, so the loss is reported instead of silent.
 	if c, err := checkPack(dir, decoded); err != nil {
 		packNote(toStderr, "pack: could not check the packed spec against %s: %v", dir, err)
 	} else {
 		reportPackCheck(c, toStderr)
 	}
-	// packReadDotEnv rehydrates JWT_SECRET / ADMIN_SEED_PASSWORD /
-	// DATABASE_URL from the app's .env so the packed app spec round-trips
-	// (see the comment on packReadDotEnv). That reverses the generator's
-	// own "secrets never land in committed source" rule, which
-	// TestAppSpecNeverInlinesSecrets pins, and unlike `.env`, an
-	// arbitrary `-o` path is not covered by the generated .gitignore. Warn
-	// loudly and write 0600 rather than 0644.
 	if secretsInAppSpec(bp) {
 		packNote(toStderr, "pack: output contains secrets recovered from .env (jwt_secret, seed_password, db.url): do NOT commit it")
 	}
@@ -915,13 +834,6 @@ func RunPack(args []string) {
 		cli.Print(yml)
 		return
 	}
-	// The 0600 argument to os.WriteFile only applies when the file is
-	// CREATED. Overwriting an existing 0644 file keeps 0644, and this
-	// output carries the jwt_secret, seed password, and credentialed DSN
-	// recovered from .env -- so a second `pack -o` over an earlier run's
-	// file published all three. The mode is set on a temporary file
-	// before the write, and the file is renamed over the old one, the
-	// same way the generated .env is written.
 	if err := writeSecretFile(out, yml); err != nil {
 		cli.Fail("pack: write %s: %v", out, err)
 		cli.OsExit(1)
@@ -930,15 +842,10 @@ func RunPack(args []string) {
 	cli.Success("Packed %s → %s (%d entities, %d screens)", dir, out, len(bp.Entities), len(bp.Screens))
 }
 
-// writeSecretFile replaces path with content at owner-only permissions
-// (fileperm.ReplaceOwnerOnly): the mode is set before any content lands,
-// and a crash mid-write leaves the previous file, never a truncated one.
 func writeSecretFile(path, content string) error {
 	return fileperm.ReplaceOwnerOnly(path, []byte(content))
 }
 
-// invalidUTF8At returns the path of the first string under v (map keys
-// and values, slices, struct fields) that is not valid UTF-8, or "".
 func invalidUTF8At(v reflect.Value, path string) string {
 	switch v.Kind() {
 	case reflect.String:

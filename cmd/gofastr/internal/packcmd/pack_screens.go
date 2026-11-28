@@ -15,8 +15,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/astbase"
 )
 
-// ----- P6: screens (the hard reverse of screens.go + app.go registrations) ---
-
 type screenReg struct {
 	typeName string
 	route    string
@@ -25,35 +23,18 @@ type screenReg struct {
 	role     string
 }
 
-// packReadScreens reconstructs the authored screens. It reads the per-screen
-// layout (screen_*.go + the screenRegistrar seam) when present, and falls back
-// to the legacy aggregated layout (screens.go structs + app.go registrations)
-// so apps generated before the per-screen split still pack. In both layouts
-// synthesized /new + /{id}/edit form screens (body is a resource Form call)
-// are dropped: they weren't authored.
 func packReadScreens(dir string) ([]appspec.AppSpecScreen, error) {
 	if screens, err := packReadPerScreenFiles(dir); err != nil {
 		return nil, err
 	} else if screens != nil {
 		return screens, nil
 	}
-	// The screens_register.go seam is emitted for every per-file-layout app,
-	// even one with zero screens. Its presence means the layout is per-file
-	// and simply has no authored screens; do NOT fall through to the legacy
-	// reader (which expects a screens.go that this layout never writes).
 	if info, err := os.Lstat(filepath.Join(dir, "screens_register.go")); err == nil && info.Mode().IsRegular() {
 		return nil, nil
 	}
 	return packReadLegacyScreens(dir)
 }
 
-// packReadPerScreenFiles reads the per-screen generated files (screen_*.go)
-// and returns the authored screens in declaration order. The walk and every
-// leaf read go through an *os.Root over dir, so a symlinked leaf pointing
-// outside the project is skipped, never parsed (2026-09-05 red-probe round;
-// same walk shape as packReadPerEntityFiles). Returns (nil, nil) when the
-// project uses the legacy aggregated layout (no screen_*.go files), so the
-// caller falls back to packReadLegacyScreens.
 func packReadPerScreenFiles(dir string) ([]appspec.AppSpecScreen, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -86,9 +67,6 @@ func packReadPerScreenFiles(dir string) ([]appspec.AppSpecScreen, error) {
 	if len(screenNames) == 0 {
 		return nil, nil
 	}
-	// Helpers (package-local zero-arg fns returning one expr) may live in
-	// app.go or any screen file; index them all so reverseEntityResource can
-	// follow one hop when a screen body calls a shared helper.
 	helperFiles := []*ast.File{}
 	if appFile, aerr := parseRoot("app.go"); aerr == nil {
 		helperFiles = append(helperFiles, appFile)
@@ -130,7 +108,6 @@ func packReadPerScreenFiles(dir string) ([]appspec.AppSpecScreen, error) {
 		orderedRegs = append(orderedRegs, packScreenRegistrarsFromFile(file, fnDecls)...)
 	}
 	helpers := packHelperReturns(helperFiles...)
-	// Render bodies need the helpers map; rescan now that helpers are known.
 	actions := map[string][]packScreenAction{}
 	for _, file := range screenFiles {
 		for recv, acts := range packScreenActions(file) {
@@ -179,11 +156,6 @@ type screenOrderReg struct {
 	reg   screenReg
 }
 
-// packScreenRegistrarsFromFile finds every screenRegistrar{order: N, fn: X}
-// literal in a per-screen file and resolves X (a named mount func declared in
-// the same file) to the site.Register / site.RegisterScreen call in its body,
-// yielding one screenOrderReg per mounted screen. Resource-only mount funcs
-// (no screen call) contribute nothing.
 func packScreenRegistrarsFromFile(file *ast.File, fnDecls map[string]*ast.FuncDecl) []screenOrderReg {
 	var out []screenOrderReg
 	for _, registrar := range appgen.ScreenRegistrars(file) {
@@ -229,10 +201,6 @@ func packScreenRegistrarsFromFile(file *ast.File, fnDecls map[string]*ast.FuncDe
 	return out
 }
 
-// screenArg resolves a RegisterScreen argument that names a local variable
-// holding the screen: the generator's drawer-intercept mount builds the
-// screen, sets its Intercept field, then registers the variable. Anything
-// else is the expression itself.
 func screenArg(e ast.Expr, fn *ast.FuncDecl) ast.Expr {
 	id, ok := e.(*ast.Ident)
 	if !ok || fn.Body == nil {
@@ -250,16 +218,12 @@ func screenArg(e ast.Expr, fn *ast.FuncDecl) ast.Expr {
 	return e
 }
 
-// packReadLegacyScreens reads the pre-per-screen aggregated layout: screen
-// types in screens.go, registrations in app.go's RegisterGenerated.
 func packReadLegacyScreens(dir string) ([]appspec.AppSpecScreen, error) {
 	appFile, err := packParsePhrases(filepath.Join(dir, "app.go"))
 	if err != nil {
 		return nil, err
 	}
 	regs := packReadScreenRegs(appFile)
-	// A legacy app with no screens never emitted screens.go; that's zero
-	// authored screens, not an error.
 	scrFile, err := packParsePhrases(filepath.Join(dir, "screens.go"))
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -324,7 +288,6 @@ func packScreenType(fn *ast.FuncDecl) string {
 	return appspec.ScreenTypeFromConst(appgen.IdentName(expr.X) + "." + expr.Sel.Name)
 }
 
-// packReadScreenRegs reads site.Register / site.RegisterScreen(...) calls.
 func packReadScreenRegs(file *ast.File) []screenReg {
 	var regs []screenReg
 	for _, stmt := range appgen.FuncBody(file, "RegisterGenerated") {
@@ -373,7 +336,6 @@ func packWalkScreenChain(e ast.Expr, r *screenReg) {
 				r.typeName = compositeTypeName(call.Args[1])
 			}
 		case "WithPolicy":
-			// arg is appSpecAuthPolicy(login, role)
 			if len(call.Args) == 1 {
 				if pc, ok := call.Args[0].(*ast.CallExpr); ok && len(pc.Args) == 2 {
 					r.authed = true
@@ -385,13 +347,6 @@ func packWalkScreenChain(e ast.Expr, r *screenReg) {
 	}
 }
 
-// packReadAppHome recovers the app home the generator wrote: the route a
-// guest-only screen's guestPolicy("<route>") sends a signed-in visitor
-// to, else the signed-in header's Dashboard link in app.go's
-// marketingHeader. "" when the app emits neither, and then no generated
-// file depends on it. Reads go through an *os.Root over dir, like the
-// per-screen reader, so nothing outside dir is read, and only regular
-// files are parsed, so a symlinked leaf is not either.
 func packReadAppHome(dir string) string {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -473,7 +428,6 @@ func packReadAppHome(dir string) string {
 	return ""
 }
 
-// callsGetUser reports whether stmt calls handler.GetUser.
 func callsGetUser(stmt ast.Stmt) bool {
 	found := false
 	if stmt == nil {
@@ -488,14 +442,6 @@ func callsGetUser(stmt ast.Stmt) bool {
 	return found
 }
 
-// packReconcileAppHome makes the packed screens name the app home the
-// generator used. The home is the first screen with layout "app", else
-// "/". Pack cannot tell an omitted layout from "app" by the mount alone
-// (both draw appLayout with nav, nothing without), so it reads one of
-// them back and can move the home: a screen listed before the dashboard
-// becomes it, or the dashboard's "app" is lost. Swapping "" and "app" on
-// a non-marketing screen changes no other output, so the screens before
-// the home drop "app" and the home takes it.
 func packReconcileAppHome(screens []appspec.AppSpecScreen, home string) {
 	if home == "" {
 		return
@@ -529,7 +475,6 @@ func layoutVarToName(e ast.Expr) string {
 	return ""
 }
 
-// compositeTypeName: &XScreen{} → "XScreen".
 func compositeTypeName(e ast.Expr) string {
 	if u, ok := e.(*ast.UnaryExpr); ok {
 		e = u.X

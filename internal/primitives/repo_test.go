@@ -299,6 +299,7 @@ var ownedPackages = []string{
 	"cmd/gofastr/internal/exportcmd",
 	"cmd/gofastr/internal/releasecmd",
 	"cmd/gofastr/internal/gates",
+	"cmd/gofastr/internal/packcmd",
 }
 
 //gofastr:test-reads primitives/ *.go

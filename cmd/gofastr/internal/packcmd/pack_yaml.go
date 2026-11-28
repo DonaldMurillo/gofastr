@@ -11,8 +11,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/freeze"
 )
 
-// ----- generic YAML writer ---------------------------------------------------
-
 func writeYAMLMap(sb *strings.Builder, m map[string]any, indent int, order []string, path string) error {
 	for _, k := range freeze.OrderedKeys(m, order) {
 		if err := writeYAMLEntry(sb, k, m[k], indent, path); err != nil {
@@ -39,15 +37,6 @@ func writeYAMLEntry(sb *strings.Builder, key string, val any, indent int, path s
 	switch v := val.(type) {
 	case map[string]any:
 		if len(v) == 0 {
-			// core/yaml rejects flow mappings outright (parseScalar →
-			// flowMapError), so `key: {}` writes a file decodeAppSpec
-			// cannot read back. A bare `key:` line is the exact inverse:
-			// parseMap reads it as an empty map node, which is what the
-			// grouped decoders produce for an authored bare `scope:` /
-			// `pagination:` / `exposure:` / `access:` and what mapValue
-			// gives for an empty map inside properties, props, or seed
-			// rows. Trailing-at-EOF is the same case: parseMap's
-			// p.pos >= len(p.lines) branch also yields the empty map node.
 			sb.WriteString(pad + keyText + ":\n")
 			return nil
 		}
@@ -82,12 +71,6 @@ func writeYAMLEntry(sb *strings.Builder, key string, val any, indent int, path s
 func writeYAMLListItem(sb *strings.Builder, item any, indent int, order []string, path string) error {
 	if m, ok := item.(map[string]any); ok {
 		if len(m) == 0 {
-			// Empty-map list item, the seed-row shape of the `key: {}`
-			// defect above: `- {}` is the flow mapping parseList refuses,
-			// and the fallthrough used to print the Go value ("- map[]"),
-			// which re-parses as a STRING. parseList reads a bare `-` item
-			// as an empty map node — the exact inverse of an authored bare
-			// `-` row.
 			sb.WriteString(strings.Repeat(" ", indent) + "-\n")
 			return nil
 		}
@@ -96,7 +79,6 @@ func writeYAMLListItem(sb *strings.Builder, item any, indent int, order []string
 			return err
 		}
 		s := tmp.String()
-		// Replace the first line's leading (indent+2) spaces with "<indent>- ".
 		sb.WriteString(strings.Repeat(" ", indent) + "- " + s[indent+2:])
 		return nil
 	}
@@ -120,13 +102,6 @@ func writeYAMLListItem(sb *strings.Builder, item any, indent int, order []string
 		return nil
 	}
 	sb.WriteString(strings.Repeat(" ", indent) + "- ")
-	// parseList cuts ANY unquoted block-list item at the first ':' into a
-	// map entry (`- postgres://u@h/db` re-parses as {postgres: "//u@h/db"}),
-	// because ':' is the item grammar's key/value delimiter. Block VALUES
-	// follow the laxer rule — parseScalar only rejects ": " — and
-	// NeedsQuote encodes exactly that, so it cannot carry this rule without
-	// quoting every URL-shaped block value in every real pack. Quote here,
-	// in the one context the list rule governs.
 	if s, ok := item.(string); ok && strings.Contains(s, ":") {
 		sb.WriteString(quoteYAMLStringEscaped(s))
 	} else {
@@ -136,8 +111,6 @@ func writeYAMLListItem(sb *strings.Builder, item any, indent int, order []string
 	return nil
 }
 
-// joinYAMLPath builds the dotted key path used to name the map an entry came
-// from in refusal errors (e.g. "seed.rows", "entities.properties").
 func joinYAMLPath(parent, key string) string {
 	if parent == "" {
 		return key
@@ -145,7 +118,6 @@ func joinYAMLPath(parent, key string) string {
 	return parent + "." + key
 }
 
-// yamlKeyRejectReason describes keys pack cannot represent safely.
 func yamlKeyRejectReason(key string) string {
 	switch {
 	case key == "":
@@ -198,8 +170,6 @@ func writeScalarInline(sb *strings.Builder, v any) {
 	}
 }
 
-// formatYAMLFloat keeps a float a float on re-parse: the parser only types a
-// scalar as float64 when it contains ".eE", so 99.0 must print as "99.0".
 func formatYAMLFloat(f float64) string {
 	s := strconv.FormatFloat(f, 'g', -1, 64)
 	if !strings.ContainsAny(s, ".eE") {
@@ -218,7 +188,6 @@ func allScalars(list []any) bool {
 	return true
 }
 
-// quoteYAMLString quotes text whose bare form would change its meaning.
 func quoteYAMLString(s string) string {
 	if !coreyaml.NeedsQuote(s) {
 		return s
@@ -226,7 +195,6 @@ func quoteYAMLString(s string) string {
 	return quoteYAMLStringEscaped(s)
 }
 
-// quoteYAMLStringEscaped writes YAML double quotes and escapes non-printable runes.
 func quoteYAMLStringEscaped(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
@@ -259,20 +227,11 @@ func quoteYAMLStringEscaped(s string) string {
 	return b.String()
 }
 
-// hasUnprintable reports whether s holds an invalid UTF-8 byte or a rune
-// unicode.IsPrint rejects: the C0 and C1 controls, DEL, and the format runes
-// (bidi overrides, zero-width characters). quoteYAMLStringEscaped escapes
-// exactly this set, so a quoted value never carries one raw.
 func hasUnprintable(s string) bool {
 	return !utf8.ValidString(s) || strings.ContainsFunc(s, func(r rune) bool { return !unicode.IsPrint(r) })
 }
 
-// ----- key orders (readability; semantics are order-independent) -------------
 var (
-	// Ordered to match appSpecToMap's emission order, which is also the
-	// order the app spec docs present these keys in. A key the serializer
-	// emits but this list omits ships unsorted, which
-	// TestPackSerializerCoversEveryAppSpecField catches.
 	topLevelOrder  = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "hooks", "middleware", "plugins", "helpers"}
 	appOrder       = []string{"name", "description", "base_url", "module", "db", "static_dir", "output_dir", "api_prefix", "public_openapi", "theme", "auth", "admin", "pwa", "llm_md", "entity_llm_md", "locale_prefixes"}
 	entityOrder    = []string{"name", "table", "primary_key", "scope", "pagination", "exposure", "search_fields", "timestamps", "properties", "renames", "indices", "fields", "relations", "display", "states"}
