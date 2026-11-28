@@ -326,8 +326,8 @@ templates it emits. `appgen`'s `appspec.go`, its largest file, was not swept
 line by line and is the follow-up.
 
 The stack added 81 primitives, 608 invariants (20 judged only) and 122
-decisions, plus about 165 tests for rules that had none. It recorded 8 twins
-and merged 6: `gates`' two walks into `auditTree`, the harness's three config
+decisions, plus about 170 tests for rules that had none. It recorded 5 twins
+and merged 4: `gates`' two walks into `auditTree`, the harness's three config
 directory lookups into `harnessDirs`, `runSingle`'s copy of the REPL loop,
 and `project.InstalledFrameworkVersion`'s copy of `CliVersion`'s lookup.
 Fixed on the way: `gofastr harness` and `harness mcp` read
