@@ -28,11 +28,13 @@ invariants:
       - test: cmd/gofastr/internal/appgen.TestA11ySnapshotSizeCap
       - test: cmd/gofastr/internal/appgen.TestAriaParseRejectsBadInput
       - test: cmd/gofastr/internal/appgen.TestAriaParseNodeCap
+      - test: cmd/gofastr/internal/appgen.TestA11ySnapshotLimitsAreTheStatedNumbers
   - id: snapshot-text-is-inert
     rule: Names and text read from a snapshot lose control and invisible characters before they reach generated source, pages or the terminal, and an error quotes the offending input Go-escaped and cut to 60 runes.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestAriaParseStripsControlBytes
       - test: cmd/gofastr/internal/appgen.TestAriaErrorsQuoteInput
+      - test: cmd/gofastr/internal/appgen.TestAriaErrorQuoteIsCutToSixtyRunes
   - id: json-warnings-go-to-stderr
     rule: With --json the mapping warnings go to stderr, so stdout carries only the JSON result.
     enforced_by:

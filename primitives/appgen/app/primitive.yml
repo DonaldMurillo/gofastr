@@ -65,6 +65,7 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestFontFamilyCannotInjectCSS
       - test: cmd/gofastr/internal/appgen.TestThemeValueCannotInjectCSS
+      - test: cmd/gofastr/internal/appgen.TestEmitterDropsUnsafeThemeColor
   - id: font-fetch-trusts-only-gstatic
     rule: Generation fetches a font only from an https URL whose host is exactly fonts.gstatic.com and whose path ends in .woff2, whatever the css2 response names, and follows no redirect that leaves https or the host it asked.
     enforced_by:
