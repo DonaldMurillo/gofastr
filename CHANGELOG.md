@@ -105,6 +105,11 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **`gofastr generate app` no longer follows a font download's redirect
+  to another host or to plain http.** It asks only https fonts.googleapis.com
+  and fonts.gstatic.com for a theme's fonts, but followed any redirect
+  their answers named; a redirect within the same https host
+  still works ([#936](https://github.com/DonaldMurillo/gofastr/pull/936)).
 - **`gofastr telemetry … --json` escapes C1, bidi and zero-width runes**
   in every subcommand, so a stored route or error cannot reach the terminal
   raw. A byte that is not UTF-8 inside a stored line's string prints as the

@@ -2,6 +2,7 @@ package appgen
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -120,7 +121,17 @@ func appSpecEffectiveStaticDir(bp appspec.AppSpec) string {
 // FontFetcher fetches the latin woff2 of a Google Fonts family; tests replace it.
 var FontFetcher = fetchGoogleFontWoff2
 
-var appSpecFontHTTPClient = &http.Client{Timeout: 20 * time.Second}
+var appSpecFontHTTPClient = &http.Client{Timeout: 20 * time.Second, CheckRedirect: appSpecFontRedirect}
+
+func appSpecFontRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	if req.URL.Scheme != "https" || req.URL.Host != via[0].URL.Host {
+		return fmt.Errorf("refusing a redirect off https://%s", via[0].URL.Host)
+	}
+	return nil
+}
 
 func fetchGoogleFontWoff2(family string) ([]byte, error) {
 	q := url.Values{}
