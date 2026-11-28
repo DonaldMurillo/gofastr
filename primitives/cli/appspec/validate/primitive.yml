@@ -152,7 +152,7 @@ invariants:
       - test: cmd/gofastr/internal/appspec.TestHookTypesMatchKiln
       - test: cmd/gofastr/internal/appspec.TestHookTypesNameTheirConstant
   - id: nav-icons-carry-no-markup
-    rule: A nav icon at any depth holds no markup or control character, since the sidebar renders it as raw HTML.
+    rule: A nav icon at any depth holds no angle bracket, ampersand, double or single quote, backtick, backslash or control character below U+0020 or U+007F, since the sidebar renders it as raw HTML.
     enforced_by:
       - test: cmd/gofastr/internal/appspec.TestValidateRefusals
   - id: endpoints-checked-against-the-spec
@@ -211,3 +211,9 @@ decisions:
       - option: Warn on the key too.
         why: The key is the row's address, so a key shared across accounts answers 409 for a row the caller cannot see and tells them it exists; a global unique value such as a public handle can be deliberate.
     upholds: [owner-scoped-keys-hold-the-owner]
+  - id: static-dir-dot-directories-are-served
+    date: 2026-11-28
+    status: accepted
+    decision: Kept for now as an open security finding awaiting the maintainers' decision; staticDirProblem refuses no dot-directory, so app.static_dir .git, or any other directory whose name starts with a dot, passes validate and the app would serve the repository's history and config to anyone.
+    revisit_if: The maintainers decide whether a static_dir with any segment starting with a dot is refused, as mount-paths-are-clean already does for app.auth.base_path and app.admin.path.
+    upholds: [static-dir-serves-no-app-file]

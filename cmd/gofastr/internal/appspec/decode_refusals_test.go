@@ -33,6 +33,10 @@ func TestDecodeRefusals(t *testing.T) {
 		{"display key the entity package refuses", entity + "    display:\n      bogus: 1\n", "entities[0].display"},
 		{"seed count as a string", entity + "seed:\n  - entity: notes\n    count: \"5\"\n", "must be a whole number"},
 		{"seed count with a fraction", entity + "seed:\n  - entity: notes\n    count: 2.5\n", "must be a whole number"},
+		{"unknown key under a screen's access", "screens:\n  - name: home\n    route: /\n    access:\n      rol: admin\n", `unknown key "rol" in screens[0].access`},
+		{"unknown key under app.auth", "app:\n  name: a\n  auth:\n    dev-mode: false\n", `unknown key "dev-mode" in app.auth`},
+		{"access.delete as a list", entity + "    access:\n      delete: [notes:admin]\n", `"delete" must be a single value, got a list`},
+		{"app.admin.role as a list", "app:\n  name: a\n  admin:\n    role: [admin]\n", `app.admin: "role" must be a single value, got a list`},
 		{"seed weight as a string", entity + "seed:\n  - entity: notes\n    count: 2\n    weights:\n      title:\n        a: \"5\"\n", "must be a whole number"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -41,6 +45,16 @@ func TestDecodeRefusals(t *testing.T) {
 				t.Fatalf("decode error = %v, want one containing %q", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestSeedIntegralFloatCountIsAccepted(t *testing.T) {
+	bp, err := decodeSpecString(t, "app:\n  name: a\nentities:\n  - name: notes\n    fields:\n      - name: title\n        type: string\nseed:\n  - entity: notes\n    count: 3.0\n    weights:\n      title:\n        a: 2.0\n")
+	if err != nil {
+		t.Fatalf("count 3.0 refused: %v", err)
+	}
+	if len(bp.Seed) != 1 || bp.Seed[0].Count != 3 || bp.Seed[0].Weights["title"]["a"] != 2 {
+		t.Fatalf("seed = %+v, want count 3 and weight title.a 2", bp.Seed)
 	}
 }
 

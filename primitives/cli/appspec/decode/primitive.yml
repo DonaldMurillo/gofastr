@@ -23,8 +23,9 @@ invariants:
       - test: cmd/gofastr/internal/appspec.TestAuthDevModeDefaultsTrue
       - test: cmd/gofastr/internal/appspec.TestAuthDevModeRejectsFuzzyBool
   - id: posture-strings-are-single-values
-    rule: app.db driver and url, app.admin.role, a screen's access.role, an entity's owner_field, tenant_field and cross_owner_read, each access permission and each read_scope field, op, value and unrestricted must be a single value, a list or map there is an error, and a YAML null there reads as blank.
+    rule: app.db driver and url, app.admin.role, a screen's access.role, an entity's owner_field, tenant_field and cross_owner_read, each access permission and each read_scope field, op, value and unrestricted must be a single value; a list or a non-empty map there is an error, and a YAML null there reads as blank, as does an empty map, which is what {} in a .json spec decodes to.
     enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestDecodeRefusals
       - test: cmd/gofastr/internal/packcmd.TestAppSpecRedPostureScalarsRefuseShapes
       - test: cmd/gofastr/internal/packcmd.TestDBConfigRejectsNonScalarTypes
       - test: cmd/gofastr/internal/appspec.TestReadScopeRefusesNonScalarNodes
@@ -45,6 +46,9 @@ invariants:
       - test: cmd/gofastr/internal/appspec.TestUnknownKeysAllReportedAtOnce
       - test: cmd/gofastr/internal/appspec.TestUnknownKeysReportedSorted
       - test: cmd/gofastr/internal/appspec.TestUnknownKeySuggestsCorrectLocation
+      - test: cmd/gofastr/internal/appspec.TestDecodeRefusals
+      - test: cmd/gofastr/internal/appspec.TestAppSpecRejectsBadAccessKey
+      - test: cmd/gofastr/internal/appspec.TestAppSpecRejectsBadReadScopePredicateKey
   - id: replaced-keys-name-the-fix
     rule: The block keys filters, transitions and search anywhere, island and widget on an entity block, and the entity_create and entity_edit kinds are refused with an error naming what replaced them.
     enforced_by:
@@ -152,3 +156,9 @@ decisions:
       - option: Leave them to entity.Define at registration.
         why: Define panics there, which for a generated app means one that dies at boot instead of a generate-time error.
     upholds: [named-columns-are-checked-at-decode, read-scope-shape]
+  - id: json-empty-map-reads-as-blank
+    date: 2026-11-28
+    status: accepted
+    decision: "Kept for now as an open security finding awaiting the maintainers' decision: requireScalarString reads an empty map as blank, the shape a YAML null takes, so in a .json spec \"read\": {}, \"role\": {}, \"driver\": {} and \"unrestricted\": {} load as blank, the weakest setting, instead of being refused as a shape, and a blank unrestricted lets every signed-in caller past the read scope."
+    revisit_if: The maintainers decide whether yamlNodeFromJSON should mark an empty JSON object so requireScalarString refuses it while a YAML bare key still reads as blank.
+    upholds: [posture-strings-are-single-values]
