@@ -18,16 +18,20 @@ import (
 func TestRelayStopIsConcurrentSafe(t *testing.T) {
 	_, o := openOutbox(t)
 	o.Consume("logger", "order.placed", func(context.Context, event.Event) error { return nil })
-	for range 100 {
+	for range 2048 {
 		stop := o.StartRelay(t.Context())
 		start := make(chan struct{})
-		var group sync.WaitGroup
-		for range 32 {
+		const callers = 32
+		var ready, group sync.WaitGroup
+		ready.Add(callers)
+		for range callers {
 			group.Go(func() {
+				ready.Done()
 				<-start
 				stop()
 			})
 		}
+		ready.Wait()
 		close(start)
 		group.Wait()
 	}

@@ -64,6 +64,7 @@ r.Use(cache.CacheMiddlewareWithLimit(c, 30*time.Second, 2<<20))
 
 Conservative shared-cache rules:
 - Caches `GET` responses only (bypassing `Range`, `X-Gofastr-Navigate`, SSE/WebSocket upgrades, and responses > `maxBodyBytes`).
+- Sends requests with `If-Match`, `If-None-Match`, `If-Modified-Since`, or `If-Unmodified-Since` to the origin for evaluation.
 - **Never caches authenticated traffic:** requests with `Authorization`, `Cookie`, `X-API-Key`, or `X-Gofastr-Embed`, and responses with `Set-Cookie`, `304`, or `Cache-Control: no-store`/`no-cache` bypass caching.
 - Honors `s-maxage`/`max-age` caps, `Vary` headers (including `WithI18n` and `WithLocalePrefixes`), and evicts a URL's cached `GET` on unsafe requests (`POST`/`PUT`/`PATCH`/`DELETE`).
 - Sets `X-Cache: HIT`, `MISS`, or `BYPASS`.

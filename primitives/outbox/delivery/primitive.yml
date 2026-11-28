@@ -152,6 +152,10 @@ invariants:
     rule: StartRelay logs a warning when no consumer is declared, since every staged row would then be dropped by the orphan sweep.
     enforced_by:
       - test: framework/outbox.TestRelayWithNoConsumersWarns
+  - id: concurrent-relay-stop
+    rule: Concurrent calls to the stop function from StartRelay share one stop signal and all return after the relay exits.
+    enforced_by:
+      - test: framework/outbox.TestRelayStopIsConcurrentSafe
   - id: placeholders-first-appear-in-order
     rule: In every statement the relay builds, $N placeholders first appear in ascending order, because a driver may bind $N by order of first appearance.
     judge: Does this change add a statement whose $N placeholders first appear out of ascending order?

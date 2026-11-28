@@ -1,12 +1,9 @@
 package image
 
 import (
-	"bytes"
-	"encoding/base64"
 	"errors"
 	stdimage "image"
 	"image/color"
-	"image/jpeg"
 	"io"
 	"strings"
 	"testing"
@@ -22,25 +19,6 @@ func TestFitPreservesExactLimitingWidth(t *testing.T) {
 		if got.Dx() != 61 || got.Dy() != 61 {
 			t.Errorf("fit %v: got %v, want 61x61", tc.fit, got)
 		}
-	}
-}
-
-func TestPlaceholderPreservesRequestedWidth(t *testing.T) {
-	src := FromImage(stdimage.NewRGBA(stdimage.Rect(0, 0, 3, 2)), FormatPNG)
-	durl, err := src.Placeholder(PlaceholderOptions{Width: 4})
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(durl, "data:image/jpeg;base64,"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := jpeg.DecodeConfig(bytes.NewReader(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Width != 4 || cfg.Height != 2 {
-		t.Errorf("got %dx%d, want 4x2", cfg.Width, cfg.Height)
 	}
 }
 

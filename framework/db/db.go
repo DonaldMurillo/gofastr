@@ -22,7 +22,8 @@ func TxFromContext(ctx context.Context) (*sql.Tx, bool) {
 	return tx, ok && tx != nil
 }
 
-// WithTx returns ctx carrying tx; it adds no commit queue and keeps one ctx already carries.
+// WithTx attaches tx, preserving an existing commit queue only when the
+// transaction is unchanged. A nil tx makes the ambient transaction absent.
 func WithTx(ctx context.Context, tx *sql.Tx) context.Context {
 	if current, _ := TxFromContext(ctx); current != tx {
 		ctx = context.WithValue(ctx, commitQueueKey{}, nil)

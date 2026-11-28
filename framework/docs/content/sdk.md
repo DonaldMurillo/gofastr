@@ -46,6 +46,8 @@ Both the generator and the hosted SDK docs site compute `framework/sdk.SchemaHas
 
 Artifacts with a missing or unreadable manifest, or a different manifest `schemaVersion`, show an "unknown provenance" banner (`gofastrVersion` records the generator version for display).
 
+`framework/sdk.PackZip` accepts slash-separated relative prefixes and entry paths. It rejects backslashes, NUL bytes, and colons in the first path segment.
+
 ### Static export
 
 SDK docs pages export through `App.ExportStatic` like any screen. Because the live download route serves the Go archive as `go.zip` while the generator writes `sdk-go.zip` in `dist/`, stage the files under their public names first:

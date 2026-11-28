@@ -20,6 +20,11 @@ invariants:
     rule: On a context from WithoutTx, TxFromContext and CommitQueueFromContext report absent and every other value survives.
     enforced_by:
       - test: framework/db.TestWithoutTxMasksTxAndQueue
+  - id: commit-queue-belongs-to-its-transaction
+    rule: WithTx preserves the commit queue for the same transaction and clears it when replacing the transaction. TxFromContext reports a nil transaction as absent.
+    enforced_by:
+      - test: framework/db.TestWithTxDoesNotReuseQueueForAnotherTransaction
+      - test: framework/db.TestWithNilTxMasksAmbientTransaction
   - id: savepoint-undoes-only-its-writes
     rule: When fn errors or panics, InSavepoint rolls back to its savepoint and releases it, leaving the outer transaction's earlier writes and the transaction itself usable.
     enforced_by:
@@ -58,12 +63,12 @@ decisions:
   - id: bare-with-tx-falls-back-to-polling
     date: 2026-11-17
     status: accepted
-    decision: A caller's own transaction wrapped with bare WithTx, on a ctx that has no queue yet, carries no queue (WithTx keeps a queue ctx already carries), and crud falls back to polling it and re-checking the row on the base connection.
+    decision: WithTx preserves a queue already attached to the same transaction. CRUD polls caller-owned transactions that have no queue and re-checks the row on the base connection.
     rejected:
       - option: Refuse a transaction with no queue.
         why: Callers who own their tx and use WithTx would lose live events; WithTxQueue is the way to opt out of the probe.
     revisit_if: Every caller-owned transaction can be required to use WithTxQueue.
-    upholds: [queue-runs-once-in-order-after-commit]
+    upholds: [queue-runs-once-in-order-after-commit, commit-queue-belongs-to-its-transaction]
   - id: savepoint-names-are-unique
     date: 2026-11-17
     status: accepted

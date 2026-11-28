@@ -9,10 +9,10 @@ on_change:
   - core-ui/app installs the scope once per page (WithRequest), renders islands and deferred outlets as namespaced regions and runs signal seeds through SettleIDs; a change to when ids are handed out must be checked against those callers.
 twins:
   - job: Scan an HTML start tag's attributes, quote-aware, up to its closing >.
-    why: The registry's scans are one walk now (walkTag in inject.go, which render.go's startTagEnd and hasAttrName call), but core/render cannot import core-ui/registry, and its id reader also skips raw text; both read a tag as the HTML tokenizer does (names to whitespace, '/', '>' or '=', values quoted to their own quote or unquoted to whitespace or '>'), so a fix to that reading lands in both.
+    why: The registry uses walkTag to keep byte offsets for marker and attribute splicing. The render ID reader uses the HTML tokenizer for decoded values, complete start tags and raw-text handling.
     sites:
       - path: core/render/ids.go
-        note: writtenIDs and readAttrs, which read id values for ReserveRendered.
+        note: writtenIDs uses golang.org/x/net/html to read id values for ReserveRendered.
       - path: core-ui/registry/inject.go
         note: walkTag, behind rootTag, findAttr and spliceAttrs, for the marker and attribute splice, and behind render.go's startTagEnd and hasAttrName for the template scan.
 invariants:
@@ -60,11 +60,14 @@ invariants:
     enforced_by:
       - test: core/render.TestSweepRenderNamespaceReservesInOuterScope
   - id: reserve-rendered-reads-elements-only
-    rule: ReserveRendered reserves the decoded id attribute of each element in a region's HTML, holding no placeholder, and reads nothing inside a comment, another attribute's value or a raw-text element; after the first Settle it reserves in the parent scope at once.
+    rule: ReserveRendered reserves the first decoded id attribute on each complete start tag in a region's HTML when the id contains no placeholder. After the first Settle it reserves in the parent scope at once.
     enforced_by:
       - test: core/render.TestRegionReservesRenderedIDs
       - test: core/render.TestWrittenIDsReadElementsOnly
       - test: core/render.TestReserveRenderedEdges
+      - test: core/render.TestWrittenIDsAfterLiteralLessThan
+      - test: core/render.TestWrittenIDsUsesFirstAttribute
+      - test: core/render.TestWrittenIDsIgnoresUnfinishedTag
   - id: attribute-reference-rules
     rule: An id attribute's character references decode by the HTML attribute rules, so a legacy entity with no semicolon before a letter, digit or = stays literal and numeric references decode as the tokenizer does.
     enforced_by:

@@ -14,7 +14,7 @@ import (
 func PackZip(prefix string, files []File) ([]byte, error) {
 	if prefix != "" {
 		clean := path.Clean(prefix)
-		if strings.ContainsRune(prefix, '\\') || strings.HasPrefix(prefix, "/") || clean == "." || clean == ".." ||
+		if hasUnsafeZipPathCharacters(clean) || strings.HasPrefix(prefix, "/") || clean == "." || clean == ".." ||
 			strings.HasPrefix(clean, "../") || slices.Contains(strings.Split(prefix, "/"), "..") {
 			return nil, fmt.Errorf("sdk: unsafe zip prefix %q", prefix)
 		}
@@ -28,7 +28,7 @@ func PackZip(prefix string, files []File) ([]byte, error) {
 	w := zip.NewWriter(&buf)
 	filesByPath := make(map[string]bool, len(sorted))
 	for _, f := range sorted {
-		if strings.ContainsRune(f.Path, '\\') || f.Path == "." || path.Clean(f.Path) != f.Path ||
+		if hasUnsafeZipPathCharacters(f.Path) || f.Path == "." || path.Clean(f.Path) != f.Path ||
 			strings.HasPrefix(f.Path, "/") || strings.HasPrefix(f.Path, "../") || f.Path == ".." {
 			return nil, fmt.Errorf("sdk: unsafe zip entry path %q", f.Path)
 		}
@@ -62,4 +62,9 @@ func PackZip(prefix string, files []File) ([]byte, error) {
 		return nil, fmt.Errorf("sdk: close zip: %w", err)
 	}
 	return buf.Bytes(), nil
+}
+
+func hasUnsafeZipPathCharacters(name string) bool {
+	first, _, _ := strings.Cut(name, "/")
+	return strings.ContainsAny(name, "\\\x00") || strings.ContainsRune(first, ':')
 }

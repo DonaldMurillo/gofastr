@@ -33,7 +33,7 @@ invariants:
       - test: framework/sdk.TestPackZipDeterministic
       - test: framework/sdk.TestPackZipSortsAndFixesMode
   - id: zip-never-escapes
-    rule: PackZip requires slash-separated paths, refuses an absolute or parent-relative prefix or entry path, and places every entry under a given prefix.
+    rule: PackZip requires slash-separated relative paths without parent segments, NUL bytes or a colon in the first segment, and places every entry under a given prefix.
     enforced_by:
       - test: framework/sdk.TestPackZipRejectsUnsafePaths
       - test: framework/sdk.TestPackZipPrefixCannotEscapeDir

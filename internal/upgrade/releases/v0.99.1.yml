@@ -1,6 +1,10 @@
 version: v0.99.1
 title: SQL builder and config bounds validation, JSON cursor refusal, nullable SDK results and export checks
 notes:
+  - change: "BREAKING - Query DSL expressions require complete dot-separated calls"
+    breaking: true
+    guidance: "Add a dot before each call and remove any trailing dot in strings passed to dsl.ParseDSL or dsl.BuildDSLQuery."
+    nodetect: "DSL strings can come from saved configuration or be assembled at runtime."
   - change: "BREAKING - InsertBuilder.Build panics on mismatched column and value counts"
     breaking: true
     guidance: "Pass one value per column in the same order, or leave both lists empty for DEFAULT VALUES."

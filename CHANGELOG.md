@@ -34,6 +34,11 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Changed
 
+- **BREAKING — `dsl.ParseDSL` requires complete dot-separated calls.**
+  Put a dot between the entity name and the first call, and between
+  subsequent calls. Remove trailing dots. The same grammar applies to
+  `dsl.BuildDSLQuery`. See [Query DSL](framework/docs/content/query-dsl.md#programmatic-dsl-frameworkdsl)
+  ([#922](https://github.com/DonaldMurillo/gofastr/pull/922)).
 - **BREAKING: a bare list control key no longer filters a same-named
   column.** `?direction=desc`, `?page=2`, `?sort=...` and the other
   control keys (`q` too, when the entity has `SearchFields`) are read only
@@ -92,6 +97,15 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **HTTP cache and discovery.** Conditional GETs reach the origin, the
+  cache forwards early hints and trailers, OpenAPI path parameters are
+  required, and the API catalog uses `application/linkset+json`.
+  `cache.GetOrSet` rejects an invalid destination before loading data
+  ([#922](https://github.com/DonaldMurillo/gofastr/pull/922)).
+- **SDK archives and shutdown.** SDK ZIP paths are validated before
+  packing, concurrent calls can stop the outbox relay safely, and
+  lifecycle readiness becomes false as shutdown begins
+  ([#922](https://github.com/DonaldMurillo/gofastr/pull/922)).
 - **Toasts show on the top layer and wait out a modal** (#706). The
   toast stack's widget is a manual popover while it holds a toast, so a
   toast shows above menus, popovers and tooltips already open, including
