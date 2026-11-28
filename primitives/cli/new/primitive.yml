@@ -1,0 +1,45 @@
+primitive: cli.new
+summary: gofastr new handler and gofastr new route - scaffold one HTTP handler file into the package in the current directory, or print a validated router registration line.
+code:
+  - cmd/gofastr/internal/newcmd/
+docs:
+  - framework/docs/content/cli.md
+invariants:
+  - id: handler-name-is-a-usable-identifier
+    rule: new handler refuses a name that is not a bare Go identifier, holds a path separator or .., is a keyword, main, init, _ or a predeclared name, or is already declared or imported in the target package.
+    enforced_by:
+      - test: cmd/gofastr/internal/newcmd.TestNewRejectsTraversalNames
+      - test: cmd/gofastr/internal/newcmd.TestNewHandlerRedNameIdentifier
+      - test: cmd/gofastr/internal/newcmd.TestScaffoldHandlerRefusesNamesThatBreakTheBuild
+      - test: cmd/gofastr/internal/newcmd.TestScaffoldHandlerRefusesDeclaredName
+      - test: cmd/gofastr/internal/newcmd.TestScaffoldHandlerRefusesImportedName
+  - id: method-and-path-stay-in-the-comment
+    rule: new handler refuses a --method or --path holding a control, bidi or line-break character, which would end the doc comment they are written into.
+    enforced_by:
+      - test: cmd/gofastr/internal/newcmd.TestNewHandlerRedPathCommentInert
+  - id: handler-file-joins-the-package
+    rule: The scaffolded file takes the package of the directory's non-test Go files, and refuses an existing <name>_handler.go, a dangling link included, unless -overwrite is given.
+    enforced_by:
+      - test: cmd/gofastr/internal/newcmd.TestScaffoldHandlerUsesTheDirectorysPackage
+      - test: cmd/gofastr/internal/newcmd.TestScaffoldHandlerSelectsPackageFromParsedGoSources
+      - test: cmd/gofastr/internal/newcmd.TestNewHandlerIdempotent
+      - test: cmd/gofastr/internal/newcmd.TestNewHandlerOverwrite
+  - id: handler-write-stays-in-the-directory
+    rule: The handler file is written through an os.Root on the target directory, so a <name>_handler.go linked out of it is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/newcmd.TestNewHandlerRefusesALeafLinkOutOfTheProject
+      - test: cmd/gofastr/internal/newcmd.TestNewHandlerStaysInsideTheProject
+  - id: route-line-compiles
+    rule: new route prints app.Router().Handle with a quoted method and path only for an HTTP token method, a path that starts with / and holds no whitespace and passes router.ValidatePattern, and a handler that is an identifier or a selector chain of them and no import of the current package.
+    enforced_by:
+      - test: cmd/gofastr/internal/newcmd.TestNewRouteGolden
+      - test: cmd/gofastr/internal/newcmd.TestNewRouteValidatesPattern
+      - test: cmd/gofastr/internal/newcmd.TestNewRouteRefusesMalformedPattern
+      - test: cmd/gofastr/internal/newcmd.TestNewRouteRefusesBadHandler
+      - test: cmd/gofastr/internal/newcmd.TestNewRouteRefusesImportedHandler
+      - test: cmd/gofastr/internal/newcmd.TestNewHandlerRefusesUnknownMethod
+  - id: flag-forms
+    rule: --method, --path and --handler take --flag value or --flag=value, and -overwrite or --overwrite may sit anywhere.
+    enforced_by:
+      - test: cmd/gofastr/internal/newcmd.TestRunNewTakesSpaceForm
+      - test: cmd/gofastr/internal/newcmd.TestExtractOverwriteFlag
