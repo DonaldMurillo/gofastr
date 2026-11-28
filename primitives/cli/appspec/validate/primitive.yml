@@ -39,7 +39,7 @@ invariants:
       - test: cmd/gofastr/internal/appspec.TestAuthBasePathMustBeClean
       - test: cmd/gofastr/internal/appspec.TestAdminPathMustBeClean
   - id: static-dir-serves-no-app-file
-    rule: app.static_dir is refused when it is the app root or above it, inside a directory the generator writes Go into, at, under or above app.output_dir, holding the SQLite file app.db.url names, or with a directory whose name starts with a dot, such as .git; an absolute path or one outside the app is left to the deployer, and a backslash reads as a slash.
+    rule: app.static_dir is refused when it is the app root or above it, inside a directory the generator writes Go into, at, under or above app.output_dir, holding the SQLite file app.db.url names, or, wherever it points, with a directory whose name starts with a dot, such as .git; otherwise an absolute path or one outside the app is left to the deployer, and a backslash reads as a slash.
     enforced_by:
       - test: cmd/gofastr/internal/appspec.TestStaticDirRefusesProjectFiles
       - test: cmd/gofastr/internal/appspec.TestStaticDirRefusesOutputDir

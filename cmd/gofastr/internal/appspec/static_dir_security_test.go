@@ -114,14 +114,14 @@ func TestStaticDirRefusesEveryCanonicalPackage(t *testing.T) {
 
 // static_dir: .git passed validate, so the app served the repository's history and config.
 func TestStaticDirRefusesDotDirectories(t *testing.T) {
-	for _, dir := range []string{".git", "./.git/", ".env.d", "public/.git", `assets\.ssh`, "web/.config/static"} {
+	for _, dir := range []string{".git", "./.git/", ".env.d", "public/.git", `assets\.ssh`, "web/.config/static", "../app/.git", "/srv/app/.git", "//.git", `\\server\share\.git`} {
 		bp := AppSpec{}
 		bp.App.StaticDir = dir
 		if err := ValidateAppSpec(bp); err == nil || !strings.Contains(err.Error(), "static_dir") || !strings.Contains(err.Error(), "starts with a dot") {
 			t.Errorf("static_dir %q: err = %v, want a refusal naming the dot directory", dir, err)
 		}
 	}
-	for _, dir := range []string{"static", "web/my.assets", "public/v1.2"} {
+	for _, dir := range []string{"static", "web/my.assets", "public/v1.2", "../static", "/srv/static"} {
 		bp := AppSpec{}
 		bp.App.StaticDir = dir
 		if err := ValidateAppSpec(bp); err != nil && strings.Contains(err.Error(), "static_dir") {
