@@ -293,6 +293,7 @@ var ownedPackages = []string{
 	"cmd/repolint",
 	"cmd/vettool",
 
+	"cmd/gofastr",
 	"cmd/gofastr/internal/cli",
 }
 
