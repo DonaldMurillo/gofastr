@@ -12,3 +12,4 @@ invariants:
     rule: OpenBrowser starts the platform opener without waiting for it and, when the opener cannot start, prints a hint on stderr and returns, since the caller has already printed the URL.
     enforced_by:
       - test: cmd/gofastr/internal/cli.TestOpenBrowserWithoutAnOpenerPrintsAHint
+      - test: cmd/gofastr/internal/cli.TestOpenBrowserDoesNotWaitForTheOpener

@@ -28,9 +28,10 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/packages/siteheader.TestRenderPhoneMenu
   - id: labels-follow-the-locale
-    rule: The nav, phone-nav and toggle labels resolve through i18nui in Config.Ctx's language, and in English when Ctx is nil.
+    rule: The nav, phone-nav and toggle labels resolve through i18nui in Config.Ctx's language, and when Ctx is nil through the app's default translator, else in English.
     enforced_by:
       - test: cmd/gofastr/packages/siteheader.TestHeaderSpeaksTheLocale
+      - test: cmd/gofastr/packages/siteheader.TestHeaderWithoutCtxUsesTheDefaultTranslator
       - test: cmd/gofastr/packages/siteheader.TestRenderBarLandmarks
   - id: theme-focus-ring
     rule: The brand, the bar's links, the phone menu's links and the toggle draw the theme focus ring (--stroke-focus in --color-text-subtle at --stroke-focus-offset) on :focus-visible.

@@ -23,9 +23,10 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/packages/docpage.TestPager
   - id: pager-follows-the-locale
-    rule: The pager's nav label and direction defaults resolve through i18nui in PagerConfig.Ctx's language, and in English when Ctx is nil.
+    rule: The pager's nav label and direction defaults resolve through i18nui in PagerConfig.Ctx's language, and when Ctx is nil through the app's default translator, else in English.
     enforced_by:
       - test: cmd/gofastr/packages/docpage.TestPagerSpeaksTheLocale
+      - test: cmd/gofastr/packages/docpage.TestPagerWithoutCtxUsesTheDefaultTranslator
   - id: rails-collapse-when-empty
     rule: In Chrome the page draws three columns at lg and up, and a rail that is unset or holds only an empty outlet collapses so the article takes its column, while a rail holding content beside an empty outlet stays.
     enforced_by:
