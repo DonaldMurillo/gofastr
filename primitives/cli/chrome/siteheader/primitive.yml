@@ -1,0 +1,59 @@
+primitive: cli.chrome.siteheader
+summary: siteheader, the app's top bar - brand, primary nav, call to action and bar actions, with a phone menu that is a focus-trapping headless.Disclosure - drawn from html elements and framework parts with its own owned sheet.
+code:
+  - cmd/gofastr/packages/siteheader/
+docs:
+  - framework/docs/content/ui-composition-recipes.md
+on_change:
+  - The bar must be a direct child of the page-tall ui.Stack, which pins it when the layout sets StickyHeader and tells sticky parts below where it ends; a wrapper around it breaks both.
+invariants:
+  - id: banner-in-its-own-scope
+    rule: Render draws one header with role banner whose root carries data-cui-scope="siteheader" and holds the bar, the brand link home, a nav labelled by i18nui's NavPrimary and the end region with Actions.
+    enforced_by:
+      - test: cmd/gofastr/packages/siteheader.TestRenderBarLandmarks
+  - id: mark-before-the-name
+    rule: A non-zero Mark draws inside the brand link before Name, and a zero Mark draws nothing while the name stays.
+    enforced_by:
+      - test: cmd/gofastr/packages/siteheader.TestRenderMarkOptional
+  - id: section-link-matches-by-prefix
+    rule: A Section link, and only it, carries data-cui-match-prefix in both the bar's nav and the phone menu's, so the runtime keeps it current on every page under its Href.
+    enforced_by:
+      - test: cmd/gofastr/packages/siteheader.TestRenderSectionLinkMarking
+  - id: cta-in-bar-and-menu
+    rule: A CTA with an Href draws a small button in the bar and a full one at the foot of the phone menu, and a zero CTA draws neither.
+    enforced_by:
+      - test: cmd/gofastr/packages/siteheader.TestRenderCTAOptional
+  - id: phone-menu-is-a-trapping-disclosure
+    rule: When there are links or a CTA, the phone menu is a headless.Disclosure with Trap set, a summary labelled by i18nui's NavToggle and a panel holding a second nav; with neither there is no menu.
+    enforced_by:
+      - test: cmd/gofastr/packages/siteheader.TestRenderPhoneMenu
+  - id: labels-follow-the-locale
+    rule: The nav, phone-nav and toggle labels resolve through i18nui in Config.Ctx's language, and in English when Ctx is nil.
+    enforced_by:
+      - test: cmd/gofastr/packages/siteheader.TestHeaderSpeaksTheLocale
+      - test: cmd/gofastr/packages/siteheader.TestRenderBarLandmarks
+  - id: theme-focus-ring
+    rule: The brand, the bar's links, the phone menu's links and the toggle draw the theme focus ring (--stroke-focus in --color-text-subtle at --stroke-focus-offset) on :focus-visible.
+    enforced_by:
+      - test: cmd/gofastr/packages/siteheader.TestHeaderLinksUseThemeFocusRing
+  - id: links-fold-into-the-phone-menu
+    rule: In Chrome the links and call to action sit in the bar at 1280px with the toggle hidden, and at 390px they fold into the menu with no sideways scroll; the open menu covers the viewport under the bar with the call to action inside.
+    enforced_by:
+      - test: cmd/gofastr/packages/siteheader.TestHeaderLayoutPromises
+  - id: bar-on-the-page-column
+    rule: In Chrome the brand starts on main's ContainerPage text edge and the call to action ends on its far edge at 1440px, and the brand starts on that edge at 390px.
+    enforced_by:
+      - test: cmd/gofastr/packages/siteheader.TestHeaderLayoutPromises
+  - id: menu-motion-and-reduced-motion
+    rule: In Chrome the phone menu unrolls with a clip-path transition for at least 300ms when it opens, stays drawn while it rolls back when it closes, and opens with no transition under reduced motion.
+    enforced_by:
+      - test: cmd/gofastr/packages/siteheader.TestHeaderLayoutPromises
+decisions:
+  - id: glass-on-a-layer-behind-the-bar
+    date: 2026-11-01
+    status: accepted
+    decision: The bar's translucent blur sits on a ::before layer behind the bar.
+    rejected:
+      - option: backdrop-filter on the bar itself.
+        why: It makes the bar the containing block of the fixed phone menu panel, which then no longer covers the viewport.
+    upholds: [links-fold-into-the-phone-menu]

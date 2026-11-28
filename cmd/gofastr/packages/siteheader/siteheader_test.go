@@ -1,6 +1,7 @@
 package siteheader_test
 
 import (
+	"context"
 	"regexp"
 	"strings"
 	"testing"
@@ -8,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/packages/siteheader"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -126,7 +128,7 @@ func TestRenderPhoneMenu(t *testing.T) {
 	html := string(siteheader.Render(full()))
 	for _, want := range []string{
 		"<details", `class="menu"`, "<summary", `class="toggle"`, `class="panel"`, `class="panel-links"`,
-		// The disclosure traps focus while open (headless.Disclosure).
+		"data-hui-disclosure-trap", `aria-label="Toggle navigation"`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("the phone menu missing %q:\n%s", want, html)
@@ -140,5 +142,20 @@ func TestRenderPhoneMenu(t *testing.T) {
 	none := string(siteheader.Render(cfg))
 	if strings.Contains(none, "<details") {
 		t.Errorf("no links and no CTA should draw no phone menu:\n%s", none)
+	}
+}
+
+func TestHeaderSpeaksTheLocale(t *testing.T) {
+	cat := i18n.NewMapCatalog()
+	cat.Set("es", "ui.nav.primary", i18n.Message{Text: "Principal"})
+	cat.Set("es", "ui.nav.mobilePrimary", i18n.Message{Text: "Principal móvil"})
+	cat.Set("es", "ui.nav.toggle", i18n.Message{Text: "Abrir navegación"})
+	cfg := full()
+	cfg.Ctx = i18n.WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "es"}), i18n.NewTranslator(cat, "en"))
+	got := string(siteheader.Render(cfg))
+	for _, want := range []string{`aria-label="Principal"`, `aria-label="Principal móvil"`, `aria-label="Abrir navegación"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("an es header lacks %s:\n%s", want, got)
+		}
 	}
 }
