@@ -1,0 +1,41 @@
+primitive: cli.audit
+summary: gofastr audit deps - report every call site of a tracked global registration API under a source tree, by package, and the unmounted copies the app owns; this entry also owns the audit dispatch, and audit a11y is its child.
+code:
+  - cmd/gofastr/internal/auditcmd/audit.go
+  - cmd/gofastr/internal/auditcmd/doc.go
+docs:
+  - framework/docs/content/audit-deps.md
+  - framework/docs/content/cli.md
+on_change:
+  - The auditDeps doc comment and audit-deps.md both name every directory the shared source walk skips; TestDependencyAuditDocumentsSharedExclusions reads both.
+invariants:
+  - id: calls-matched-by-import-path
+    rule: A tracked call is found under the name its file imports it by, the package name, an explicit alias or a dot import, and never by a selector whose name matches an untracked import.
+    enforced_by:
+      - test: cmd/gofastr/internal/auditcmd.TestAuditDeps_FindsRenamedAndDotImports
+      - test: cmd/gofastr/internal/auditcmd.TestAuditDeps_DetectsAllTrackedKinds
+      - test: cmd/gofastr/internal/auditcmd.TestAuditDeps_DecodesImportLiterals
+  - id: test-files-not-audited
+    rule: auditDeps reads no _test.go file.
+    enforced_by:
+      - test: cmd/gofastr/internal/auditcmd.TestAuditDepsSkipsTestFiles
+  - id: unreadable-source-fails
+    rule: A Go file the walk cannot read fails the audit with exit 1, and one that does not parse is skipped.
+    enforced_by:
+      - test: cmd/gofastr/internal/auditcmd.TestDependencyAuditReportsUnreadableSource
+      - test: cmd/gofastr/internal/auditcmd.TestRunAuditDeps
+  - id: findings-sorted
+    rule: auditDeps returns findings sorted by package, then kind, file and line.
+    enforced_by:
+      - test: cmd/gofastr/internal/auditcmd.TestAuditDepsSortsByPackageKindFileLine
+  - id: deps-lists-unmounted
+    rule: audit deps lists every unmounted copy the governing settings file records after the call sites, and exits 1 when that section does not decode.
+    enforced_by:
+      - test: cmd/gofastr/internal/auditcmd.TestRunAuditDepsListsUnmountedCopies
+      - test: cmd/gofastr/internal/auditcmd.TestRunAuditDeps
+  - id: help-is-not-a-usage-error
+    rule: audit, audit --help and a help flag anywhere after deps print the usage and exit 0, while no subcommand or an unknown one exits 2 even with a help flag.
+    enforced_by:
+      - test: cmd/gofastr/internal/auditcmd.TestHelpOnUnknownSubcommandExits2
+      - test: cmd/gofastr/internal/auditcmd.TestRunAuditUsageExits
+      - test: cmd/gofastr/internal/auditcmd.TestRunAuditUnknownExits
