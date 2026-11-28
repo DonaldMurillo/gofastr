@@ -1,0 +1,67 @@
+primitive: cli.docs.serve
+summary: gofastr docs serve - download, verify and cache a release's static docs-site export and serve it on loopback, or with --full build the live site with go install and run it.
+code:
+  - cmd/gofastr/internal/docscmd/docs_serve.go
+docs:
+  - framework/docs/content/cli.md
+on_change:
+  - The asset name in docsSiteAsset is the one .github/workflows/release.yml attaches; TestReleaseAttachesDocsSite reads both.
+invariants:
+  - id: checksum-before-extract
+    rule: The archive is extracted only when its sha256 matches the release's .sha256 asset, and a release with no archive names --full or gofastr docs.
+    enforced_by:
+      - test: cmd/gofastr/internal/docscmd.TestDocsSiteChecksumMismatchRefused
+      - test: cmd/gofastr/internal/docscmd.TestDocsSiteMissingAssetNamesFull
+  - id: archive-is-plain-files
+    rule: Extraction refuses a link or device entry, an absolute name, a backslash, a parent segment anywhere in the name, a duplicate file, more than 50,000 entries, more than 512 MiB of content and an archive without index.html, and writes files 0600 and directories 0700 through an os.Root.
+    enforced_by:
+      - test: cmd/gofastr/internal/docscmd.TestDocsSiteRefusesUnsafeEntries
+      - test: cmd/gofastr/internal/docscmd.TestDocsSiteRefusesAnInnerParentSegment
+      - test: cmd/gofastr/internal/docscmd.TestDocsSiteArchiveCaps
+      - test: cmd/gofastr/internal/docscmd.TestDocsSiteFilesOwnerOnly
+  - id: downloads-are-capped
+    rule: A download reads at most its cap and fails when the body is larger, so a hostile release cannot fill memory.
+    enforced_by:
+      - test: cmd/gofastr/internal/docscmd.TestFetchCappedRefusesALargerBody
+  - id: cache-is-complete-or-absent
+    rule: An export or --full build lands in a 0700 cache under a temporary sibling renamed into place, so a present entry is whole; --refresh replaces it only once its successor is complete, and a copy another run placed meanwhile is kept.
+    enforced_by:
+      - test: cmd/gofastr/internal/docscmd.TestDocsSiteDownloadsOnceThenCaches
+      - test: cmd/gofastr/internal/docscmd.TestDocsSiteFailedRefreshKeepsCache
+      - test: cmd/gofastr/internal/docscmd.TestDocsSiteRefreshReplacesTheCachedCopy
+      - test: cmd/gofastr/internal/docscmd.TestSwapIntoPlaceKeepsAConcurrentCopy
+      - test: cmd/gofastr/internal/docscmd.TestDocsSiteCacheIsOwnerOnly
+      - test: cmd/gofastr/internal/docscmd.TestDocsServeFullRefusesAnInstallWithoutTheBinary
+  - id: release-tag-only
+    rule: The release served is --release, a vX.Y.Z tag, or this binary's own release tag; a dev, pseudo or dirty build must name one.
+    enforced_by:
+      - test: cmd/gofastr/internal/docscmd.TestDocsSiteTagResolution
+  - id: loopback-only
+    rule: The static server and the --full site listen on 127.0.0.1 at --port, and the --full site runs with GOFASTR_ISOLATION=off.
+    enforced_by:
+      - test: cmd/gofastr/internal/docscmd.TestDocsListenAddrIsLoopback
+      - test: cmd/gofastr/internal/docscmd.TestDocsServeFullInstallsOnce
+  - id: static-server-isolation-off
+    rule: serveDocsDir turns worktree isolation off before it starts, so the static site listens on the --port asked for rather than a worktree remap.
+    judge: Does this change let docs serve's static server start with worktree isolation on, so it can listen on a port other than --port?
+  - id: full-preconditions
+    rule: --full needs a fixed --port, a release at or after v0.82.0 and a free port, all checked before go install runs; --dir combines with none of --full, --release and --refresh.
+    enforced_by:
+      - test: cmd/gofastr/internal/docscmd.TestDocsServeFullNeedsFixedPort
+      - test: cmd/gofastr/internal/docscmd.TestDocsServeFullRefusesOldRelease
+      - test: cmd/gofastr/internal/docscmd.TestDocsServeFullRefusesBusyPort
+      - test: cmd/gofastr/internal/docscmd.TestDocsServeDirRejectsDownloadFlags
+  - id: usage-streams
+    rule: docs serve --help prints to stdout and exits 0, and a usage error prints only to stderr and exits 2.
+    enforced_by:
+      - test: cmd/gofastr/internal/docscmd.TestDocsServeHelpPrintsToStdout
+      - test: cmd/gofastr/internal/docscmd.TestDocsServeUsageErrorsWriteOnlyToStderr
+decisions:
+  - id: static-export-by-default
+    date: 2026-11-28
+    status: accepted
+    decision: docs serve downloads a release's prebuilt static export and serves it; --full builds the live site only when asked.
+    rejected:
+      - option: Always go install examples/site.
+        why: It needs a Go toolchain and minutes of build on first run, for demos most readers never use.
+    upholds: [checksum-before-extract]

@@ -35,12 +35,8 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-// docsSiteReleaseURL is where release.yml attaches the static export of
-// examples/site. A var so tests point it at an httptest server.
 var docsSiteReleaseURL = "https://github.com/DonaldMurillo/gofastr/releases/download"
 
-// docsSiteCacheRoot returns the directory holding one extracted export per
-// release tag. A var so tests redirect it into t.TempDir.
 var docsSiteCacheRoot = func() (string, error) {
 	base, err := os.UserCacheDir()
 	if err != nil {
@@ -49,8 +45,6 @@ var docsSiteCacheRoot = func() (string, error) {
 	return filepath.Join(base, "gofastr", "docs-site"), nil
 }
 
-// goInstallSite builds examples/site at tag into gobin. A var so tests
-// stub the toolchain out.
 var goInstallSite = func(ctx context.Context, tag, gobin string) error {
 	cmd := exec.CommandContext(ctx, "go", "install",
 		"-ldflags=-X=main.siteVersion="+strings.TrimPrefix(tag, "v"),
@@ -62,9 +56,6 @@ var goInstallSite = func(ctx context.Context, tag, gobin string) error {
 	return cmd.Run()
 }
 
-// Download and extraction caps. The v0.86.0 export is 6 MB compressed and
-// 32 MB on disk across ~1,000 files; the caps leave an order of magnitude
-// of headroom and stop a hostile or corrupt archive from filling the disk.
 const (
 	docsSiteMaxArchive  = 128 << 20
 	docsSiteMaxExtract  = 512 << 20
@@ -81,8 +72,6 @@ type docsServeOptions struct {
 	open    bool
 }
 
-// runDocsServe implements `gofastr docs serve`: the docs site
-// (examples/site) on localhost, for offline reading.
 func runDocsServe(args []string) {
 	flags := flag.NewFlagSet("docs serve", flag.ContinueOnError)
 	var opts docsServeOptions
@@ -171,9 +160,6 @@ func docsServe(ctx context.Context, opts docsServeOptions) error {
 	return serveDocsDir(dir, opts)
 }
 
-// docsSiteTag picks the release whose docs to serve: the flag, else the
-// version this binary was installed at. A dev build has no release, so it
-// must name one.
 func docsSiteTag(flagVersion string) (string, error) {
 	if flagVersion != "" {
 		v := flagVersion
@@ -195,13 +181,8 @@ func docsSiteTag(flagVersion string) (string, error) {
 		"pass --release vX.Y.Z, or --dir with a local export (go run ./examples/site --export <dir>)")
 }
 
-// docsSiteInstalledVersion is the version this binary was installed at. A
-// var so tests can stand in a release, pseudo or dirty build.
 var docsSiteInstalledVersion = project.InstalledFrameworkVersion
 
-// ensureDocsSite returns the extracted export for tag, downloading it on
-// a cache miss. The archive extracts into a temp sibling and is renamed
-// into place, so a present directory is always a complete one.
 func ensureDocsSite(ctx context.Context, cacheRoot, tag string, refresh bool) (string, error) {
 	root, err := openCacheRoot(cacheRoot)
 	if err != nil {
@@ -252,8 +233,6 @@ func ensureDocsSite(ctx context.Context, cacheRoot, tag string, refresh bool) (s
 	return dest, nil
 }
 
-// cacheTempDir makes a fresh, randomly named directory under dir in the
-// cache, for building a cache entry before it is renamed into place.
 func cacheTempDir(root *os.Root, dir, tag string) (string, error) {
 	var nonce [8]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
@@ -266,10 +245,6 @@ func cacheTempDir(root *os.Root, dir, tag string) (string, error) {
 	return tmp, nil
 }
 
-// swapIntoPlace renames the finished tmp entry to dest. replace discards
-// an existing dest first, only now that its successor is complete, so a
-// failed --refresh leaves the old copy usable. Without replace, a dest
-// that appeared meanwhile is a concurrent run's equally good copy.
 func swapIntoPlace(root *os.Root, tmp, dest string, replace bool) error {
 	if replace {
 		if err := root.RemoveAll(dest); err != nil {
@@ -287,8 +262,6 @@ func swapIntoPlace(root *os.Root, tmp, dest string, replace bool) error {
 	return nil
 }
 
-// openCacheRoot creates the cache directory and opens it as an os.Root,
-// so every cache read and write stays inside it.
 func openCacheRoot(cacheRoot string) (*os.Root, error) {
 	if err := os.MkdirAll(cacheRoot, 0o700); err != nil {
 		return nil, fmt.Errorf("create cache directory: %w", err)
@@ -300,8 +273,6 @@ func openCacheRoot(cacheRoot string) (*os.Root, error) {
 	return root, nil
 }
 
-// docsSiteAsset names the release asset; release.yml publishes the same
-// name (TestReleaseAttachesDocsSite holds the two together).
 func docsSiteAsset(tag string) string { return "gofastr-site-" + tag + ".tar.gz" }
 
 var errNotFound = errors.New("not found")
@@ -317,8 +288,6 @@ func docsSiteFetchError(tag string, err error) error {
 	return fmt.Errorf("download docs site: %w", err)
 }
 
-// fetchCapped GETs url and returns at most limit bytes, failing when the
-// body is larger.
 func fetchCapped(ctx context.Context, client *http.Client, url string, limit int64) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -345,8 +314,6 @@ func fetchCapped(ctx context.Context, client *http.Client, url string, limit int
 	return body, nil
 }
 
-// parseSHA256Line reads the `sha256sum` output format: the hex digest,
-// then optionally whitespace and the file name.
 func parseSHA256Line(body []byte) (string, error) {
 	fields := strings.Fields(string(body))
 	if len(fields) == 0 {
@@ -362,10 +329,6 @@ func parseSHA256Line(body []byte) (string, error) {
 	return sum, nil
 }
 
-// extractDocsSite unpacks a gzipped tar of regular files and directories
-// into dir under cache. Writes go through os.Root, so no entry lands outside
-// dir; links and device entries are refused outright since an export never
-// has them.
 func extractDocsSite(archive []byte, cache *os.Root, dir string) error {
 	root, err := cache.OpenRoot(dir)
 	if err != nil {
@@ -441,9 +404,6 @@ func extractDocsSite(archive []byte, cache *os.Root, dir string) error {
 	return nil
 }
 
-// docsSiteEntryName cleans a tar entry name to a root-relative slash path,
-// refusing absolute names, parent segments and anything fs.ValidPath
-// rejects.
 func docsSiteEntryName(raw string) (string, error) {
 	if strings.Contains(raw, "\\") || strings.HasPrefix(raw, "/") {
 		return "", fmt.Errorf("entry %q: not a relative slash path", raw)
@@ -460,7 +420,6 @@ func docsSiteEntryName(raw string) (string, error) {
 	return name, nil
 }
 
-// serveDocsDir mounts an export on a gofastr app bound to loopback.
 func serveDocsDir(dir string, opts docsServeOptions) error {
 	app, err := newDocsSiteApp(dir)
 	if err != nil {
@@ -473,14 +432,10 @@ func serveDocsDir(dir string, opts docsServeOptions) error {
 			cli.OpenBrowser(url)
 		}
 	})
-	// Worktree isolation remaps a dev app's port so parallel checkouts do
-	// not collide. The docs site is not the project's app, and the user
-	// asked for this port, so serve it there.
 	_ = os.Setenv(isolation.EnvIsolation, "off")
-	return app.Start(net.JoinHostPort("127.0.0.1", strconv.Itoa(opts.port)))
+	return app.Start(loopbackAddr(opts.port))
 }
 
-// newDocsSiteApp builds the gofastr app that serves a static export.
 func newDocsSiteApp(dir string) (*framework.App, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
@@ -494,8 +449,8 @@ func newDocsSiteApp(dir string) (*framework.App, error) {
 	return app, nil
 }
 
-// displayAddr turns a bound listener address into the host:port a browser
-// should open.
+func loopbackAddr(port int) string { return net.JoinHostPort("127.0.0.1", strconv.Itoa(port)) }
+
 func displayAddr(addr string) string {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -507,14 +462,8 @@ func displayAddr(addr string) string {
 	return net.JoinHostPort(host, port)
 }
 
-// runFullDocsSite installs examples/site at tag with the Go toolchain
-// (the module proxy serves the tagged source, verified against the
-// checksum database) and runs it on loopback.
-// docsFullMinRelease is the first release whose examples/site accepts
-// a host:port PORT; older ones prepend ":" and fail to listen.
 const docsFullMinRelease = "v0.82.0"
 
-// portFree reports a listener already on addr.
 func portFree(addr string, port int) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -535,12 +484,8 @@ func runFullDocsSite(ctx context.Context, cacheRoot, tag string, opts docsServeO
 	}
 	rel := path.Join("full", tag)
 	bin := filepath.Join(cacheRoot, "full", tag, name)
-	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(opts.port))
+	addr := loopbackAddr(opts.port)
 	url := "http://" + displayAddr(addr)
-	// The readiness wait below only sees that something accepts on addr,
-	// so make sure nothing else already does: before the install, so a
-	// taken port fails fast, and again after it, since an install takes
-	// minutes.
 	if err := portFree(addr, opts.port); err != nil {
 		return err
 	}
@@ -552,14 +497,9 @@ func runFullDocsSite(ctx context.Context, cacheRoot, tag string, opts docsServeO
 			return err
 		}
 	}
-	// Ctrl-C reaches the child through the terminal's process group; catch
-	// it here too so the parent waits for the site's drain instead of
-	// exiting first, and forward a SIGTERM sent to the parent alone.
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	cmd := exec.CommandContext(ctx, bin)
-	// Isolation off for the same reason as the static server: the site
-	// should listen on the port the user asked for, not a worktree remap.
 	cmd.Env = append(os.Environ(), "PORT="+addr, "GOFASTR_ISOLATION=off")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -583,9 +523,6 @@ func runFullDocsSite(ctx context.Context, cacheRoot, tag string, opts docsServeO
 	return err
 }
 
-// installFullDocsSite runs go install into a temp directory and renames
-// it into full/<tag>, so an interrupted install never leaves a partial
-// binary that later runs would try to execute.
 func installFullDocsSite(ctx context.Context, root *os.Root, cacheRoot, tag, name string, replace bool) error {
 	if _, err := exec.LookPath("go"); err != nil {
 		return errors.New("--full needs a Go toolchain on PATH")
@@ -612,9 +549,6 @@ func installFullDocsSite(ctx context.Context, root *os.Root, cacheRoot, tag, nam
 	return nil
 }
 
-// waitForListener polls addr until it accepts a connection, reporting
-// false when the process exits or ctx ends first. A process that exits
-// leaves its result in exited for the caller to read.
 func waitForListener(ctx context.Context, addr string, exited chan error) bool {
 	tick := time.NewTicker(200 * time.Millisecond)
 	defer tick.Stop()

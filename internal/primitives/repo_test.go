@@ -295,6 +295,7 @@ var ownedPackages = []string{
 	// cmd/gofastr, scaffolding and project tools.
 	"cmd/gofastr/internal/agentscmd",
 	"cmd/gofastr/internal/auditcmd",
+	"cmd/gofastr/internal/docscmd",
 	"cmd/gofastr/internal/generatecmd",
 	"cmd/gofastr/internal/semanticcmd",
 	"cmd/gofastr/internal/upgradecmd",
