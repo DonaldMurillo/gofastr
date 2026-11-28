@@ -156,6 +156,7 @@ func TestParseQueryArgs(t *testing.T) {
 		{"auth", "middleware"},
 		{"-k", "3"},
 		{"auth", "--zzz"},
+		{"auth", "--hybrid=yes"},
 	} {
 		if q, err := parseQueryArgs(args); err == nil {
 			t.Errorf("parseQueryArgs(%q) = %+v, want an error", args, q)
@@ -180,6 +181,10 @@ func TestLocalSnapshotDir(t *testing.T) {
 	dir := localSnapshotDir()
 	if !strings.Contains(dir, ".gofastr") || !strings.Contains(dir, "semantic") {
 		t.Fatalf("snapshot dir = %q", dir)
+	}
+	t.Chdir(t.TempDir())
+	if other := localSnapshotDir(); other == dir {
+		t.Fatalf("two working directories share the snapshot dir %q", dir)
 	}
 }
 

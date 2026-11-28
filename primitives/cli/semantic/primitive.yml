@@ -1,0 +1,70 @@
+primitive: cli.semantic
+summary: gofastr semantic - index, watch, query, stats and clear a battery/semantic index kept per working directory under ~/.gofastr/semantic, or with GOFASTR_URL set send query and stats to a running server.
+code:
+  - cmd/gofastr/internal/semanticcmd/
+docs:
+  - framework/docs/content/cli.md
+invariants:
+  - id: one-index-per-directory
+    rule: The local index lives at ~/.gofastr/semantic/<first 12 hex of sha1(cwd)>, so two working directories never share one.
+    enforced_by:
+      - test: cmd/gofastr/internal/semanticcmd.TestLocalSnapshotDir
+  - id: readers-open-read-only
+    rule: query and stats open the local index read-only, so they run beside a semantic watch that holds the writer lock without touching its WAL.
+    enforced_by:
+      - test: cmd/gofastr/internal/semanticcmd.TestLocalQueryBesideWriter
+  - id: clear-under-the-lock
+    rule: clear takes the index directory's writer lock, refuses while another process holds it, deletes everything but the lock file, and treats a missing directory as already clear.
+    enforced_by:
+      - test: cmd/gofastr/internal/semanticcmd.TestClearRefusesWhileWatcherRuns
+      - test: cmd/gofastr/internal/semanticcmd.TestClearKeepsLockFile
+      - test: cmd/gofastr/internal/semanticcmd.TestEmbedClearSucceedsOnMissing
+  - id: query-args
+    rule: query takes exactly one non-empty query text and -k, --k, --hybrid and --mmr before or after it, -k as a positive integer, --hybrid with no value, and -- ending the flags; anything else exits 2 with a JSON error.
+    enforced_by:
+      - test: cmd/gofastr/internal/semanticcmd.TestParseQueryArgs
+      - test: cmd/gofastr/internal/semanticcmd.TestEmbedQueryFlagParsing
+      - test: cmd/gofastr/internal/semanticcmd.TestSemanticLiteralHelpQuery
+      - test: cmd/gofastr/internal/semanticcmd.TestSemanticUsageErrorsExitTwoOnStderr
+  - id: embedder-from-env
+    rule: SEMANTIC_BACKEND=ollama selects the Ollama embedder and anything else the stub; EMBED_BACKEND is read only when SEMANTIC_BACKEND is unset, with a deprecation warning.
+    enforced_by:
+      - test: cmd/gofastr/internal/semanticcmd.TestChooseEmbedderOllama
+  - id: remote-only-for-reads
+    rule: With GOFASTR_URL set, query and stats call the server's /semantic/query and /semantic/stats instead of opening a local index.
+    enforced_by:
+      - test: cmd/gofastr/internal/semanticcmd.TestEmbedRemoteQueryAndStats
+  - id: remote-calls-are-bounded
+    rule: A remote call times out after two seconds, reads at most 1 MiB of body, and keeps integers past 2^53 exact.
+    enforced_by:
+      - test: cmd/gofastr/internal/semanticcmd.TestSemanticRemoteRedDeadline
+      - test: cmd/gofastr/internal/semanticcmd.TestSemanticRemoteRedBodyCapped
+      - test: cmd/gofastr/internal/semanticcmd.TestRemoteQueryKeepsBigIntegers
+  - id: token-only-to-gofastr-url
+    rule: GOFASTR_SEMANTIC_TOKEN is sent as a bearer token to the GOFASTR_URL server when set, no Authorization header is sent when it is unset, and a redirect is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/semanticcmd.TestRemoteCallsSendToken
+      - test: cmd/gofastr/internal/semanticcmd.TestRemoteCallsOmitUnsetToken
+      - test: cmd/gofastr/internal/semanticcmd.TestRemoteCallsRefuseRedirect
+  - id: failures-are-json
+    rule: A query or stats failure prints one JSON object with an error field on stdout and the message on stderr.
+    enforced_by:
+      - test: cmd/gofastr/internal/semanticcmd.TestSemanticFailuresAreJSON
+      - test: cmd/gofastr/internal/semanticcmd.TestSemanticEncodeFailureExits
+decisions:
+  - id: clear-keeps-the-lock-file
+    date: 2026-11-28
+    status: accepted
+    decision: clear empties the index directory under its writer lock and leaves the lock file.
+    rejected:
+      - option: Remove the whole directory.
+        why: It unlinked the lock a running watch held, so the next writer locked a new file and two processes wrote one WAL.
+    upholds: [clear-under-the-lock]
+  - id: mutations-stay-local
+    date: 2026-11-28
+    status: accepted
+    decision: index, watch and clear never go through GOFASTR_URL.
+    rejected:
+      - option: Send them to the server too.
+        why: They are long-lived writes that belong beside the server, not through its HTTP API.
+    upholds: [remote-only-for-reads]
