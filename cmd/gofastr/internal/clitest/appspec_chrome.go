@@ -1,6 +1,7 @@
 package clitest
 
-// ChromeAppSpecYAML is a marketing-layout app spec with auth, a login screen and a dark palette.
+// ChromeAppSpecYAML is a marketing-layout app spec with auth, a login screen and a dark palette,
+// so one generation renders the auth-aware header, the theme toggle and the appTheme() Extend path.
 func ChromeAppSpecYAML() string {
 	return `
 app:

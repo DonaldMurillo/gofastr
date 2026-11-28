@@ -5,6 +5,7 @@ import (
 	"go/token"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -57,7 +58,21 @@ func TestOnlyTestsImportClitest(t *testing.T) {
 }
 
 func TestFindModuleRootOutsideAModuleIsEmpty(t *testing.T) {
-	t.Chdir(t.TempDir())
+	if os.Getenv("CLITEST_REEXEC_OUTSIDE_MODULE") == "1" {
+		if moduleRoot != "" {
+			t.Fatalf("moduleRoot at init outside a module = %q, want empty", moduleRoot)
+		}
+		return
+	}
+	dir := t.TempDir()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestFindModuleRootOutsideAModuleIsEmpty$", "-test.count=1", "-test.v")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "CLITEST_REEXEC_OUTSIDE_MODULE=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "--- PASS: TestFindModuleRootOutsideAModuleIsEmpty") {
+		t.Fatalf("the test binary re-run outside any module did not start and pass: %v\n%s", err, out)
+	}
+	t.Chdir(dir)
 	if got := findModuleRoot(); got != "" {
 		t.Fatalf("findModuleRoot outside a module = %q, want empty", got)
 	}

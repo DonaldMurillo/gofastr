@@ -19,6 +19,7 @@ type jsonSession struct {
 var currentJSON *jsonSession
 
 // BeginJSON reserves stdout for one JSON document until end runs.
+// It swaps the os.Stdout global and is not safe for concurrent use.
 func BeginJSON() (end func()) {
 	if currentJSON != nil {
 		return func() {}
@@ -34,7 +35,8 @@ func BeginJSON() (end func()) {
 	}
 }
 
-// JSONWriter returns the stdout a JSON session reserved, or os.Stdout without one.
+// JSONWriter returns the stdout a JSON session reserved, or os.Stdout without one;
+// an override plugin writes its JSON document there.
 func JSONWriter() *os.File {
 	if currentJSON != nil && currentJSON.writer != nil {
 		return currentJSON.writer
