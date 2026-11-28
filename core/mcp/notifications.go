@@ -35,9 +35,15 @@ type sseSubscriber struct {
 	ch      chan sseNotification
 	ctx     context.Context
 	seatKey string
+	// filter, when set, keeps a notification the listen stream would not deliver out of its buffer.
+	filter *listenFilter
 }
 
 func (s *Server) addSSESubscriber(ctx context.Context, seatKey string) (sub *sseSubscriber, ok bool) {
+	return s.addFilteredSSESubscriber(ctx, seatKey, nil)
+}
+
+func (s *Server) addFilteredSSESubscriber(ctx context.Context, seatKey string, filter *listenFilter) (sub *sseSubscriber, ok bool) {
 	s.sseMu.Lock()
 	defer s.sseMu.Unlock()
 	if s.sseSubs == nil {
@@ -67,6 +73,7 @@ func (s *Server) addSSESubscriber(ctx context.Context, seatKey string) (sub *sse
 		ch:      make(chan sseNotification, sseSubBufferSize),
 		ctx:     ctx,
 		seatKey: seatKey,
+		filter:  filter,
 	}
 	s.sseSubs[sub] = struct{}{}
 	s.sseSeatOrder[seatKey] = append(s.sseSeatOrder[seatKey], sub)
@@ -85,6 +92,8 @@ func (s *Server) expireResourceSubsIfIdleLocked() {
 	if len(s.sseSubs) == 0 {
 		clear(s.resourceSubs)
 		clear(s.resourceSubsBy)
+		clear(s.listenSubs)
+		clear(s.listenSubsBy)
 	}
 }
 
@@ -110,6 +119,9 @@ func (s *Server) notifySubscribers(n sseNotification) {
 	s.sseMu.Lock()
 	defer s.sseMu.Unlock()
 	for sub := range s.sseSubs {
+		if sub.filter != nil && !sub.filter.accepts(n) {
+			continue
+		}
 		select {
 		case sub.ch <- n:
 		default:
@@ -170,7 +182,7 @@ func (s *Server) NotifyPromptsListChanged() {
 // NotifyResourceUpdated sends notifications/resources/updated for a subscribed uri to the streams its resource gate and the server-wide gate allow; it is a no-op with no active subscription.
 func (s *Server) NotifyResourceUpdated(uri string) {
 	s.sseMu.Lock()
-	n := s.resourceSubs[uri]
+	n := s.resourceSubs[uri] + s.listenSubs[uri]
 	s.sseMu.Unlock()
 	if n == 0 {
 		return
@@ -207,7 +219,7 @@ func (s *Server) handleResourcesSubscribe(ctx context.Context, req Request) Resp
 	if s.resourceSubs == nil {
 		s.resourceSubs = make(map[string]int)
 	}
-	if _, exists := s.resourceSubs[params.URI]; !exists && len(s.resourceSubs) >= maxResourceSubscriptions {
+	if !s.uriHeldLocked(params.URI) && s.distinctURIsLocked() >= maxResourceSubscriptions {
 		s.sseMu.Unlock()
 		return newErrorResponse(req.ID, ErrInvalidParams,
 			fmt.Sprintf("too many distinct subscribed resource uris (max %d)", maxResourceSubscriptions))
@@ -216,19 +228,13 @@ func (s *Server) handleResourcesSubscribe(ctx context.Context, req Request) Resp
 		s.resourceSubsBy = make(map[resourceSubKey]int)
 	}
 	key := resourceSubKey{caller: subscriptionCaller(ctx), uri: params.URI}
-	if _, exists := s.resourceSubsBy[key]; !exists {
-		if len(s.resourceSubsBy) >= maxResourceSubscriptionPairs {
+	if !s.pairHeldLocked(key) {
+		if len(s.resourceSubsBy) >= maxResourceSubscriptionPairs || s.pairsLocked() >= maxResourceSubscriptionPairs {
 			s.sseMu.Unlock()
 			return newErrorResponse(req.ID, ErrInvalidParams,
 				fmt.Sprintf("too many resource subscriptions (max %d)", maxResourceSubscriptionPairs))
 		}
-		n := 0
-		for k := range s.resourceSubsBy {
-			if k.caller == key.caller {
-				n++
-			}
-		}
-		if n >= maxResourceSubscriptionsPerCaller {
+		if s.callerPairsLocked(key.caller) >= maxResourceSubscriptionsPerCaller {
 			s.sseMu.Unlock()
 			return newErrorResponse(req.ID, ErrInvalidParams,
 				fmt.Sprintf("too many distinct subscribed resource uris for this caller (max %d)", maxResourceSubscriptionsPerCaller))

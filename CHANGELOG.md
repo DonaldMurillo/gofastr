@@ -26,6 +26,15 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Added
 
+- **MCP `subscriptions/listen`** on `ServeSSE` (what `framework.WithMCP()`
+  mounts): a `2026-07-28` client opens one long-lived stream that carries
+  only the change notifications its filter asks for, each tagged with
+  `_meta["io.modelcontextprotocol/subscriptionId"]`
+  (`mcp.MetaSubscriptionID`), under the same gates and limits as the
+  legacy GET stream. A caller at its stream cap gets `429` with
+  `mcp.ErrTooManyStreams` (-32000). `ServeHTTP` and stdio answer `-32601`. See
+  [MCP server](framework/docs/content/mcp.md#per-request-protocol-2026-07-28)
+  ([#946](https://github.com/DonaldMurillo/gofastr/pull/946)).
 - **MCP `2026-07-28`, beside the handshake revisions.** A request whose
   `params._meta` names `io.modelcontextprotocol/protocolVersion` is served
   under `2026-07-28` with no `initialize`, on stdio and HTTP; every other

@@ -53,17 +53,8 @@ func (e *RPCError) Error() string {
 
 // HandleRequest dispatches one JSON-RPC 2.0 request and returns its response.
 func (s *Server) HandleRequest(ctx context.Context, req Request) Response {
-	if !validRequestID(req.ID) {
-		return newErrorResponse(nil, ErrInvalidRequest, "invalid request: id must be a string, a number or null")
-	}
-	if req.JSONRPC != "2.0" {
-		return newErrorResponse(req.ID, ErrInvalidRequest, "invalid or missing jsonrpc version")
-	}
-
-	if len(req.Params) > 0 {
-		if err := handler.CheckObjectKeys(req.Params, handler.FoldJSONKey); err != nil {
-			return newErrorResponse(req.ID, ErrInvalidParams, "invalid params: "+err.Error())
-		}
+	if resp, refused := refuseEnvelope(req); refused {
+		return resp
 	}
 
 	facts, rpcErr := readRequestFacts(req)
@@ -119,6 +110,22 @@ func (s *Server) dispatch(ctx context.Context, req Request) Response {
 			},
 		}
 	}
+}
+
+// refuseEnvelope answers the id, jsonrpc and ambiguous-params checks every dispatched request passes first.
+func refuseEnvelope(req Request) (Response, bool) {
+	if !validRequestID(req.ID) {
+		return newErrorResponse(nil, ErrInvalidRequest, "invalid request: id must be a string, a number or null"), true
+	}
+	if req.JSONRPC != "2.0" {
+		return newErrorResponse(req.ID, ErrInvalidRequest, "invalid or missing jsonrpc version"), true
+	}
+	if len(req.Params) > 0 {
+		if err := handler.CheckObjectKeys(req.Params, handler.FoldJSONKey); err != nil {
+			return newErrorResponse(req.ID, ErrInvalidParams, "invalid params: "+err.Error()), true
+		}
+	}
+	return Response{}, false
 }
 
 func validRequestID(id any) bool {
