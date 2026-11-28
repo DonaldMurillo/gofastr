@@ -17,13 +17,13 @@ func staticDirProblem(dir, dbURL, outputDir string) string {
 	if p == "/" || p == "." || p == ".." || (strings.HasPrefix(p, "../") && strings.Trim(p, "./") == "") {
 		return "is the app's root or a directory above it, so the app would serve its own main.go, go.mod, built binary and database file to anyone; use a directory of its own such as static"
 	}
-	if path.IsAbs(p) || strings.HasPrefix(p, "../") {
-		return ""
-	}
 	for _, seg := range strings.Split(p, "/") {
-		if strings.HasPrefix(seg, ".") {
+		if strings.HasPrefix(seg, ".") && seg != ".." {
 			return fmt.Sprintf("has a directory, %s, whose name starts with a dot, such as .git or .env, so the app would serve the repository's history or config to anyone; use a directory of its own such as static", seg)
 		}
+	}
+	if path.IsAbs(p) || strings.HasPrefix(p, "../") {
+		return ""
 	}
 	if out := cleanRelDir(outputDir); out != "" && (p == out || strings.HasPrefix(p, out+"/") || strings.HasPrefix(out, p+"/")) {
 		return fmt.Sprintf("overlaps app.output_dir %s, where the generator writes the app's Go, so the app would serve its own source; use a directory of its own such as static", out)

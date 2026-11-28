@@ -74,5 +74,5 @@ decisions:
     rejected:
       - option: Compare each location's origin with --url and drop or refuse a foreign one.
         why: uihost writes every location with the app's production BaseURL while the audit usually runs against a local server, so every local audit of an app with a sitemap would find no page; nothing is fetched from another origin either way.
-    revisit_if: The audit is pointed at sitemaps the app does not generate, or uihost writes locations relative to the request.
+    revisit_if: The audit is pointed at sitemaps the app does not generate, uihost writes locations relative to the request, or a static export's BaseURL carries a mount path, whose prefix the audit keeps and joins onto --url.
     upholds: [sitemap-discovery]
