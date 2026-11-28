@@ -18,6 +18,7 @@ func (f uploadFieldFinding) Message() string {
 		f.Entity, strings.Join(f.Fields, ", "))
 }
 
+// LintUploadFields flags every entity holding an image or file field a client can write, since the app spec wires no file storage for it.
 func LintUploadFields(bp appspec.AppSpec) []uploadFieldFinding {
 	var out []uploadFieldFinding
 	for _, decl := range bp.Entities {

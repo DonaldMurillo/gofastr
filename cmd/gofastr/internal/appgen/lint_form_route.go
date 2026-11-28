@@ -21,6 +21,7 @@ func (f postFormFinding) Message() string {
 		f.Screen, f.Action, f.Route)
 }
 
+// LintPostFormsOnScreens flags a POST custom_form whose action lands on one of the app's screen routes, which answer POST with 405.
 func LintPostFormsOnScreens(bp appspec.AppSpec) []postFormFinding {
 	bp = appspec.AppSpecSynthesizeCRUDScreens(bp)
 	router := appSpecScreenProbeRouter(bp)

@@ -20,6 +20,7 @@ type ariaNode struct {
 	Line     int
 }
 
+// Label is the text a sighted user reads for the node: its accessible name, else its inline text.
 func (n *ariaNode) Label() string {
 	if n.Name != "" {
 		return n.Name

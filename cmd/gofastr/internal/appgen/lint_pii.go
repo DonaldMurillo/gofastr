@@ -15,6 +15,7 @@ type unscopedFinding struct {
 	AnonymousRead bool
 }
 
+// Message names who can read the unscoped rows and the remedies that limit it.
 func (f unscopedFinding) Message() string {
 	readers := "every authenticated user"
 	if f.AnonymousRead {
@@ -29,6 +30,7 @@ type publicFinding struct {
 	Entity string
 }
 
+// Message names the entity and says that public grants anonymous reads and writes.
 func (f publicFinding) Message() string {
 	return fmt.Sprintf(
 		"entity %q is public: true, anonymous callers can read, create, update, AND delete every row (not just read). Confirm this is intentional; entities that want public reads with gated writes should use access: (a blank read: + a real create: permission) instead",
@@ -47,6 +49,7 @@ func (f moduleCollisionFinding) Message() string {
 		f.Module, frameworkModulePath, lastPathSegment(f.Module))
 }
 
+// LintModuleCollision reports an app spec whose app.module is the framework module or a subpath of it, and returns nil for any other module path.
 func LintModuleCollision(bp appspec.AppSpec) []moduleCollisionFinding {
 	m := strings.TrimSpace(bp.App.Module)
 	if m != frameworkModulePath && !strings.HasPrefix(m, frameworkModulePath+"/") {
@@ -82,6 +85,7 @@ func (f ownerUniqueFinding) Message() string {
 		f.Entity, f.OwnerField, what, strings.Join(cols, ", "))
 }
 
+// LintOwnerScopedUnique flags a writable unique field or unique index that spans owners on an owner-scoped entity.
 func LintOwnerScopedUnique(bp appspec.AppSpec) []ownerUniqueFinding {
 	var out []ownerUniqueFinding
 	for _, decl := range bp.Entities {
@@ -151,6 +155,7 @@ func (f signedOutFinding) Message() string {
 		strings.Join(f.Screens, ", "), f.Entity)
 }
 
+// LintSignedOutScreens flags a data block over an entity that needs a session in an app spec with app.auth off.
 func LintSignedOutScreens(bp appspec.AppSpec) []signedOutFinding {
 	if bp.RouteApp().Auth.Enabled {
 		return nil
