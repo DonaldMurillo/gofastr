@@ -1,0 +1,47 @@
+primitive: appgen.a11y
+summary: gofastr generate screen --from-a11y, which turns a Playwright ARIA snapshot into app-spec blocks.
+code:
+  - cmd/gofastr/internal/appgen/a11y_*.go
+docs:
+  - framework/docs/content/app-spec.md
+invariants:
+  - id: catalog-blocks-only
+    rule: The mapper emits only framework/ui catalog blocks and never markup or CSS of its own; a role with no catalog counterpart is inlined or dropped, and every dropped or flattened node's text is named in a warning.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestA11yLossyMappingsWarn
+      - test: cmd/gofastr/internal/appgen.TestA11yMapsSignupToForm
+      - test: cmd/gofastr/internal/appgen.TestA11yMapsTableListNav
+  - id: ids-stay-distinct
+    rule: Field names are unique across the screen, two radios with the same label get distinct values, and two tables with the same caption get distinct ids, because ui renders each as an element id.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestA11yFieldNamesUnique
+      - test: cmd/gofastr/internal/appgen.TestA11yDuplicateRadioValues
+      - test: cmd/gofastr/internal/appgen.TestA11yTablesGetDistinctIDs
+  - id: forms-do-not-nest
+    rule: Controls mapped inside a form become its fields and never a second form, and help text between two fields keeps them in one form.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestA11yFormsNeverNest
+      - test: cmd/gofastr/internal/appgen.TestA11yHelpTextKeepsOneForm
+  - id: snapshot-is-bounded
+    rule: A snapshot over 4 MiB, deeper than 128 levels or with more than 50,000 entries is refused before mapping.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestA11ySnapshotSizeCap
+      - test: cmd/gofastr/internal/appgen.TestAriaParseRejectsBadInput
+      - test: cmd/gofastr/internal/appgen.TestAriaParseNodeCap
+  - id: snapshot-text-is-inert
+    rule: Names and text read from a snapshot lose control and invisible characters before they reach generated source, pages or the terminal, and an error quotes the offending input Go-escaped and cut to 60 runes.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestAriaParseStripsControlBytes
+      - test: cmd/gofastr/internal/appgen.TestAriaErrorsQuoteInput
+  - id: json-warnings-go-to-stderr
+    rule: With --json the mapping warnings go to stderr, so stdout carries only the JSON result.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestA11yJSONModeKeepsWarningsOffStdout
+decisions:
+  - id: line-parser-not-yaml
+    date: 2026-11-28
+    status: accepted
+    decision: The snapshot is read by a line parser for the snapshot grammar.
+    rejected:
+      - option: Decode it as YAML.
+        why: A key such as link "a b" with a colon inside, or heading /Wel+come/, holds colons and slashes a general YAML subset splits wrongly.

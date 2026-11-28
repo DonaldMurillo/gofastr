@@ -1,0 +1,44 @@
+primitive: appgen.entities
+summary: Renders the entities package from entity declarations, with one file per entity (model, columns, enums, write shapes, typed repository, events, registration), the fixed register and events seams, and endpoints.gen.go.
+code:
+  - cmd/gofastr/internal/appgen/generate_entities.go
+  - cmd/gofastr/internal/appgen/generate_typed.go
+  - cmd/gofastr/internal/appgen/generate_keys.go
+  - cmd/gofastr/internal/appgen/generate_endpoints.go
+  - cmd/gofastr/internal/appgen/generated_decls.go
+docs:
+  - framework/docs/content/entity-declarations.md
+  - framework/docs/content/endpoints.md
+invariants:
+  - id: registration-reads-back
+    rule: An entity's registration emits only the groups and fields its declaration sets, an all-zero Scope, Exposure or ReadScope emitting nothing and an index keeping its Expression, so gofastr pack reads back the declaration the app spec wrote.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestEmptyDeclarationGroupsEmitNothing
+      - test: cmd/gofastr/internal/appgen.TestRenderIndexLiteral
+  - id: one-file-per-entity-in-order
+    rule: Each entity is one file that registers itself through registrar{order N}, N continuing after the project's existing entities under --add, and register.go and events.go carry no entity-specific text.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestAddedEntitiesContinueTheOrder
+      - test: cmd/gofastr/internal/appgen.TestRenderRegisterSeamIdenticalForAnyEntityCount
+      - test: cmd/gofastr/internal/appgen.TestRenderEventHelpersSeamIdenticalForAnyEntityCount
+      - test: cmd/gofastr/internal/appgen.TestPackRoundTripPerEntityFiles
+  - id: model-types-follow-the-wire
+    rule: A JSON field is any in every generated Go shape, an entity keyed on a declared integer id types its id int throughout, and an enum's value type gets one constant per value whose name is a Go identifier no other name in the file shares.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestJSONFieldIsAnyJSONValue
+      - test: cmd/gofastr/internal/appgen.TestClientTypesIntID
+      - test: cmd/gofastr/internal/appgen.TestEnumConstsAvoidFileNames
+      - test: cmd/gofastr/internal/appgen.TestEnumConstsSkipUnnamedValues
+  - id: no-column-for-unfilterable-fields
+    rule: The typed columns leave out the generated id's duplicate and every NoQuery field, so TypedQuery cannot filter on what the HTTP surface refuses.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestTypedColumnRendererOmitsNoQueryFields
+  - id: key-params-are-free-names
+    rule: A composite key's parameter that is a keyword, an imported package, a local of the generated method or an earlier key's parameter gains a Key suffix until it is free.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestKeyParamsDistinct
+  - id: generated-names-are-unique
+    rule: Generation fails naming the identifier when two declared names meet in one generated Go name, counting a struct's fields with its methods.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestDuplicateDeclsSeeStructFields
+      - test: cmd/gofastr/internal/appgen.TestSDKDerivedNamesMustNotCollide

@@ -553,3 +553,29 @@ func packageCopyFiles(t *testing.T, dir string) []copiedFile {
 	}
 	return out
 }
+
+func TestGeneratePackageRefusesASiblingModule(t *testing.T) {
+	dir := t.TempDir()
+	if err := errors.Join(os.MkdirAll(filepath.Join(dir, "a"), 0o755), os.MkdirAll(filepath.Join(dir, "b"), 0o755)); err != nil {
+		t.Fatal(err)
+	}
+	clitest.WriteTestModule(t, filepath.Join(dir, "a"))
+	clitest.WriteTestFile(t, filepath.Join(dir, "b", "go.mod"), "module example.com/other\n")
+	if _, err := ResolvePackageTarget("siteheader", "../b/hdr", filepath.Join(dir, "a")); err == nil || !strings.Contains(err.Error(), "sits outside the module") {
+		t.Fatalf("a target in another module must be refused, got %v", err)
+	}
+}
+
+func TestCanonicalSheetFindingsFailUnlessWaived(t *testing.T) {
+	d := ownstyle.Diagnostic{Rule: "raw-dimension", Severity: ownstyle.SeverityWarning, Line: 1, Col: 1, Message: "use a token"}
+	if err := canonicalPackageSheetFinding("x.style.css", ".a { margin: 3px; }\n", d); err == nil {
+		t.Fatal("an unwaived warning in a canonical sheet must fail the copy")
+	}
+}
+
+func TestFirstDocSentenceSkipsDotsInNames(t *testing.T) {
+	got := firstDocSentence("Package siteheader renders the header from siteheader.style.css and _style.gen.go. It is owned.\n", "siteheader")
+	if want := "renders the header from siteheader.style.css and _style.gen.go."; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}

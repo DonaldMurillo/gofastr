@@ -1,0 +1,24 @@
+primitive: appgen.output
+summary: How generate reports what it did, with provenance markers on generated files, edit detection, and the human and --json output.
+code:
+  - cmd/gofastr/internal/appgen/generate_output.go
+  - cmd/gofastr/internal/appgen/provenance.go
+docs:
+  - framework/docs/content/codegen.md
+invariants:
+  - id: marker-names-a-release
+    rule: A scaffold marker records a release tag or dev, never a checkout's pseudo-version.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestMarkerVersionIsReleaseOrDev
+  - id: existing-marker-is-kept
+    rule: Stamping a file that already carries a marker keeps that marker, so a canonical package's styles output stays derived when the app generator copies it, and the settings file, merged into the user's own, is never stamped.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestStampKeepsAnExistingMarker
+      - test: cmd/gofastr/internal/appgen.TestSettingsFileStaysUnmarked
+  - id: edited-means-changed-since-written
+    rule: A marked file is edited when its sum no longer matches, whatever the new template renders, and an unmarked one when it differs from its replacement; derived and codegen-config output edited since the last run is warned about and rebuilt.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestFileEdited
+      - test: cmd/gofastr/internal/appgen.TestGenerateStylesWarnsEditedOutput
+      - test: cmd/gofastr/internal/appgen.TestGenerateConfigWarnsEditedOutput
+      - test: cmd/gofastr/internal/appgen.TestGenerateConfigRunWarnsEdited

@@ -6,12 +6,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
 )
 
-// LintOrder selects the position of module collision warnings.
 type LintOrder uint8
 
 const ModuleCollisionsFirst LintOrder = 1
 
-// CommonLintFindings collects the shared warnings, with module collisions last by default.
+// CommonLintFindings returns the shared app-spec warnings, module collisions last unless order asks for them first.
 func CommonLintFindings(bp appspec.AppSpec, navRoot string, order ...LintOrder) []string {
 	collisions := messages(LintModuleCollision(bp))
 	var out []string

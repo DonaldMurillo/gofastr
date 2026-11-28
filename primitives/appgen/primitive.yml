@@ -1,91 +1,59 @@
 primitive: appgen
-summary: The app-spec reader and application and client generators.
+summary: The gofastr generate driver, which reads the project, plans and runs each generator, and writes their files; each child renders one kind of output.
 code:
-  - cmd/gofastr/internal/appgen/[a-f]*.go
   - cmd/gofastr/internal/appgen/generate.go
-  - cmd/gofastr/internal/appgen/generate_[abd-n]*.go
-  - cmd/gofastr/internal/appgen/generate_c[m-z]*.go
-  - cmd/gofastr/internal/appgen/generate_cli.go
-  - cmd/gofastr/internal/appgen/generate_cli_[a-n]*.go
-  - cmd/gofastr/internal/appgen/generate_cli_openapi_*.go
-  - cmd/gofastr/internal/appgen/generate_cli_[p-z]*.go
-  - cmd/gofastr/internal/appgen/generate_output*.go
-  - cmd/gofastr/internal/appgen/generate_[p-r]*.go
-  - cmd/gofastr/internal/appgen/generate_sdk.go
-  - cmd/gofastr/internal/appgen/generate_sdk_test.go
-  - cmd/gofastr/internal/appgen/generate_sdkjs.go
-  - cmd/gofastr/internal/appgen/generate_*_test.go
-  - cmd/gofastr/internal/appgen/generate_s[t-z]*.go
-  - cmd/gofastr/internal/appgen/generate_[t-z]*.go
-  - cmd/gofastr/internal/appgen/generated*.go
-  - cmd/gofastr/internal/appgen/generators*.go
-  - cmd/gofastr/internal/appgen/gen_*.go
-  - cmd/gofastr/internal/appgen/gencli_*.go
-  - cmd/gofastr/internal/appgen/[h-z]*.go
+  - cmd/gofastr/internal/appgen/generators.go
+  - cmd/gofastr/internal/appgen/codegen_entries.go
+  - cmd/gofastr/internal/appgen/validate.go
+  - cmd/gofastr/internal/appgen/doc.go
+  - cmd/gofastr/internal/appgen/*_test.go
   - cmd/gofastr/internal/appgen/testdata/
-  - cmd/gofastr/internal/appspec/appspec.go
-  - cmd/gofastr/internal/appspec/doc_examples_test.go
 docs:
   - framework/docs/content/app-spec.md
   - framework/docs/content/entity-declarations.md
+  - framework/docs/content/codegen.md
 invariants:
-  - id: route-patterns-follow-screen-router
-    rule: Generated screen mounts and route comparisons use the app router's normalization, including brace-style catch-alls.
+  - id: discovered-config-runs-no-command
+    rule: A codegen config found by discovery rather than named with --config may not run a command extension.
     enforced_by:
-      - test: cmd/gofastr/internal/appgen.TestGeneratedCatchAllMountMatchesRouter
-    applies:
-      - core-ui/app/router.go
-  - id: form-relation-keys-stay-exact
-    rule: A generated entity form reads its relation options through the SDK's parseJSON source (jsParseJSON), so an integer key past 2^53 keeps the digits the server sent.
+      - test: cmd/gofastr/internal/appgen.TestDiscoverGenerateConfigKeepsRefusedConfig
+  - id: app-generate-is-one-shot
+    rule: gofastr generate app refuses to write over any existing target file, the endpoints section of a settings file included, unless --force, and --force names every hand-edited file it replaces.
     enforced_by:
-      - test: cmd/gofastr/internal/appgen.TestEntityFormRelationKeepsBigIntKey
-  - id: added-screens-use-the-project-api
-    rule: Screens generate app --add renders post to, read from and invalidate on the project's API prefix, and their auth forms post to the project's auth base path (both AppSpec.RouteApp), not the fragment's empty app section.
+      - test: cmd/gofastr/internal/appgen.TestOverwriteErrorNamesAddPath
+      - test: cmd/gofastr/internal/appgen.TestAppConflictIsOneJSON
+      - test: cmd/gofastr/internal/generatecmd.TestForceNamesHandEditedFiles
+  - id: add-extends-only-what-it-can
+    rule: --add and generate entity|screen refuse a project with the aggregated entities/register.go or screens.go layout, union the project's entities first so a redeclaration (matched by its file name, case and separators folded) is skipped, and write only files that are absent.
     enforced_by:
-      - test: cmd/gofastr/internal/appgen.TestAddedScreenUsesProjectAPIPrefix
-  - id: added-screens-mount-through-the-project-shell
-    rule: A screen generate app --add renders takes the layout, guest redirect, home and login route the project's generated app.go and screens already use (AppSpec.ProjectShell), so its file matches a full generate of the project with the screen in it; one that would mount through an authPolicy or marketingLayout no Go file of the project declares is refused, and a helper declared outside app.go counts.
+      - test: cmd/gofastr/internal/appgen.TestAddRefusesLegacyLayout
+      - test: cmd/gofastr/internal/appgen.TestScaffoldEntityRefusesLegacyLayout
+      - test: cmd/gofastr/internal/appgen.TestAddRefusesAggregatedScreensLayout
+      - test: cmd/gofastr/internal/appgen.TestAddEntityCaseVariantIsRedeclaration
+      - test: cmd/gofastr/internal/appgen.TestAddRedeclaredEntitySkipped
+  - id: config-lists-only-derived-generators
+    rule: A codegen config that lists a scaffold generator by name is refused, since plain gofastr generate and every build re-run the config, while an extension that shares the name is allowed.
     enforced_by:
-      - test: cmd/gofastr/internal/appgen.TestAddedScreenMatchesFullGenerate
-      - test: cmd/gofastr/internal/appgen.TestAddRefusesUndeclaredShellHelper
-      - test: cmd/gofastr/internal/appgen.TestAddFindsShellHelperOutsideAppGo
-  - id: add-preserves-distinct-mounted-routes
-    rule: Additive generation rejects equivalent mounted route shapes for new authored or synthesized screens and skips re-added screens.
+      - test: cmd/gofastr/internal/appgen.TestConfigRefusesScaffoldGenerators
+      - test: cmd/gofastr/internal/appgen.TestConfigAllowsExtensionNamedLikeScaffold
+      - test: cmd/gofastr/internal/appgen.TestGenerateConfigScaffoldExits
+  - id: settings-entries-are-strict
+    rule: A cli or sdk settings entry refuses an unknown key, a value of the wrong type, a comma string where a list belongs and a verbs item carrying --verbs syntax, naming the entry's index.
     enforced_by:
-      - test: cmd/gofastr/internal/appgen.TestAddEquivalentScreenRoutesRefused
-      - test: cmd/gofastr/internal/appgen.TestAddScreenCollidesWithSynthesizedRoute
-      - test: cmd/gofastr/internal/appgen.TestAddSameScreenIsIdempotent
-  - id: nav-requires-get
-    rule: Nav lint keeps the registered HTTP method and resolves chrome links with a GET probe.
+      - test: cmd/gofastr/internal/generatecmd.TestSettingsRefusesBadCLIEntry
+      - test: cmd/gofastr/internal/generatecmd.TestGenerateSDKRefusesCommaString
+      - test: cmd/gofastr/internal/generatecmd.TestGenerateCLIRefusesBadEntry
+      - test: cmd/gofastr/internal/generatecmd.TestSettingsErrorKeepsEntryIndex
+  - id: printed-entry-reads-back
+    rule: The cli entry printed after a flag-driven run reads back as the same options, quoting every value YAML would read as another type or an alias, and refusing a value that is not UTF-8.
     enforced_by:
-      - test: cmd/gofastr/internal/appgen.TestNavHrefRequiresGET
-  - id: post-form-probes-mounted-screen
-    rule: POST form lint resolves an escaped action path with the same route matcher and mounted patterns as the generated app.
+      - test: cmd/gofastr/internal/appgen.TestCLIEntryYAMLRoundTrips
+      - test: cmd/gofastr/internal/appgen.TestCLIEntryYAMLQuotesStar
+      - test: cmd/gofastr/internal/appgen.TestCLIEntryYAMLRefusesNonUTF8
+      - test: cmd/gofastr/internal/appgen.TestYAMLScalarQuotesWhatYAMLReadsAsAnotherType
+  - id: module-matches-go-mod
+    rule: An app spec's app.module is derived from the enclosing go.mod when omitted, kept when there is none, and refused when it differs.
     enforced_by:
-      - test: cmd/gofastr/internal/appgen.TestPostFormFollowsMountedScreenPatterns
-  - id: create-form-block-identity
-    rule: Each create form binds its mount action and control IDs to its own screen and block path.
-    enforced_by:
-      - test: cmd/gofastr/internal/appgen.TestCreateFormsOwnMountActionsAndControlIDs
-  - id: markdown-h1-counts
-    rule: A Markdown H1 suppresses the fallback H1 and lowers the heading of a later entity list.
-    enforced_by:
-      - test: cmd/gofastr/internal/appgen.TestMarkdownH1LowersFollowingListHeading
-  - id: subprocess-records-semantic-coverage
-    rule: Generated SQLite and Postgres E2E child servers both receive GOFASTR_SEMANTIC_COVERAGE=1 before their driver-specific environment.
-    enforced_by:
-      - test: cmd/gofastr/internal/appgen.TestGeneratedE2ESetsSemanticCoverageEnv
-  - id: one-declaration-selection
-    rule: CLI and SDK generation select declarations through the same CLI entity matcher and keep their own error labels.
-    enforced_by:
-      - test: cmd/gofastr/internal/appgen.TestRenderCLI_EntityOnlyExclude
-      - test: cmd/gofastr/internal/appgen.TestBuildSDKSpecSelection
-  - id: one-create-field-eligibility
-    rule: Create form validation and emission use the same field eligibility check, with validation retaining reasons for refused entries.
-    enforced_by:
-      - test: cmd/gofastr/internal/appspec.TestFormFieldsEntryMustDraw
-      - test: cmd/gofastr/internal/appgen.TestEntityFormUsesWireNames
-  - id: documentation-examples-load
-    rule: App-spec YAML recipes use block mappings and load through the app-spec reader.
-    enforced_by:
-      - test: cmd/gofastr/internal/appspec.TestRewrittenAppSpecDocExamplesLoad
+      - test: cmd/gofastr/internal/appgen.TestModuleMismatchErrors
+      - test: cmd/gofastr/internal/appgen.TestModuleDerivedFromGoMod
+      - test: cmd/gofastr/internal/appgen.TestModuleKeptWithoutGoMod

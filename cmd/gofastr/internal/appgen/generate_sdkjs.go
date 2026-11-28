@@ -15,13 +15,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/sdk"
 )
 
-// renderSDKJSFiles emits the JS/TS SDK: one handrolled ESM client.js plus a
-// matching client.d.ts, importable directly from disk or straight from the
-// app's /docs/api/sdk/client.js URL. Deliberately no package.json and no
-// tarball; publishing to a registry is the app owner's business.
-//
-// Both files come out of the same walk over the spec (writeJSEntity emits
-// into the .js and .d.ts builders side by side), so they cannot drift.
 func renderSDKJSFiles(spec sdkSpec) []GeneratedFile {
 	var js, dts strings.Builder
 
@@ -36,33 +29,19 @@ func renderSDKJSFiles(spec sdkSpec) []GeneratedFile {
 
 	dts.WriteString(dtsRuntimePrelude)
 
-	// Per-entity: typed interfaces (d.ts), field-name constants (both), and
-	// the Client resource properties.
 	var resourceProps []string
 	for i, ent := range spec.Entities {
 		decl := spec.Decls[i]
 		writeJSEntity(&js, &dts, decl, ent, spec.Decls)
-		// this[%q], not this.%s. See the note on the field-key emission in
-		// writeJSEntity. `this.<name> = …` is a JS STATEMENT position, so an
-		// unquoted name there is the sharper of the two sites: a `;` in it ends
-		// the assignment and whatever follows runs in the constructor. Bracket
-		// access is identical for every legitimate name (`client.posts` still
-		// resolves) and admits no name that is not a string.
 		resourceProps = append(resourceProps, fmt.Sprintf("    this[%q] = new Resource(this, %q, %s%s);", jsResourceProp(ent), ent.Table, jsFilterColumns(decl), jsUploadColumns(decl)))
-		// One binding per move, same quoting rule: the key is data, never
-		// an identifier, in the emitted statements.
 		for _, t := range crud.RoutableTransitions(decl.States) {
 			resourceProps = append(resourceProps, fmt.Sprintf("    this[%q][%q] = (id) => this[%q].transition(id, %q);", jsResourceProp(ent), t.Key, jsResourceProp(ent), t.Key))
 		}
-		// One binding per endpoint gofastr.settings.yml declares on the
-		// table (checkEndpointCalls keeps its name off every member above).
 		for _, ep := range sdkEndpoints(decl) {
 			resourceProps = append(resourceProps, jsEndpointBinding(jsResourceProp(ent), ep))
 		}
 	}
 
-	// Client class last in the .js so Resource is already defined; the d.ts
-	// declares it with typed resource properties.
 	js.WriteString("export class Client {\n")
 	js.WriteString(`  /**
    * @param {{baseURL: string, token?: string, fetch?: typeof fetch}} opts
@@ -109,9 +88,6 @@ func renderSDKJSFiles(spec sdkSpec) []GeneratedFile {
 	}
 }
 
-// tsKeyType is the TypeScript type naming one record: string for the
-// generated id, the key field's type for a one-column key, and a labeled
-// tuple in key order for a composite key.
 func tsKeyType(decl framework.EntityDeclaration) string {
 	cols := declKeyCols(decl)
 	if len(cols) == 1 {
@@ -127,8 +103,6 @@ func tsKeyType(decl framework.EntityDeclaration) string {
 	return "readonly [" + strings.Join(parts, ", ") + "]"
 }
 
-// tsKeyArgs is the TKey and TItemKey arguments of an entity's Resource,
-// empty for the generated string id (the defaults).
 func tsKeyArgs(decl framework.EntityDeclaration) string {
 	if intID(decl) {
 		return ", number | string, { id: number | string }"
@@ -144,12 +118,6 @@ func tsKeyArgs(decl framework.EntityDeclaration) string {
 	return ", " + tsKeyType(decl) + ", { " + strings.Join(fields, "; ") + " }"
 }
 
-// jsFilterColumns is the third Resource argument: every declared column
-// the server's filter parser knows (Hidden ones are invisible to it).
-// The server tries the suffix split first and falls back to bare
-// equality on the whole key, so on a column named check_in, with no
-// column named check, a joined list would be read as equality with
-// "a,b"; joinList refuses that key.
 func jsFilterColumns(decl framework.EntityDeclaration) string {
 	var cols []string
 	for _, f := range decl.Fields {
@@ -160,9 +128,6 @@ func jsFilterColumns(decl framework.EntityDeclaration) string {
 	return "[" + strings.Join(cols, ", ") + "]"
 }
 
-// jsUploadColumns is the fourth Resource argument of an entity that takes
-// files: each Input key mapped to its column, the name a multipart part
-// goes by. Empty for an entity without Image or File fields.
 func jsUploadColumns(decl framework.EntityDeclaration) string {
 	if len(uploadFields(decl)) == 0 {
 		return ""
@@ -178,39 +143,17 @@ func jsUploadColumns(decl framework.EntityDeclaration) string {
 	return ", { " + strings.Join(pairs, ", ") + " }"
 }
 
-// jsResourceProp is the camelCase property name a table gets on the Client
-// ("blog_posts" → client.blogPosts).
 func jsResourceProp(ent cliEntity) string {
 	return appspec.ToCamelJSON(ent.Table)
 }
 
-// jsIdentRe is the identifier grammar of the UNQUOTED slots this emitter
-// has: `export const %sFields` in executable client.js (the artifact
-// sdkdocs serves to browsers) and `export declare const %sFields` plus
-// `readonly %s: Resource<…>` in client.d.ts. A declaration name cannot be
-// quoted the way the object-literal keys and this[…] bindings are, so the
-// derived property must BE a plain identifier before it reaches the slot;
-// buildSDKSpec refuses the table otherwise, mirroring the isGoIdentifier
-// gate it already applies to ent.Struct (whose ASCII grammar is a subset
-// of this one).
 var jsIdentRe = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
 
 func isJSIdentifier(s string) bool { return jsIdentRe.MatchString(s) }
 
-// jsClientMembers are the names the client.js Client class defines: the
-// fields its constructor sets and its methods. A resource property binds
-// on the Client itself, so a table deriving one of these overwrites it.
 var jsClientMembers = []string{"baseURL", "token", "_fetch", "do", "_readBody", "_readBytes", "_sse"}
 
-// writeJSEntity emits one entity's typed surface into both builders: the
-// d.ts interfaces (walking the declaration exactly like renderClientEntity,
-// so Go and TS types describe the same wire shape) and the snake_case
-// field-name constant both languages use for filter/sort params. decls
-// resolves the key type a relation field carries.
 func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, ent cliEntity, decls []framework.EntityDeclaration) {
-	// d.ts: output interface. Responses are camelCase; every visible field
-	// except id may be omitted by the server's omitempty handling.
-	// A declared key's fields are always present, like id.
 	keyIsID := appspec.DeclKeyIsID(decl)
 	fmt.Fprintf(dts, "export interface %s {\n", ent.Struct)
 	if keyIsID {
@@ -228,11 +171,6 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 	}
 	dts.WriteString("}\n\n")
 
-	// Input: create/update payload. A required field with no default is
-	// non-optional so tsc catches a missing title at compile time. The
-	// fields writeShapeDrops names leave Input and Patch, matching the Go
-	// client: stamps and auto-generated columns from both, the state,
-	// owner and tenant columns from Patch.
 	dropCreate, dropUpdate := writeShapeDrops(decl)
 	var patchOmit []string
 	fmt.Fprintf(dts, "export interface %sInput {\n", ent.Struct)
@@ -249,50 +187,25 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 		}
 		typ := tsFieldType(fd, decls) + dtsNull(decl, fd)
 		if slices.ContainsFunc(uploadFields(decl), func(u framework.FieldDeclaration) bool { return u.Name == fd.Name }) {
-			// A Blob (a File is one) is uploaded; a string is a stored URL.
 			typ += " | Blob"
 		}
 		fmt.Fprintf(dts, "  %s%s: %s;\n", appspec.WireKey(fd.Name), opt, typ)
 	}
 	dts.WriteString("}\n\n")
 
-	// Patch: JS objects are presence-faithful (an omitted key is simply not
-	// sent), so PATCH is just an all-optional Input, no pointer dance like
-	// the Go SDK needs.
 	if len(patchOmit) > 0 {
 		fmt.Fprintf(dts, "export type %sPatch = Partial<Omit<%sInput, %s>>;\n\n", ent.Struct, ent.Struct, strings.Join(patchOmit, " | "))
 	} else {
 		fmt.Fprintf(dts, "export type %sPatch = Partial<%sInput>;\n\n", ent.Struct, ent.Struct)
 	}
 
-	// Snake-case field-name constant, so filter/sort params never require
-	// guessing the server-side column casing.
 	fmt.Fprintf(js, "/** Snake_case query-param names for %s filters and sort. */\nexport const %sFields = Object.freeze({\n", tsCommentSafe(ent.Struct), jsResourceProp(ent))
 	fmt.Fprintf(dts, "export declare const %sFields: Readonly<{\n", jsResourceProp(ent))
 	for _, f := range ent.Fields {
-		// The constant exists to be used as a filter/sort key, so a NoQuery
-		// field must not appear in it. The server answers every such key
-		// with 400 "cannot be filtered".
 		if f.NoQuery {
 			continue
 		}
-		// The KEY is quoted in the .js. f.Wire is toCamelJSON(field name), and
-		// toCamelCase only splits on "_ - space". Every other byte survives, so
-		// Wire is not an identifier by construction. `client.go` gets
-		// format.Source and the app spec tree gets assertAppSpecGoParses;
-		// .js/.d.ts get no syntax gate at all (Go's stdlib has no JS parser and
-		// third-party deps are not an option here), so the emission site has to
-		// carry the property itself. A quoted key cannot leave its object
-		// literal, and `postsFields.title` still resolves.
-		//
-		// Not a privilege boundary: these names come from the developer's own
-		// entities/*.go via packReadEntities (astString, no identifier check),
-		// and anyone who can edit that file can already run code in the project.
-		// Quoting costs nothing and removes the position.
 		fmt.Fprintf(js, "  %q: %q,\n", f.Wire, f.Snake)
-		// The .d.ts stays an unquoted property name: it is a type declaration,
-		// never executed, so the worst case there is a tsc error in the
-		// consumer rather than code running.
 		fmt.Fprintf(dts, "  %s: %q;\n", f.Wire, f.Snake)
 	}
 	for _, stamp := range injectedTimestamps(decl) {
@@ -302,16 +215,9 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 	js.WriteString("});\n\n")
 	dts.WriteString("}>;\n\n")
 
-	// One named method per non-system move, the JS twin of the Go SDK's
-	// <Key><Struct> methods. Emitted only when there is a move; the
-	// Client's property line intersects it onto Resource.
 	if moves := crud.RoutableTransitions(decl.States); len(moves) > 0 {
 		fmt.Fprintf(dts, "export interface %sMoves {\n", ent.Struct)
 		for _, t := range moves {
-			// The doc comment is a /** … */ block: every declaration-derived
-			// part goes through tsCommentSafe, or a `*/` in an enum value
-			// ends the comment early and the rest becomes live .d.ts tokens
-			// (t.Key stays raw — it is a grammar-checked identifier there).
 			fmt.Fprintf(dts, "  /** %s: %s → %s%s. Server-set; no request body. */\n  %s(id: %s): Promise<%s>;\n",
 				tsCommentSafe(decl.States.Field), tsCommentSafe(strings.Join(t.From, "|")), tsCommentSafe(t.To), tsCommentSafe(stampNote(t.Stamp)), t.Key, tsKeyType(decl), ent.Struct)
 		}
@@ -320,10 +226,6 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 	writeDTSEndpoints(dts, decl, ent)
 }
 
-// dtsNull is " | null" for a field the server can hold as null, the rule
-// the OpenAPI document follows: an optional column with no generated
-// value outside the key. A read returns its null, and a write may send
-// one to clear it.
 func dtsNull(decl framework.EntityDeclaration, fd framework.FieldDeclaration) string {
 	if fd.Required || fd.AutoGenerate != "" || slices.Contains(decl.PrimaryKey, fd.Name) {
 		return ""
@@ -334,24 +236,13 @@ func dtsNull(decl framework.EntityDeclaration, fd framework.FieldDeclaration) st
 	return " | null"
 }
 
-// dtsRuntimeTypes are the names client.d.ts declares for every app.
-// TestDTSRuntimeTypesListsEveryExport holds it to the runtime block.
 var dtsRuntimeTypes = []string{"ApiError", "ListParams", "CursorParams", "ListResponse", "CursorPage", "BatchResult", "NoBlob", "BatchResponse", "Resource", "Client"}
 
-// checkDTSTypeNames refuses an endpoint whose <Method>Request interface
-// would take a name client.d.ts already declares: TypeScript merges two
-// interfaces of one name, so the clash would compile and type the call
-// with the other declaration's fields. The Go twin needs no check here;
-// refuseDuplicateDecls catches it in client.go.
 func checkDTSTypeNames(spec sdkSpec) error {
 	owner := map[string]string{}
 	for _, n := range dtsRuntimeTypes {
 		owner[n] = "the SDK runtime"
 	}
-	// An entity's names are checked too: assigned blind, entity resource
-	// overwrote the runtime's Resource and shipped a second interface of
-	// that name (2026-10-27 G2). Only the names writeJSEntity emits count,
-	// so order_moves beside an order with no moves stays legal.
 	for i, ent := range spec.Entities {
 		suffixes := []string{"", "Input", "Patch"}
 		if len(crud.RoutableTransitions(spec.Decls[i].States)) > 0 {
@@ -383,7 +274,6 @@ func checkDTSTypeNames(spec sdkSpec) error {
 	return nil
 }
 
-// stampNote renders a move's stamp for a doc comment; empty when none.
 func stampNote(stamp string) string {
 	if stamp == "" {
 		return ""
@@ -391,10 +281,6 @@ func stampNote(stamp string) string {
 	return ", stamps " + stamp
 }
 
-// tsFieldType is tsTypeForField with a relation resolved to the key type of
-// the entity it names, matched the way relationKeyField matches it: an
-// integer-key target sends a number, which a relation typed string denied.
-// A target outside decls, or one keyed by several columns, stays string.
 func tsFieldType(fd framework.FieldDeclaration, decls []framework.EntityDeclaration) string {
 	if strings.EqualFold(fd.Type, "relation") && fd.To != "" && !fd.Many {
 		for _, target := range decls {
@@ -406,11 +292,6 @@ func tsFieldType(fd framework.FieldDeclaration, decls []framework.EntityDeclarat
 	return tsTypeForField(fd.Type, fd.Values)
 }
 
-// tsTypeForField mirrors goTypeForField for TypeScript. Decimal stays a
-// string (the wire truth), timestamps/dates are RFC 3339 strings, enums
-// become literal unions. An integer is number | string: the client's
-// parseJSON hands one past 2^53 over as its exact decimal string, and the
-// server takes that string back for an integer column.
 func tsTypeForField(declType string, values []string) string {
 	switch strings.ToLower(declType) {
 	case "int", "integer":
@@ -444,16 +325,7 @@ func renderSDKJSReadme(spec sdkSpec) string {
 	fmt.Fprintf(&sb, "```js\nimport { Client } from %q;\n// or, served by the app itself:\n// import { Client } from %q;\n\nconst api = new Client({ baseURL: %q, token: process.env.API_TOKEN });\nconst page = await api.%s.list({ sort: \"-created_at\", limit: 50 });\n```\n\n", "./client.js", sdk.ExampleHost(spec.BaseURL)+"/docs/api/sdk/client.js", sdkExampleBaseURL(spec), prop)
 	sb.WriteString("TypeScript picks up `client.d.ts` automatically when both files sit side by\nside. There is intentionally no package.json: if you want this on npm,\nadd your own and publish it; it's your API.\n\n")
 	sb.WriteString("## Casing contract\n\nResponses are camelCase. Error `fields` keys use response wire keys, including\nexplicit WireName overrides. Filter/sort **query params** use snake_case column\nnames. Use the exported\n`<entity>Fields` constants for filter and sort keys instead of guessing.\nThey list only the queryable columns, so a column the API refuses to filter\non is absent: validation errors can still name it, since a field can be\nwritable without being queryable:\n\n")
-	// Pick the example field AND operator from the one type predicate
-	// (filter.OpSuitsType, via the CLI model's derived operator set): a
-	// `_gte` on a Bool or JSON column — the first queryable field, when
-	// the entity leads with one — is a request the server answers 400,
-	// from the snippet meant to show the casing contract working. A
-	// spec with no range-able column shows plain equality.
 	if picked, filterOp := sdkExampleFilter(first.Fields); picked != nil {
-		// A bare key that reads two ways (a field beside its name plus a
-		// suffix) is a 400, and one named like a list control sets the
-		// control; the example then names the operator in brackets.
 		if filterOp == "" {
 			eq := ""
 			if first.filterKeys.Key(picked.Snake, filter.OpEq) != picked.Snake {
@@ -473,8 +345,6 @@ func renderSDKJSReadme(spec sdkSpec) string {
 	return sb.String()
 }
 
-// jsParsePrelude opens every generated client.js, the entity SDK's and the
-// OpenAPI SDK's: parseJSON, which keeps big integers exact, and ApiError.
 const jsParsePrelude = jsParseJSON + `
 /**
  * ApiError is thrown for non-2xx responses. The message is in the
@@ -516,9 +386,6 @@ export class ApiError extends Error {
 
 `
 
-// jsRuntimePrelude is the entity SDK's part of client.js between
-// jsParsePrelude and jsPathEscape. Kept as one literal so the emitted
-// file reads top-to-bottom like handwritten code.
 const jsRuntimePrelude = `function encodeParams(params, filterable) {
   const q = new URLSearchParams();
   if (!params) return q;
@@ -621,7 +488,6 @@ function toFormData(body, columns) {
 
 `
 
-// jsPathEscape is the generated pathEscape, shared by both JS SDKs.
 const jsPathEscape = `/**
  * pathEscape spells one key value the way Go's url.PathEscape does: the
  * spelling the server requires of each value inside a composite record
@@ -635,7 +501,6 @@ function pathEscape(value) {
 
 `
 
-// jsRuntimeTail is the entity SDK's part of client.js after jsPathEscape.
 const jsRuntimeTail = `/** recordID joins a composite key's values into the record id the server uses. */
 function recordID(values) {
   return values.map(pathEscape).join("/");
@@ -798,9 +663,6 @@ class Resource {
 
 `
 
-// jsReadBody is the Client methods that read a response body under a
-// cap, shared by both JS SDKs. _readBody reads at most 1 MiB, the cap
-// the Go clients enforce via io.LimitReader.
 const jsReadBody = `  /**
    * Reads the response body as text, buffering at most 1 MiB (the same
    * cap the Go client enforces via io.LimitReader). A larger body is a
@@ -838,8 +700,6 @@ const jsReadBody = `  /**
 
 `
 
-// jsClientMethods is the body of the Client class after the generated
-// resource-property assignments.
 const jsClientMethods = `  async do(method, path, body) {
     const headers = { Accept: "application/json" };
     if (this.token) headers.Authorization = "Bearer " + this.token;
@@ -928,7 +788,6 @@ const jsClientMethods = `  async do(method, path, body) {
 
 `
 
-// dtsApiError declares ApiError, first in both JS SDKs' client.d.ts.
 const dtsApiError = `export declare class ApiError extends Error {
   status: number;
   code: number;
@@ -944,7 +803,6 @@ const dtsApiError = `export declare class ApiError extends Error {
 
 `
 
-// dtsRuntimePrelude declares the shared runtime types in client.d.ts.
 const dtsRuntimePrelude = dtsApiError + `export interface ListParams {
   page?: number;
   limit?: number;
@@ -1036,8 +894,6 @@ export declare class Resource<T, TInput, TPatch, TKey = string, TItemKey = { id:
 
 `
 
-// jsParseJSON is parseJSON's source, shared by the generated SDKs and the
-// generated form scripts that read entity JSON in the page.
 const jsParseJSON = `/**
  * parseJSON is JSON.parse that keeps an integer past 2^53 exact: it
  * arrives as its decimal string, the digits the server sent, where

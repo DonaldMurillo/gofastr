@@ -1,0 +1,72 @@
+primitive: appgen.cli
+summary: "gofastr generate cli: a stdlib-only Go command-line client for a project's entities and endpoints, or for an OpenAPI document, derived on every run except its custom.go."
+code:
+  - cmd/gofastr/internal/appgen/generate_cli.go
+  - cmd/gofastr/internal/appgen/generate_cli_derived.go
+  - cmd/gofastr/internal/appgen/generate_cli_openapi_render.go
+  - cmd/gofastr/internal/appgen/generate_cli_*_test.go
+docs:
+  - framework/docs/content/app-cli.md
+invariants:
+  - id: one-declaration-selection
+    rule: CLI and SDK generation select declarations through the same CLI entity matcher and keep their own error labels.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestRenderCLI_EntityOnlyExclude
+      - test: cmd/gofastr/internal/appgen.TestBuildSDKSpecSelection
+  - id: no-auto-renaming
+    rule: A field, upload or endpoint input whose derived flag is reserved or is taken by another, counting every suffixed filter flag the list verb registers, an entity whose command is a built-in, and two entities deriving one struct name are refused, never renamed.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestRenderCLI_ReservedFlagCollision
+      - test: cmd/gofastr/internal/appgen.TestRenderCLI_SuffixFieldFlagCollision
+      - test: cmd/gofastr/internal/appgen.TestRenderCLI_CollidingInFlagRefused
+      - test: cmd/gofastr/internal/appgen.TestCLIUploadFlagChecks
+      - test: cmd/gofastr/internal/appgen.TestRenderCLI_ReservedCommandName
+      - test: cmd/gofastr/internal/appgen.TestEndpointGenerationRefusals
+      - test: cmd/gofastr/internal/appgen.TestCLISpecRefusals
+  - id: declaration-text-cannot-become-code
+    rule: The binary name and API prefix refuse control bytes, entity and field names must derive Go identifiers, a table may hold no quote, backslash or control byte and reaches routes path-escaped, a states block must pass the app's boot check, and move summaries reach help text scrubbed.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestCLISpecRefusals
+      - test: cmd/gofastr/internal/appgen.TestCLIAPIPrefixControlCharsRefused
+      - test: cmd/gofastr/internal/appgen.TestGenerateCLI_EntityNameMustDeriveIdentifier
+      - test: cmd/gofastr/internal/appgen.TestCLIFieldNameMustDeriveIdentifier
+      - test: cmd/gofastr/internal/appgen.TestGenerateCLI_HostileTableCannotBreakOutOfPathLiterals
+      - test: cmd/gofastr/internal/appgen.TestCLISummaryControlBytesRefused
+  - id: filter-flags-follow-the-server
+    rule: A list verb offers exactly the suffixed operator flags filter.FilterSuffixes and filter.OpSuitsType allow for the column's type, none for a NoQuery field, a separate -in flag bound to the _in parameter, and the bracket spelling where a bare key reads two ways.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestRenderCLI_FilterFlagsMatchOpMatrix
+      - test: cmd/gofastr/internal/appgen.TestRenderCLI_InFlagBindsInParam
+      - test: cmd/gofastr/internal/appgen.TestCLIListRendererOmitsNoQueryFlagsAndForwarding
+  - id: state-field-only-on-create
+    rule: Under enforced States the state field has a create flag and no update or patch flag, and stamps have none.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestRenderCLI_EnforcedStateLeavesChangeFlags
+  - id: custom-go-is-owned
+    rule: custom.go is written only when absent; one written for the other generation mode stops the run until --force moves it to custom.go.bak, which is never overwritten.
+    enforced_by:
+      - test: cmd/gofastr/internal/generatecmd.TestCLIKeepsCustomGo
+      - test: cmd/gofastr/internal/appgen.TestCLIModeSwitchRefusesStaleCustom
+      - test: cmd/gofastr/internal/appgen.TestCLIModeSwitchKeepsOldBackup
+      - test: cmd/gofastr/internal/appgen.TestStaleCustomClientBothModes
+  - id: derived-files-are-rebuilt-and-pruned
+    rule: Every run rewrites the *.gen.go files, removes files carrying the cli marker that it no longer produces and the pre-derived layout's files a .gen.go now replaces, refuses an edited or unmarked legacy file without --force, and never deletes anything else or anything through a symlinked directory.
+    enforced_by:
+      - test: cmd/gofastr/internal/generatecmd.TestCLIRemovesDroppedEntity
+      - test: cmd/gofastr/internal/generatecmd.TestCLIMigratesLegacyLayout
+      - test: cmd/gofastr/internal/generatecmd.TestCLIRefusesEditedLegacyFile
+      - test: cmd/gofastr/internal/generatecmd.TestCLIUnmarkedLegacyNeedsForce
+      - test: cmd/gofastr/internal/generatecmd.TestCLIRefusesSymlinkedClientDir
+  - id: invisible-runes-come-from-textsafe
+    rule: The generated CLI's terminal scrub drops exactly the runes core/textsafe.IsInvisible names, read at generation time, beside C0, DEL and C1.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestGenerateCLI_OpenAPIHostileStringsStayQuoted
+decisions:
+  - id: refuse-not-rename
+    date: 2026-11-28
+    status: accepted
+    decision: A derived name that collides is refused with the field or entity to rename.
+    rejected:
+      - option: Rename the flag or struct with a suffix.
+        why: The CLI's flags would stop matching the field names users and docs see.
+    upholds: [no-auto-renaming]

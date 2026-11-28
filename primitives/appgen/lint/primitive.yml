@@ -1,0 +1,90 @@
+primitive: appgen.lint
+summary: "The app-spec warnings gofastr validate and gofastr generate print: routes, forms, nav links, uploads, scoping and module paths."
+code:
+  - cmd/gofastr/internal/appgen/lint_*.go
+  - cmd/gofastr/internal/appgen/common_lint.go
+docs:
+  - framework/docs/content/app-spec.md
+twins:
+  - job: Deciding which chrome href is a concrete in-app route to check against what the app serves.
+    why: uihost's classifier is unexported and returns the decoded path the strict boot routes on, while the lint needs the escaped path so ServeMux keeps an encoded slash inside one segment; merging needs uihost to export a classifier that returns both.
+    sites:
+      - path: cmd/gofastr/internal/appgen/lint_nav_href.go
+        note: navInternalPath, for LintNavHrefs.
+      - path: framework/uihost/strict.go
+        note: internalRoutePath, for the strict boot's chrome-link check.
+invariants:
+  - id: nav-requires-get
+    rule: Nav lint keeps the registered HTTP method and resolves chrome links with a GET probe.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestNavHrefRequiresGET
+  - id: post-form-probes-mounted-screen
+    rule: POST form lint resolves an escaped action path with the same route matcher and mounted patterns as the generated app.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestPostFormFollowsMountedScreenPatterns
+  - id: lints-warn-never-block
+    rule: Every app-spec lint is a warning that gofastr generate prints and then goes on to write the app, and with --json none of them reaches stdout, which holds one JSON value.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestAppSpecLintsNeverBlockGenerate
+      - test: cmd/gofastr/internal/appgen.TestAppSpecLintsStayOffJSONOutput
+      - test: cmd/gofastr/internal/appgen.TestGeneratePIIWarnsNotFatal
+  - id: post-form-ignores-other-hosts
+    rule: A custom_form whose action names another host, or a scheme other than http or https, is not flagged as posting to a screen.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestPostFormToScreenRouteWarns
+  - id: locale-tag-needs-shape-and-language
+    rule: Under app.locale_prefixes a route's first segment is flagged only when it has a lowercase BCP 47 tag shape with a two-letter language and x/text parses it, so /go-live and /my-app stay quiet; screen, entity API, auth and admin routes are all read.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestLocaleShapedRouteWarns
+  - id: module-collision-is-a-path-descendant
+    rule: An app.module collides with the framework only when it is the framework module path or a path-segment descendant of it, and every app spec shipped under examples/ and internal/testapps/ is the colliding case.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestModuleCollisionFlagsFrameworkSubpaths
+      - test: cmd/gofastr/internal/appgen.TestModuleCollisionIgnoresNonSubpaths
+      - test: cmd/gofastr/internal/appgen.TestShippedExampleAppSpecsAreTheCollidingCase
+  - id: owner-unique-counts-writable-values
+    rule: On an owner-scoped entity a unique field or a unique index without owner_field is flagged only when a caller can write one of its values, so read_only and undeclared columns stay quiet.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOwnerScopedUniqueQuietCases
+      - test: cmd/gofastr/internal/appgen.TestOwnerScopedUniqueFieldWarns
+      - test: cmd/gofastr/internal/appgen.TestOwnerScopedUniqueIndexWarns
+  - id: signed-out-reads-the-project-auth
+    rule: A screen drawing an entity that needs a session is flagged when the project has no sign-in, judged by AppSpec.RouteApp so a fragment takes the project's auth, and an entity that is public or has an access gate stays quiet.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestSignedOutScreenWarns
+      - test: cmd/gofastr/internal/appgen.TestSignedOutScreenQuiet
+      - test: cmd/gofastr/internal/appgen.TestSignedOutScreenFragmentReadsProject
+  - id: upload-lint-skips-fields-no-client-writes
+    rule: The upload-storage warning names only image and file fields that are neither hidden nor read_only.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestUploadFieldWithoutStorageWarns
+  - id: nav-classification-matches-uihost
+    rule: The nav lint takes as an in-app route exactly the hrefs uihost's strict boot takes, splitting the query and fragment before unescaping and leaving out scheme-relative, backslash, relative and placeholder hrefs.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestNavInternalPathClassifiesLikeUIHost
+      - test: framework/uihost.TestInternalRoutePathClassification
+  - id: nav-lint-skips-what-it-cannot-see
+    rule: The nav lint reports nothing for a fragment, skips a role-gated item when auth is on, counts a file under the static dir beneath the directory the app is written to, and under app.llm_md counts a screen's llm.md page as served.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestNavHrefSkipsFragmentsAndServesLLMMD
+      - test: cmd/gofastr/internal/appgen.TestNavHrefServed
+      - test: cmd/gofastr/internal/appgen.TestNavHrefStaticUnderOutDir
+decisions:
+  - id: lints-are-warnings
+    date: 2026-11-28
+    status: accepted
+    decision: The route, form, upload, scoping and module-path lints warn from gofastr validate and gofastr generate and never fail either.
+    rejected:
+      - option: Fail generation on a finding.
+        why: Each finding can be fixed in owned Go after generation (a handler for a form, storage wired in main.go, a catalog added later, a deliberately global unique handle), which the spec cannot see.
+    upholds: [lints-warn-never-block]
+  - id: locale-lint-reads-the-shape
+    date: 2026-11-28
+    status: accepted
+    decision: The locale lint flags a tag-shaped first segment instead of a catalog locale.
+    rejected:
+      - option: Check against the catalog's locales.
+        why: The catalog is locales/*.json, which the author adds after generation, so the spec cannot know the tag set.
+      - option: Accept three-letter languages.
+        why: They flag ordinary routes such as /app and /faq.
+    upholds: [locale-tag-needs-shape-and-language]

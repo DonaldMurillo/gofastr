@@ -331,6 +331,8 @@ var ownedPackages = []string{
 	// cmd/gofastr group E: the app spec and the project model.
 	"cmd/gofastr/internal/project",
 	"cmd/gofastr/internal/appspec",
+	// cmd/gofastr group F: the app generator.
+	"cmd/gofastr/internal/appgen",
 }
 
 //gofastr:test-reads primitives/ *.go

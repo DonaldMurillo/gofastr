@@ -23,6 +23,21 @@ func TestAddRebuildsClient(t *testing.T) {
 	}
 }
 
+func TestRefreshNeverCreatesTheClient(t *testing.T) {
+	dir, bp := clitest.AddSetup(t, addTestAppSpec("example.com/addtest"))
+	clitest.CovT_capStdout(t, func() { GenerateFromAppSpec(GenerateOptions{Spec: bp}) })
+	if err := os.Remove(filepath.Join(dir, appClientPath)); err != nil {
+		t.Fatal(err)
+	}
+	files, err := RefreshAppClient(dir, false, true)
+	if err != nil || len(files) != 0 {
+		t.Fatalf("refresh with no client: files=%v err=%v", files, err)
+	}
+	if AppClientPresent(dir) {
+		t.Fatal("a refresh created entities/client/client.go")
+	}
+}
+
 // An unknown flag is bad usage, exit 2, the same status the rest of the
 // generate family answers; `generate client` used to exit 1.
 func TestGenerateClientUnknownFlagExitsTwo(t *testing.T) {
