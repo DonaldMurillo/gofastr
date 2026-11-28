@@ -19,3 +19,29 @@ invariants:
     rule: App-spec YAML recipes use block mappings and load through the app-spec reader.
     enforced_by:
       - test: cmd/gofastr/internal/appspec.TestRewrittenAppSpecDocExamplesLoad
+  - id: config-lists-only-derived-generators
+    rule: A codegen config that lists a scaffold generator by name is refused, since plain gofastr generate and every build re-run the config, while an extension that shares the name is allowed.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestConfigRefusesScaffoldGenerators
+      - test: cmd/gofastr/internal/appgen.TestConfigAllowsExtensionNamedLikeScaffold
+      - test: cmd/gofastr/internal/appgen.TestGenerateConfigScaffoldExits
+  - id: settings-entries-are-strict
+    rule: A cli or sdk settings entry refuses an unknown key, a value of the wrong type, a comma string where a list belongs and a verbs item carrying --verbs syntax, naming the entry's index.
+    enforced_by:
+      - test: cmd/gofastr/internal/generatecmd.TestSettingsRefusesBadCLIEntry
+      - test: cmd/gofastr/internal/generatecmd.TestGenerateSDKRefusesCommaString
+      - test: cmd/gofastr/internal/generatecmd.TestGenerateCLIRefusesBadEntry
+      - test: cmd/gofastr/internal/generatecmd.TestSettingsErrorKeepsEntryIndex
+  - id: printed-entry-reads-back
+    rule: The cli entry printed after a flag-driven run reads back as the same options, quoting every value YAML would read as another type or an alias, and refusing a value that is not UTF-8.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestCLIEntryYAMLRoundTrips
+      - test: cmd/gofastr/internal/appgen.TestCLIEntryYAMLQuotesStar
+      - test: cmd/gofastr/internal/appgen.TestCLIEntryYAMLRefusesNonUTF8
+      - test: cmd/gofastr/internal/appgen.TestYAMLScalarQuotesWhatYAMLReadsAsAnotherType
+  - id: module-matches-go-mod
+    rule: An app spec's app.module is derived from the enclosing go.mod when omitted, kept when there is none, and refused when it differs.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestModuleMismatchErrors
+      - test: cmd/gofastr/internal/appgen.TestModuleDerivedFromGoMod
+      - test: cmd/gofastr/internal/appgen.TestModuleKeptWithoutGoMod

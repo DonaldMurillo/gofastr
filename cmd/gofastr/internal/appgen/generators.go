@@ -7,19 +7,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/codegen"
 )
 
-// GeneratorKind says what a generator's output is for, and so who may run
-// it: a person, once, or every build.
+// GeneratorKind says who may run a generator: a person, once (scaffold), or every build (derived).
 type GeneratorKind int
 
 const (
-	// ScaffoldKind writes code into the repo once; the user owns it from
-	// then on. A second run refuses to overwrite it unless told to (--force),
-	// so a build can never re-run one.
+	// ScaffoldKind writes code the user owns from then on; a second run needs --force.
 	ScaffoldKind GeneratorKind = iota
-	// DerivedKind keeps a type-safe layer in sync with a source (the
-	// entities, the style sheets). Its files say DO NOT EDIT, and every
-	// plain `gofastr generate`, which `gofastr build` calls, rebuilds them
-	// from the codegen config.
+	// DerivedKind rebuilds DO NOT EDIT files from a source on every plain gofastr generate.
 	DerivedKind
 )
 
@@ -30,8 +24,6 @@ func (k GeneratorKind) String() string {
 	return "scaffold"
 }
 
-// generatorSpec is one entry in the generator registry: the name
-// `gofastr generate <name>` dispatches on, its kind, and its help line.
 type generatorSpec struct {
 	Name    string
 	Kind    GeneratorKind
@@ -40,11 +32,7 @@ type generatorSpec struct {
 	Run     func(args []string)
 }
 
-// Generators is the one registry every generator lives in. The help text,
-// the subcommand dispatch, the codegen-config check and the provenance
-// marker all read it, so a new generator is one entry here. init fills it:
-// the run funcs stamp their output through this registry, and a package
-// var initializer may not refer back to itself.
+// Generators is the registry the help text, dispatch, codegen-config check and provenance markers read.
 var Generators []generatorSpec
 
 func init() {
@@ -79,10 +67,6 @@ func LookupGenerator(name string) (generatorSpec, bool) {
 	return generatorSpec{}, false
 }
 
-// checkConfigGenerators refuses a codegen config that lists a scaffold
-// generator. The config is what plain `gofastr generate` and every build
-// re-run, and re-running a scaffold generator would either refuse (the
-// files exist) or, forced, overwrite code the user owns.
 func checkConfigGenerators(cfg codegen.CodegenConfig) error {
 	for i, gen := range cfg.Generators {
 		if gen.Extension != "" {

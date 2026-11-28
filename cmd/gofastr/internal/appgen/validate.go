@@ -9,15 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 )
 
-// ResolveAppSpecModule reconciles the app spec's app.module with the Go
-// module enclosing anchorDir:
-//
-//   - no enclosing go.mod  → the declared module (possibly empty) stands.
-//   - module omitted       → derived from go.mod (plus the relative path
-//     from the module root to anchorDir), so generated imports compile.
-//   - both present, equal  → fine.
-//   - both present, differ → error with the remedy; generating code that
-//     imports a module the enclosing go.mod does not declare cannot build.
+// ResolveAppSpecModule reconciles app.module with the go.mod enclosing anchorDir, deriving it when omitted and refusing a mismatch.
 func ResolveAppSpecModule(bp *appspec.AppSpec, anchorDir string) error {
 	abs, err := filepath.Abs(anchorDir)
 	if err != nil {

@@ -20,27 +20,6 @@ import (
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
-// runGenerateStyles is the `gofastr generate styles [patterns]` path.
-// Under the package patterns (Go-style, relative to the working
-// directory, ./... by default) it first checks every <name>.tokens.css
-// per program and writes <name>_tokens.gen.go beside each clean one;
-// then, for every <name>.style.css, it runs the ownstyle checks
-// against the theme's tokens plus the app's — judged per program, the
-// same grouping `gofastr verify` uses (analyzers.CheckStylePrograms,
-// one implementation) — extracts the class model, and writes
-// <name>_style.gen.go. GOFASTR1816 and GOFASTR1822 run per program at
-// the end: a name (or literal) two binaries never share is no finding.
-// A sheet reached by several programs is generated once and validated
-// against each program's tokens. It also writes .gofastr/tokens.css,
-// every token for editor completion.
-//
-// A finding a gofastr:allow(<rule>) <reason> comment waives is not
-// printed and does not block the file (ownstyle.Suppressed), the same
-// marker `gofastr verify` honours.
-//
-// One failing file never stops the run: every diagnostic from every
-// file is printed, nothing is written for a file with an
-// error-severity finding, and the command exits non-zero at the end.
 func runGenerateStyles(args []string) {
 	if cli.HasHelpFlag(args) {
 		printGenerateStylesHelp()
@@ -72,11 +51,6 @@ func runGenerateStyles(args []string) {
 		return
 	}
 
-	// Every read of a source sheet and every write of a generated file
-	// goes through an *os.Root at the working directory: a planted
-	// symlink (a generated leaf, the .gofastr dir, a source sheet)
-	// that points outside the project is refused by the kernel, never
-	// followed. The patterns already stay under the working directory.
 	wd, err := os.OpenRoot(".")
 	if err != nil {
 		cli.Fail("open the working directory: %v", err)
@@ -85,15 +59,6 @@ func runGenerateStyles(args []string) {
 	}
 	defer wd.Close()
 
-	// The program grouping `gofastr verify`'s owned-style rules judge:
-	// one implementation, so the layout the docs promise (two binaries
-	// in one module, each with its own copy of a siteheader package)
-	// passes here because it passes there.
-	// A sheet the app generator copied carries a provenance marker, which
-	// is not style. srcOf holds the sheet with the marker's line left
-	// blank, so checks and parses keep the file's line numbers and no doc
-	// comment comes from it; bodyOf holds it without the marker, the bytes
-	// the Go embeds and hashes, the way GOFASTR1814 reads the pair.
 	srcOf := map[string]string{}
 	bodyOf := map[string]string{}
 	readAll := func(fs []styleFile) []analyzers.SheetInput {
@@ -124,11 +89,6 @@ func runGenerateStyles(args []string) {
 	appTokens, tokensFailed := generateTokenFiles(wd, tokenFiles, srcOf, bodyOf, checks)
 	failed = failed || tokensFailed
 
-	// Names are unique within one program (GOFASTR1816's generator
-	// arm; ownstyle.Must panics on the duplicate at init otherwise).
-	// Files on both sides of a duplicate generate nothing: either
-	// could be the wrong one, and generated Go holding both panics at
-	// init.
 	dup := map[string]bool{}
 	for _, rel := range slices.Sorted(maps.Keys(checks.DuplicateNames)) {
 		cli.Fail("%s: an owned style named %q already exists (%s); owned style names are unique across the program (GOFASTR1816)",
@@ -138,8 +98,6 @@ func runGenerateStyles(args []string) {
 		failed = true
 	}
 
-	// The exported var is Style for a package's only style file,
-	// <Owner>Style when the package holds several.
 	perDir := map[string]int{}
 	for _, f := range files {
 		if !dup[f.rel] {
@@ -153,7 +111,7 @@ func runGenerateStyles(args []string) {
 		}
 		if err := generateStyleFile(wd, f, srcOf[f.rel], bodyOf[f.rel], checks.SheetFindings[f.rel], perDir[filepath.Dir(f.path)] > 1); err != nil {
 			failed = true
-			if err != errSilent { // diagnostics were already printed
+			if err != errSilent {
 				cli.Fail("%s: %v", f.rel, err)
 			}
 			continue
@@ -176,28 +134,18 @@ func runGenerateStyles(args []string) {
 	}
 }
 
-// errSilent marks a failure whose diagnostics were already printed
-// (every CSS finding was listed; the summary only needs the exit).
 var errSilent = fmt.Errorf("silent")
 
-// styleFile is one discovered <name>.style.css.
 type styleFile struct {
-	path string // filesystem path
-	rel  string // working-directory-relative, slash-separated, for messages
-	name string // owner name (file stem)
+	path string
+	rel  string
+	name string
 }
 
-// discoverStyleFiles resolves the patterns and collects every
-// *.style.css under them, in deterministic (sorted) order. A file
-// whose stem is not a valid owner name is an error naming the file —
-// reporting it beats silently skipping it.
 func discoverStyleFiles(patterns []string) ([]styleFile, error) {
 	return discoverOwnedFiles(patterns, ".style.css")
 }
 
-// discoverOwnedFiles is discoverStyleFiles for any owned-file suffix:
-// ".style.css" sheets and ".tokens.css" token sets share the name
-// grammar and the directory walk.
 func discoverOwnedFiles(patterns []string, suffix string) ([]styleFile, error) {
 	return discoverOwnedFilesAt(".", patterns, suffix)
 }
@@ -238,9 +186,7 @@ func discoverOwnedFilesAt(base string, patterns []string, suffix string) ([]styl
 	return out, nil
 }
 
-// GenerateStyleInputs returns the owned sheets read by configured styles
-// generators as filesystem paths based at projectDir, using the generator's
-// discovery rules. An absolute projectDir produces absolute paths.
+// GenerateStyleInputs returns the owned sheets the configured styles generators read, as paths based at projectDir.
 func GenerateStyleInputs(projectDir string, generators []codegen.GeneratorConfig) ([]string, error) {
 	_, runs, err := splitStylesEntries(generators)
 	if err != nil {
@@ -265,16 +211,8 @@ func GenerateStyleInputs(projectDir string, generators []codegen.GeneratorConfig
 	return slices.Compact(paths), nil
 }
 
-// styleNamePattern is the owner-name grammar: ^[a-z][a-z0-9-]{0,63}$, no
-// ui- prefix (kit names). Mirrors ownstyle.Must's validation so the
-// generator's error names the file before Must can panic.
 var styleNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
 
-// generateStyleFile checks, models and generates one style file.
-// checkDiags are the per-program ownstyle.Check findings the shared
-// grouping already computed (deduplicated across the file's programs);
-// only the model diagnostics are added here. It returns errSilent
-// when the failure was already reported as printed diagnostics.
 func generateStyleFile(wd *os.Root, f styleFile, src, body string, checkDiags []ownstyle.Diagnostic, sharedPkg bool) error {
 	css := src
 	kind := ownstyle.KindScoped
@@ -283,7 +221,7 @@ func generateStyleFile(wd *os.Root, f styleFile, src, body string, checkDiags []
 	}
 
 	diags := checkDiags
-	sheet, _ := ownstyle.Parse(css) // parse errors are in checkDiags (ownstyle.Check)
+	sheet, _ := ownstyle.Parse(css)
 	var model *ownstyle.SheetModel
 	if sheet != nil {
 		var modelDiags []ownstyle.Diagnostic
@@ -317,11 +255,6 @@ func generateStyleFile(wd *os.Root, f styleFile, src, body string, checkDiags []
 	return nil
 }
 
-// stylePatternDirsAt resolves Go-style package patterns relative to base
-// to the set of directories to scan: "./..." and "foo/..." walk their
-// root, "foo" is the single directory. vendor/, testdata/, node_modules/,
-// dot directories and _-prefixed directories are skipped, the same trees
-// the go tool ignores.
 func stylePatternDirsAt(base string, patterns []string) ([]string, error) {
 	var dirs []string
 	seen := map[string]bool{}
@@ -334,10 +267,6 @@ func stylePatternDirsAt(base string, patterns []string) ([]string, error) {
 			dirs = append(dirs, dir)
 		}
 	}
-	// Every pattern is read through an os.Root on base: a directory on a
-	// pattern's path that links outside the working directory is refused
-	// by the kernel, not followed. Until #665 an EvalSymlinks proved only
-	// that the path existed, and the stat and walk went wherever it led.
 	var rt *os.Root
 	for _, pat := range patterns {
 		if filepath.IsAbs(pat) {
@@ -396,10 +325,6 @@ func stylePatternDirsAt(base string, patterns []string) ([]string, error) {
 	return dirs, nil
 }
 
-// stylePackageName reads the Go package name from a directory's
-// existing non-test .go files. A directory holding a style sheet but
-// no Go source has nothing for the generated file to belong to: an
-// error naming the directory.
 func stylePackageName(dir string) (string, error) {
 	name, ok, err := project.FirstGoPackageName(dir, "")
 	if err != nil {
@@ -411,11 +336,6 @@ func stylePackageName(dir string) (string, error) {
 	return "", fmt.Errorf("directory %s holds a style sheet but no non-test Go files; a generated file must join an existing package", filepath.ToSlash(dir))
 }
 
-// writeStyleTokensCSS writes .gofastr/tokens.css under wd: every theme
-// token with its light value (and dark value, when the theme carries
-// one, in a trailing comment) under :root, for editor completion in
-// .style.css files, the app's own tokens included. It is a public
-// build artifact, never served.
 func writeStyleTokensCSS(wd *os.Root, app []ownstyle.AppTokenAt) error {
 	tokens := ownstyle.CheckTokens(style.ThemeToTokens(uitheme.Default()), app)
 	var b strings.Builder
@@ -431,9 +351,6 @@ func writeStyleTokensCSS(wd *os.Root, app []ownstyle.AppTokenAt) error {
 			dark[rest] = v
 			continue
 		}
-		// Component options are knobs for the kit's registration path,
-		// not custom properties a sheet can var(): a dotted key is not
-		// even a valid name, and completion for it would be noise.
 		if strings.HasPrefix(k, "component.") {
 			continue
 		}
@@ -441,9 +358,6 @@ func writeStyleTokensCSS(wd *os.Root, app []ownstyle.AppTokenAt) error {
 	}
 	slices.Sort(light)
 	for _, k := range light {
-		// The token key becomes a CSS custom-property name: a key that
-		// is not one (a theme walking in a dotted component key, say)
-		// is a generator bug, not a completion entry to half-emit.
 		if !cssIdentOK(k) {
 			return fmt.Errorf("theme token %q is not a valid CSS custom-property name", k)
 		}
@@ -454,8 +368,6 @@ func writeStyleTokensCSS(wd *os.Root, app []ownstyle.AppTokenAt) error {
 		}
 		b.WriteString(line + "\n")
 	}
-	// Dark-only tokens (a dark palette entry with no light
-	// counterpart) still belong in the completion list.
 	var extra []string
 	for k := range dark {
 		extra = append(extra, k)
@@ -480,9 +392,6 @@ func writeStyleTokensCSS(wd *os.Root, app []ownstyle.AppTokenAt) error {
 	return nil
 }
 
-// cssIdentOK reports whether name is a valid CSS custom-property name
-// segment: an identifier (letters, digits, -, _, non-ASCII), so the
-// emitted `--name: value;` declaration is one declaration.
 func cssIdentOK(name string) bool {
 	if name == "" {
 		return false
@@ -548,9 +457,6 @@ completion in .style.css files. Never served.
 Run "gofastr docs cli" for the CLI map.`)
 }
 
-// printDiagnostics prints every finding no allow marker in src waives,
-// as file:line:col: severity rule message, and reports whether one of
-// them is an error (the file's Go must not be written).
 func printDiagnostics(rel, src string, diags []ownstyle.Diagnostic) (hasErr bool) {
 	for _, d := range diags {
 		if d.Rule != ownstyle.RuleInvalidMedia && ownstyle.Suppressed(src, d) {
@@ -564,14 +470,6 @@ func printDiagnostics(rel, src string, diags []ownstyle.Diagnostic) (hasErr bool
 	return hasErr
 }
 
-// generateTokenFiles writes <name>_tokens.gen.go beside each tokens
-// file with no unwaived error in ANY program that reaches it (the
-// shared grouping already checked each program's tokens files
-// together; findings a second program would repeat are collapsed). It
-// returns the union of every program's app tokens — completion and
-// nothing else reads it — and whether any file failed. A file whose
-// tokens parsed is in that union even when its Go was not written, so
-// one typo does not cascade into GOFASTR1806 across the program.
 func generateTokenFiles(wd *os.Root, files []styleFile, srcOf, bodyOf map[string]string, checks analyzers.StyleProgramChecks) ([]ownstyle.AppTokenAt, bool) {
 	failed := false
 	diagsOf := map[string][]ownstyle.Diagnostic{}
@@ -598,7 +496,7 @@ func generateTokenFiles(wd *os.Root, files []styleFile, srcOf, bodyOf map[string
 	for _, f := range files {
 		src, ok := srcOf[f.rel]
 		if !ok {
-			continue // the read failure was reported before grouping
+			continue
 		}
 		ds := diagsOf[f.rel]
 		slices.SortStableFunc(ds, func(a, b ownstyle.Diagnostic) int {
@@ -645,9 +543,6 @@ func generateTokenFiles(wd *os.Root, files []styleFile, srcOf, bodyOf map[string
 	return app, failed
 }
 
-// printRepeatedLiterals prints the GOFASTR1822 warnings the shared
-// grouping found (per program, merged per site). Warnings never fail
-// the run.
 func printRepeatedLiterals(srcOf map[string]string, found []ownstyle.FileDiagnostic) {
 	for _, d := range found {
 		if ownstyle.Suppressed(srcOf[d.File], d.Diag) {
@@ -657,8 +552,6 @@ func printRepeatedLiterals(srcOf map[string]string, found []ownstyle.FileDiagnos
 	}
 }
 
-// blankMarker returns content with the lines StripMarker removed to make
-// body left empty, so line numbers into content still hold.
 func blankMarker(content, body string) string {
 	return strings.Repeat("\n", strings.Count(content, "\n")-strings.Count(body, "\n")) + body
 }
