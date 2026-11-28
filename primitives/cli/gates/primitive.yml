@@ -23,6 +23,7 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/gates.TestAuditSkipsUnparsableFilesAndSortsFindings
       - test: cmd/gofastr/internal/gates.TestAuditA11yFindsViolations
+      - test: cmd/gofastr/internal/gates.TestAuditTreeSortsALintsFindingsByLine
   - id: report-is-scrubbed
     rule: A gate writes its report through cli.Fprintf, so a project path reaches the terminal scrubbed even when gofastr dev hands the gate a MultiWriter over os.Stdout.
     enforced_by:

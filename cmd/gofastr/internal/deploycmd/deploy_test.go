@@ -37,6 +37,7 @@ func TestMain(m *testing.M) {
 		mux.HandleFunc("/ready", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "ok") })
 		mux.HandleFunc("/env", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, os.Getenv("SECRET")) })
 		mux.HandleFunc("/sick", func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "no", http.StatusServiceUnavailable) })
+		mux.HandleFunc("/redirect", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/healthz", http.StatusFound) })
 		_ = http.ListenAndServe("127.0.0.1:"+port, mux)
 		os.Exit(1)
 	}
@@ -418,6 +419,9 @@ func TestHealthCheckReadsTheAnswer(t *testing.T) {
 	}
 	if _, err := s.run(t0.Add(2*time.Minute), "deploy@example.com", "--name", "shop", "--health", "/missing"); err == nil {
 		t.Error("a release answering 404 on its health path passed")
+	}
+	if _, err := s.run(t0.Add(3*time.Minute), "deploy@example.com", "--name", "shop", "--health", "/redirect"); err == nil {
+		t.Error("a release answering 302 on its health path passed")
 	}
 }
 

@@ -13,6 +13,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 )
 
+var runApp = (*exec.Cmd).Run
+
 type exportOptions struct {
 	pkg, base, dir string
 }
@@ -95,7 +97,7 @@ func RunExport(args []string) {
 	cmd := exec.Command("go", "run", opts.pkg)
 	cmd.Env = append(os.Environ(), "GOFASTR_EXPORT="+dir, "GOFASTR_EXPORT_BASE="+opts.base, "GOFASTR_EXPORT_RUN="+run)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := runApp(cmd); err != nil {
 		cli.Fail("export: the app exited with %v", err)
 		cli.OsExit(1)
 		return

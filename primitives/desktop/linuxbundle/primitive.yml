@@ -96,3 +96,12 @@ decisions:
         why: It is not an app-facing API, and an exported package would have to be documented and kept stable for callers that do not exist.
     revisit_if: A third tool, such as a system-wide installer, needs a different installed form.
     upholds: [installed-form-is-what-uninstall-accepts]
+  - id: rollback-is-not-a-crash-transaction
+    date: 2026-11-28
+    status: accepted
+    decision: desktop install's rollback is the failing process removing what it created; a crash or kill part way leaves those files in the apps, bin and applications directories with no receipt, and the next install refuses them as existing.
+    rejected:
+      - option: A transaction across the three directories that a crash also undoes, by staging and renaming or by a journal a later run replays.
+        why: The three are separate directories, possibly on separate filesystems, so no one rename commits them, and the refusal already keeps a half install from being overwritten.
+    revisit_if: Users report half-installed apps that uninstall refuses and they must remove by hand.
+    upholds: [install-rolls-back-its-own]
