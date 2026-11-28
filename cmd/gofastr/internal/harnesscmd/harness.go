@@ -16,7 +16,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	xharness "github.com/DonaldMurillo/gofastr/framework/experimental/harness"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/client/tui"
-	xcontext "github.com/DonaldMurillo/gofastr/framework/experimental/harness/context"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/inproc"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/engine"
@@ -178,7 +177,7 @@ func RunHarness(args []string) {
 
 	if *prompt != "" {
 		// Single-shot mode for smoke tests.
-		runSingle(h, c, sess, *prompt)
+		runSingle(c, sess, *prompt)
 		return
 	}
 	// Interactive mode: launch the pure-stdlib TUI if stdin is a
@@ -194,7 +193,7 @@ func RunHarness(args []string) {
 		}
 		return
 	}
-	runREPL(h, c, sess)
+	runREPL(c, sess)
 }
 
 // isTTY reports whether the given file is a terminal device. Used to
@@ -301,7 +300,7 @@ func resolveDefaultModel(h *xharness.Harness, prof *profile.Profile) (provider.P
 	return nil, ""
 }
 
-func runSingle(h *xharness.Harness, c *inproc.Client, sess ids.SessionID, prompt string) {
+func runSingle(c *inproc.Client, sess ids.SessionID, prompt string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	sub := c.Subscribe(ctx)
@@ -312,31 +311,10 @@ func runSingle(h *xharness.Harness, c *inproc.Client, sess ids.SessionID, prompt
 		cli.Fprintln(os.Stderr, err)
 		return
 	}
-	for env := range sub {
-		if env.Kind == "TextDelta" {
-			td, _ := control.DecodeEvent(env)
-			if t, ok := td.(control.TextDelta); ok {
-				// Provider/tool text is attacker-influenced (model output,
-				// tool results over a hostile repo, provider error bodies):
-				// scrub before it reaches the terminal (2026-09-05
-				// red-probe round; the TUI strips the same class at ingest).
-				fmt.Print(textsafe.ScrubTerminal(t.Text))
-			}
-		}
-		if env.Kind == "TurnEnded" {
-			fmt.Println()
-			return
-		}
-		if env.Kind == "Error" {
-			e, _ := control.DecodeEvent(env)
-			cli.Fprintf(os.Stderr, "\n[error] %v\n", e)
-			return
-		}
-	}
-	_ = h
+	streamOneTurn(sub)
 }
 
-func runREPL(h *xharness.Harness, c *inproc.Client, sess ids.SessionID) {
+func runREPL(c *inproc.Client, sess ids.SessionID) {
 	fmt.Fprintln(os.Stderr, "gofastr harness: interactive REPL. Ctrl-D to exit.")
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 64*1024), 1<<20)
@@ -374,8 +352,6 @@ func streamOneTurn(sub <-chan control.EventEnvelope) {
 		case "TextDelta":
 			td, _ := control.DecodeEvent(env)
 			if t, ok := td.(control.TextDelta); ok {
-				// Same scrub as runSingle: the REPL and piped-stdin paths
-				// print provider text raw otherwise.
 				fmt.Print(textsafe.ScrubTerminal(t.Text))
 			}
 		case "TurnEnded":
@@ -393,9 +369,3 @@ func mustGetwd() string {
 	wd, _ := os.Getwd()
 	return wd
 }
-
-// keep references that may otherwise be reported as unused.
-var (
-	_ = xcontext.Reader{}
-	_ = filepath.Join
-)
