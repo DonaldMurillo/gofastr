@@ -1,0 +1,158 @@
+primitive: cli.appspec.decode
+summary: Turns an app spec's YAML node tree into an AppSpec, refusing unknown keys and any value a lax read would turn into a weaker setting than the author wrote.
+code:
+  - cmd/gofastr/internal/appspec/decode.go
+  - cmd/gofastr/internal/appspec/decode_entity.go
+  - cmd/gofastr/internal/appspec/decode_values.go
+docs:
+  - framework/docs/content/app-spec.md
+  - framework/docs/content/entity-declarations.md
+on_change:
+  - A new key that gates access, scoping or exposure, whose false or empty value is the open one, decodes through protectiveBool or requireScalarString and gets a case in the packcmd posture tests.
+invariants:
+  - id: protective-flags-are-strict
+    rule: screens[].access.auth, app.auth.enabled, an entity's soft_delete and multi_tenant in the flat and the scope spelling, a field's hidden, read_only and no_query, a relation's hidden, and the required, unique and index constraint flags accept only a YAML bool or the strings true and false; anything else is an error naming the key.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestProtectiveBoolsRejectYamlTruthy
+      - test: cmd/gofastr/internal/appspec.TestFlatProtectiveBoolErrorsFromLoad
+      - test: cmd/gofastr/internal/appspec.TestConstraintFlagsRejectNonBools
+      - test: cmd/gofastr/internal/appspec.TestRelationHiddenRejectsNonBools
+  - id: dev-mode-defaults-on
+    rule: app.auth.dev_mode is true when omitted and otherwise accepts only true or false.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAuthDevModeDefaultsTrue
+      - test: cmd/gofastr/internal/appspec.TestAuthDevModeRejectsFuzzyBool
+  - id: posture-strings-are-single-values
+    rule: app.db driver and url, app.admin.role, a screen's access.role, an entity's owner_field, tenant_field and cross_owner_read, each access permission and each read_scope field, op, value and unrestricted must be a single value, a list or map there is an error, and a YAML null there reads as blank.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestAppSpecRedPostureScalarsRefuseShapes
+      - test: cmd/gofastr/internal/packcmd.TestDBConfigRejectsNonScalarTypes
+      - test: cmd/gofastr/internal/appspec.TestReadScopeRefusesNonScalarNodes
+      - test: cmd/gofastr/internal/appspec.TestExampleAppSpecsLoad
+  - id: api-prefix-defaults-to-api
+    rule: app.api_prefix is api when omitted and is stored with its slashes trimmed, so an explicit empty api_prefix mounts entity APIs at the root.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAPIPrefixDefaultsToAPI
+  - id: seed-email-is-canonical
+    rule: app.admin.seed_email is stored as auth.CanonicalEmail spells it, the spelling login looks up.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestSeedEmailIsCanonical
+  - id: unknown-keys-reported-together
+    rule: A key outside its level's allowed set is an error unless it starts with x_ or x-, and every unknown key of a level is reported in one error, sorted, each with a hint when the key belongs at the root, under app or in gofastr.settings.yml.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAppSpecRejectsUnknownKeys
+      - test: cmd/gofastr/internal/appspec.TestAppSpecAcceptsExtensionKeys
+      - test: cmd/gofastr/internal/appspec.TestUnknownKeysAllReportedAtOnce
+      - test: cmd/gofastr/internal/appspec.TestUnknownKeysReportedSorted
+      - test: cmd/gofastr/internal/appspec.TestUnknownKeySuggestsCorrectLocation
+  - id: replaced-keys-name-the-fix
+    rule: The block keys filters, transitions and search anywhere, island and widget on an entity block, and the entity_create and entity_edit kinds are refused with an error naming what replaced them.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestRemovedBlockKeysNameReplacements
+      - test: cmd/gofastr/internal/appspec.TestFiltersKeyNamesReplacement
+      - test: cmd/gofastr/internal/appspec.TestTransitionsKeyNamesStates
+      - test: cmd/gofastr/internal/appspec.TestDecodeRefusals
+  - id: type-spelled-catalog-kind
+    rule: A block that sets no kind and whose type names a catalog kind other than section decodes with that kind as its Kind and an empty Type, so the validator, the import scan and the emitter read one field.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestDecodeReadsTypeSpelledCatalogKindAsKind
+  - id: stat-filter-normalized-at-decode
+    rule: A stat_card source.filter written as one bare column=value decodes to the query DSL column = "value", and any other filter decodes unchanged.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestStatCardPlainFilterAccepted
+      - test: cmd/gofastr/internal/appspec.TestExampleAppSpecsLoad
+  - id: theme-values-are-scalars
+    rule: Every app.theme value and every app.theme.dark value is a scalar.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestDecodeAppSpecErrorBranches
+      - test: cmd/gofastr/internal/appspec.TestDecodeRefusals
+  - id: owner-column-is-injected-hidden
+    rule: An entity whose owner_field names no declared field gains a hidden string field of that name.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestOwnerScopedKeyNeedsOwner
+      - test: cmd/gofastr/internal/appspec.TestStatFilterLoadMatchesBoot
+      - test: cmd/gofastr/internal/appspec.TestChartGroupByLoadMatchesBoot
+  - id: cross-owner-read-needs-an-owner
+    rule: An entity that sets cross_owner_read without owner_field is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestDecodeRefusals
+  - id: named-columns-are-checked-at-decode
+    rule: Each search_fields entry is a declared string or text field that is neither hidden nor no_query; each read_scope filter field is a declared field that is not hidden; each cursor field is a declared column that is not hidden, no_query or json and is the key, required or auto-generated.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestSearchFieldsRefuseUndeclaredColumn
+      - test: cmd/gofastr/internal/appspec.TestNoQuerySearchFieldRejected
+      - test: cmd/gofastr/internal/appspec.TestAppSpecRejectsUndeclaredReadScopeField
+      - test: cmd/gofastr/internal/appspec.TestAppSpecRejectsHiddenReadScopeField
+      - test: cmd/gofastr/internal/appspec.TestCursorFieldsRefusesUnknownColumn
+      - test: cmd/gofastr/internal/appspec.TestCursorFieldRejectsJSONColumn
+      - test: cmd/gofastr/internal/appspec.TestCursorFieldRejectsNullableColumn
+      - test: cmd/gofastr/internal/appspec.TestDecodeRefusals
+  - id: entity-endpoints-moved
+    rule: An endpoints key on an entity is refused with an error pointing at the top-level endpoints list.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAppSpecValidationFailures
+      - test: cmd/gofastr/internal/appspec.TestDecodeAppSpecErrorBranches
+  - id: display-and-states-decode-as-the-entity-package-does
+    rule: An entity's display and states blocks decode through the framework/entity config types' own JSON decoding, so the app spec refuses exactly the keys those types refuse.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestDecodeRefusals
+  - id: flat-and-grouped-spellings-agree
+    rule: An entity setting a key both flat and in its scope, pagination or exposure group with different values is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestDecodeEntityRejectsConflictingFlatAndGroupedKeys
+  - id: primary-key-is-a-list
+    rule: An entity's primary_key is a non-empty list of field names.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestPrimaryKeyRefusedAtLoad
+  - id: read-scope-shape
+    rule: A read_scope filter predicate names a field, takes op eq, neq, in or not_in (empty is eq), gives eq and neq one value and no list and in and not_in a non-empty list and no value, and a read_scope with neither filter nor unrestricted is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAppSpecRejectsReadScopePredicateWithoutField
+      - test: cmd/gofastr/internal/appspec.TestAppSpecRejectsUnknownReadScopeOp
+      - test: cmd/gofastr/internal/appspec.TestAppSpecRejectsReadScopeInWithoutValues
+      - test: cmd/gofastr/internal/appspec.TestAppSpecRejectsEmptyReadScope
+  - id: seed-counts-are-whole-numbers
+    rule: A seed count and every seed weight is a whole number; a string, a fraction or a list is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestDecodeRefusals
+decisions:
+  - id: strict-where-false-is-open
+    date: 2026-11-28
+    status: accepted
+    decision: A flag decodes strictly when its false value is the permissive one; a flag whose false only turns a feature off (exposure public, mcp and crud, public_openapi, pwa.enabled, admin.enabled, llm_md, timestamps, a relation's many, a list's create) keeps the lax read.
+    rejected:
+      - option: Decode strictly only the flags whose default is true.
+        why: That rule covered dev_mode alone and let access.auth yes, a YAML 1.2 string, read as false and publish the screen.
+    upholds: [protective-flags-are-strict]
+  - id: dev-mode-on-by-default
+    date: 2026-11-28
+    status: accepted
+    decision: app.auth.dev_mode defaults to true, and gofastr generate warns about it.
+    rejected:
+      - option: Default to production cookies.
+        why: A freshly generated app serves plain HTTP, where the __Host- Secure session cookie never comes back, so login breaks out of the box.
+    upholds: [dev-mode-defaults-on]
+  - id: api-under-a-prefix
+    date: 2026-11-28
+    status: accepted
+    decision: Entity JSON CRUD mounts under /api by default so the bare /<table> routes stay free for HTML screens.
+    rejected:
+      - option: Mount entity APIs at /<table>.
+        why: The API and an HTML screen of the same entity would fight for one route; api_prefix "" still gives that layout to an app that wants it.
+    upholds: [api-prefix-defaults-to-api]
+  - id: normalize-stat-filters-on-the-way-in
+    date: 2026-11-28
+    status: accepted
+    decision: The legacy column=value stat_card filter is rewritten to the DSL when the spec is decoded.
+    rejected:
+      - option: Translate it when the card is emitted.
+        why: pack would then need a second translation back, and decoding a packed spec would no longer give the spec it came from.
+    upholds: [stat-filter-normalized-at-decode]
+  - id: check-entity-columns-at-decode
+    date: 2026-11-28
+    status: accepted
+    decision: search_fields, read_scope and cursor columns are checked while the entity decodes, naming the entity and column.
+    rejected:
+      - option: Leave them to entity.Define at registration.
+        why: Define panics there, which for a generated app means one that dies at boot instead of a generate-time error.
+    upholds: [named-columns-are-checked-at-decode, read-scope-shape]

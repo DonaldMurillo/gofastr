@@ -96,10 +96,6 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 			return nil, err
 		}
 		decl.Fields = fields
-		// owner_field names a per-row owner column. Auto-inject it as a hidden
-		// string column so AutoMigrate creates it and auto-CRUD can stamp/scope
-		// it, without the author hand-declaring a field they never want shown in
-		// a form or table. pack drops this synthesized column on the way back.
 		if decl.Scope != nil && decl.Scope.OwnerField != "" &&
 			!appSpecEntityHasField(decl, decl.Scope.OwnerField) {
 			decl.Fields = append(decl.Fields, framework.FieldDeclaration{
@@ -108,7 +104,6 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 				Hidden: true,
 			})
 		}
-		// cross_owner_read only applies to an owner-scoped entity.
 		if decl.Scope != nil && decl.Scope.CrossOwnerRead != "" && decl.Scope.OwnerField == "" {
 			return nil, fmt.Errorf(
 				"app spec: entity %q sets cross_owner_read %q but has no owner_field (cross-owner read only applies to owner-scoped entities)",
@@ -136,10 +131,6 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 				return nil, fmt.Errorf("app spec: entity %q search_fields entry %q must be string or text, got %q", decl.Name, sf, found.Type)
 			}
 		}
-		// read_scope fields are checked here for the same reason search_fields
-		// are: entity.Define panics at registration, which for an app spec
-		// means a generated app that dies at boot. Failing at decode names the
-		// entity and the column now.
 		if rs := EntityDeclarationExposure(decl).ReadScope; rs != nil {
 			for _, p := range rs.Filter {
 				var found *framework.FieldDeclaration
@@ -182,8 +173,6 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 			if strings.EqualFold(strings.TrimSpace(found.Type), "json") {
 				return nil, fmt.Errorf("app spec: entity %q cursor field %q is json (keyset paging cannot compare a JSON document); page on a scalar column", decl.Name, cf)
 			}
-			// The rule entity.Define enforces, reported at spec time: a
-			// keyset column that can hold NULL skips those rows.
 			isKey := slices.Contains(decl.PrimaryKey, cf) || (len(decl.PrimaryKey) == 0 && cf == "id")
 			if !isKey && !found.Required && found.AutoGenerate == "" {
 				return nil, fmt.Errorf("app spec: entity %q cursor field %q can hold NULL (keyset paging skips NULL rows); mark it required", decl.Name, cf)
@@ -217,11 +206,6 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 	return out, nil
 }
 
-// decodeStrictConfig decodes an entity sub-block (display:, states:)
-// through the declaration's own strict JSON shape, so the app spec
-// refuses exactly the keys the entity package refuses, with its error
-// wrapped in the yaml position. A present-but-empty block is a non-nil
-// zero config, matching how the scope and exposure groups decode.
 func decodeStrictConfig[T any](node *coreyaml.Node, context string) (*T, error) {
 	if node == nil {
 		return nil, nil
@@ -237,12 +221,10 @@ func decodeStrictConfig[T any](node *coreyaml.Node, context string) (*T, error) 
 	return &cfg, nil
 }
 
-// decodeDisplayDeclaration decodes an entity's display: group.
 func decodeDisplayDeclaration(node *coreyaml.Node, context string) (*fwentity.DisplayConfig, error) {
 	return decodeStrictConfig[fwentity.DisplayConfig](node, context)
 }
 
-// decodeStatesDeclaration is decodeDisplayDeclaration's twin for states:.
 func decodeStatesDeclaration(node *coreyaml.Node, context string) (*fwentity.StatesConfig, error) {
 	return decodeStrictConfig[fwentity.StatesConfig](node, context)
 }
@@ -264,11 +246,6 @@ func mergeEntityScopeDeclaration(
 	if grouped == nil {
 		grouped = &fwentity.ScopeDeclaration{}
 	}
-	// soft_delete and multi_tenant are access-gating: their FALSE value is the
-	// permissive state (hard deletes, no tenant scoping). The grouped
-	// scope.* spellings use protectiveBool; the flat spellings MUST too, or a
-	// YAML-1.1 truthy like `multi_tenant: yes` (a string in YAML 1.2) silently
-	// reads false and drops tenant isolation. See protectiveBool for the why.
 	if node := root["soft_delete"]; node != nil {
 		flat, err := protectiveBool(root, "soft_delete", context)
 		if err != nil {
@@ -299,10 +276,6 @@ func mergeEntityScopeDeclaration(
 	} {
 		key, target := entry.key, entry.val
 		if node := root[key]; node != nil {
-			// requireScalarString: owner_field/tenant_field as a list or
-			// map must be an error, not "" — an empty owner field
-			// silently no-ops owner scoping and exposes every row to
-			// every caller.
 			flat, err := requireScalarString(node, context, key)
 			if err != nil {
 				return nil, err
@@ -404,8 +377,6 @@ func mergeEntityExposureDeclaration(
 		grouped.Access = flatAccess
 	}
 	if flatReadScope != nil {
-		// ReadScopeDeclaration holds slices, so != cannot compare it; a
-		// shallow-but-wrong conflict must still be a hard error like access.
 		if groupMap["read_scope"] != nil && (grouped.ReadScope == nil || !reflect.DeepEqual(*flatReadScope, *grouped.ReadScope)) {
 			return nil, entityDeclarationConflict(name, "read_scope", "exposure.read_scope", flatReadScope, grouped.ReadScope)
 		}
@@ -448,8 +419,6 @@ func decodeEntityScope(node *coreyaml.Node, context string) (*fwentity.ScopeDecl
 	if err := rejectUnknownKeys(m, map[string]bool{"soft_delete": true, "multi_tenant": true, "tenant_field": true, "owner_field": true, "cross_owner_read": true}, context); err != nil {
 		return nil, err
 	}
-	// soft_delete and multi_tenant are protective: false means hard deletes and
-	// no tenant scoping. See protectiveBool.
 	softDelete, err := protectiveBool(m, "soft_delete", context)
 	if err != nil {
 		return nil, err
@@ -521,13 +490,6 @@ func decodeEntityExposure(node *coreyaml.Node, context string) (*fwentity.Exposu
 	return &fwentity.ExposureDeclaration{CRUD: crud, MCP: boolValue(m["mcp"]), Public: boolValue(m["public"]), Access: access, ReadScope: readScope}, nil
 }
 
-// decodeEntityAccess decodes an entity's `access:` map: the per-operation
-// RBAC permissions mirroring EntityConfig.Access. nil node = no RBAC gating
-// (the key is optional and additive; existing app specs are unaffected).
-// Every perm is requireScalarString: stringValue answers "" for a list or a
-// map, and an empty permission is the UNGATED setting (requirePermission
-// treats "" as no gate), so `read: [posts:review]` must be an error, not a
-// silently world-open read.
 func decodeEntityAccess(node *coreyaml.Node, context string) (*fwentity.AccessDeclaration, error) {
 	if node == nil {
 		return nil, nil
@@ -563,30 +525,11 @@ func decodeEntityAccess(node *coreyaml.Node, context string) (*fwentity.AccessDe
 	}, nil
 }
 
-// decodeEntityReadScope decodes an entity's `read_scope:` map — the row
-// filter mirroring EntityConfig.Exposure.ReadScope. nil node = no row
-// filtering. Every level is strict (rejectUnknownKeys plus the op/arity
-// checks below): a typo in a read posture must fail the build here, at the
-// YAML location, not surface as a panic at app registration or, worse, as a
-// predicate that silently matches nothing.
-// requireScalarString reads a scalar node, refusing any other node kind.
-//
-// stringValue answers "" for a list or a map, which is fine for a cosmetic
-// field and wrong for a security posture: `unrestricted: [posts:review]`
-// decoded to the empty string, and an empty Unrestricted is the WEAKEST
-// setting there is, lifting the read scope for every signed-in caller instead
-// of only the permission holder. A posture that a YAML shape silently widens
-// is the failure this whole decode path exists to prevent, so the shape is an
-// error rather than a default.
 func requireScalarString(node *coreyaml.Node, context, key string) (string, error) {
 	if node == nil {
 		return "", nil
 	}
 	if node.Kind == coreyaml.Map && node.Value == nil && len(node.Map) == 0 {
-		// YAML null (a key with no value): the deliberate blank
-		// spelling, e.g. `read:` = anonymous read. coreyaml hands null
-		// back as an entry-less map node, so the entry count — not the
-		// kind alone — separates it from a real (refusable) map.
 		return "", nil
 	}
 	if node.Kind != coreyaml.Scalar {
@@ -598,7 +541,6 @@ func requireScalarString(node *coreyaml.Node, context, key string) (string, erro
 	return fmt.Sprint(node.Value), nil
 }
 
-// yamlKindName names a node kind for an error message.
 func yamlKindName(k coreyaml.Kind) string {
 	switch k {
 	case coreyaml.Scalar:
@@ -655,9 +597,6 @@ func decodeEntityReadScope(node *coreyaml.Node, context string) (*fwentity.ReadS
 				Value:  predValue,
 				Values: stringListValue(pm["values"]),
 			}
-			// The framework re-validates at registration (entity.Define) and
-			// panics; failing here instead turns a boot-time crash into a
-			// generate-time error that names the YAML path.
 			if pred.Field == "" {
 				return nil, fmt.Errorf("%s.field is required (a predicate with no column matches nothing)", predContext)
 			}
@@ -743,9 +682,6 @@ func decodeFields(node *coreyaml.Node) ([]framework.FieldDeclaration, error) {
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("fields[%d]", i)); err != nil {
 			return nil, err
 		}
-		// read_only / hidden / no_query are protective: false exposes the field
-		// to clients, to every API response, and to the filter surface
-		// respectively. See protectiveBool.
 		fieldCtx := fmt.Sprintf("fields[%d]", i)
 		required, err := protectiveBool(m, "required", fieldCtx)
 		if err != nil {
@@ -837,8 +773,6 @@ func decodeRelations(node *coreyaml.Node) ([]framework.Relation, error) {
 		if err != nil {
 			return nil, err
 		}
-		// foreign_key is one column, or a list of one column per key
-		// column of a composite key it references.
 		var foreignKey []string
 		if node := m["foreign_key"]; node != nil && node.Kind == coreyaml.List {
 			foreignKey = stringListValue(node)

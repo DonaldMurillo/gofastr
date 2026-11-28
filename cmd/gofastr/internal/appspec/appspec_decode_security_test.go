@@ -96,3 +96,10 @@ func TestJSONAppSpecStillParses(t *testing.T) {
 		t.Fatal("unknown-key strictness must hold on the JSON leg too")
 	}
 }
+
+// A second JSON value after the first is refused, not ignored.
+func TestJSONAppSpecRejectsTrailingData(t *testing.T) {
+	if _, err := decodeJSONAppSpec(t, `{"app": {"name": "a"}} {"app": {"name": "b"}}`); err == nil {
+		t.Fatal(".json app spec with a second value after the first decoded")
+	}
+}

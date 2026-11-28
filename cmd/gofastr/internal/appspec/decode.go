@@ -98,16 +98,6 @@ func DecodeAppSpec(node *coreyaml.Node) (AppSpec, error) {
 	return bp, nil
 }
 
-// normalizeStatFilters rewrites a stat_card source.filter authored in the
-// legacy `column=value` spelling into the query DSL the emitted
-// appUI.StatValue parses (`column = "value"`). entityui.StatValue hands
-// the string to dsl.ParsePredicate, which refuses bare words; the
-// app spec's filter spelling predates that engine. Both spellings carry
-// the same equality, and a filter already written in the DSL (spaces,
-// quotes) passes through untouched. Normalizing at decode (not at emit)
-// keeps pack exact: parse(yml) and parse(pack(yml)) both see the
-// normalized form, so the round-trip invariant holds without a second
-// translation on the way back.
 func normalizeStatFilters(bp *AppSpec) {
 	var walk func(blocks []AppSpecBlock)
 	walk = func(blocks []AppSpecBlock) {
@@ -130,14 +120,8 @@ func normalizeStatFilters(bp *AppSpec) {
 	}
 }
 
-// statFilterWord matches one bare word of the legacy filter spelling:
-// a column name or an enum-ish value.
 var statFilterWord = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
-// statFilterDSL converts `column=value` to `column = "value"` when the
-// filter is exactly that shape: one "=", no spaces, no quotes, bare
-// words on both sides. Anything else is DSL already and returns
-// unchanged.
 func statFilterDSL(f string) (string, bool) {
 	f = strings.TrimSpace(f)
 	if f == "" || strings.ContainsAny(f, ` "`) || strings.Count(f, "=") != 1 {
@@ -166,10 +150,7 @@ func decodeAppSpecApp(node *coreyaml.Node) (AppSpecApp, error) {
 		Module:      stringValue(m["module"]),
 		StaticDir:   stringValue(m["static_dir"]),
 		OutputDir:   stringValue(m["output_dir"]),
-		// Mount entity JSON CRUD under /api by default so bare /{entity}
-		// routes are free for HTML screens. Set api_prefix: "" to opt out
-		// (entity APIs mount at bare /{table}, the historical behavior).
-		APIPrefix: "api",
+		APIPrefix:   "api",
 	}
 	if v, ok := m["api_prefix"]; ok {
 		app.APIPrefix = strings.Trim(stringValue(v), "/")
@@ -185,11 +166,6 @@ func decodeAppSpecApp(node *coreyaml.Node) (AppSpecApp, error) {
 		if err := rejectUnknownKeys(db, map[string]bool{"driver": true, "url": true}, "app.db"); err != nil {
 			return AppSpecApp{}, err
 		}
-		// driver/url answer "" for a map or list node (stringValue), and an
-		// empty driver+url silently generates a DB-less app — the theme
-		// decoder built requireScalarString for exactly this shape; db is the
-		// sharper surface (every CRUD screen 500s at runtime, seed data
-		// aborts boot), so it refuses the shape instead of defaulting it.
 		driver, err := requireScalarString(db["driver"], "app.db", "driver")
 		if err != nil {
 			return AppSpecApp{}, err
@@ -274,18 +250,10 @@ func decodeAppSpecAdmin(node *coreyaml.Node) (AppSpecAdmin, error) {
 	if err := rejectUnknownKeys(m, allowed, "app.admin"); err != nil {
 		return AppSpecAdmin{}, err
 	}
-	// admin.role gates the admin console; requireScalarString so a
-	// list/map shape is an error rather than a silent empty role.
 	adminRole, err := requireScalarString(m["role"], "app.admin", "role")
 	if err != nil {
 		return AppSpecAdmin{}, err
 	}
-	// seed_email reaches the generated FindByEmail/CreateUser literals.
-	// Login canonicalizes the submitted address and FindByEmail matches
-	// exactly, so the seed is stored in the spelling login looks up: a
-	// raw "Ops@Example.com" would mint an admin nobody can sign in as.
-	// Generated apps install no AuthConfig.CanonicalizeEmail override,
-	// so the package default is the one login applies.
 	seedEmail, err := auth.CanonicalEmail(stringValue(m["seed_email"]))
 	if err != nil {
 		return AppSpecAdmin{}, fmt.Errorf("app.admin.seed_email: %w", err)
@@ -308,29 +276,14 @@ func decodeAppSpecAuth(node *coreyaml.Node) (AppSpecAuth, error) {
 	if err := rejectUnknownKeys(m, map[string]bool{"enabled": true, "dev_mode": true, "base_path": true, "jwt_secret": true}, "app.auth"); err != nil {
 		return AppSpecAuth{}, err
 	}
-	// dev_mode defaults to true when omitted: a freshly generated app
-	// serves plain HTTP, where the production cookie defaults
-	// (__Host-session + Secure) never round-trip. Login would silently
-	// break out of the box. `gofastr generate` warns loudly about the
-	// default; set `dev_mode: false` (plus jwt_secret + HTTPS) to deploy.
 	devMode := true
 	if dm, ok := m["dev_mode"]; ok {
-		// Strict bool only: dev_mode is the one app spec bool whose
-		// default is true, so the usual lax "anything-but-true → false"
-		// coercion would let YAML-1.1 spellings like `yes` silently flip
-		// it to prod cookie mode on plain HTTP, the exact broken-login
-		// scenario the default exists to prevent, while also
-		// suppressing the dev-mode warning.
 		v, err := strictBoolValue(dm)
 		if err != nil {
 			return AppSpecAuth{}, fmt.Errorf("app.auth.dev_mode %w", err)
 		}
 		devMode = v
 	}
-	// enabled is access-gating: false means the auth subsystem is OFF and the
-	// whole app is public (no login, no JWT, no enforced screen policies). A
-	// YAML-1.1 truthy like `enabled: yes` (a string in YAML 1.2) silently
-	// reading false is fail-OPEN, so decode it strictly. See protectiveBool.
 	enabled, err := protectiveBool(m, "enabled", "app.auth")
 	if err != nil {
 		return AppSpecAuth{}, err
@@ -343,8 +296,6 @@ func decodeAppSpecAuth(node *coreyaml.Node) (AppSpecAuth, error) {
 	}, nil
 }
 
-// decodeappTheme returns the light color/font tokens and, from a nested
-// `dark:` map, the dark-scheme color overrides.
 func decodeappTheme(node *coreyaml.Node) (light, dark map[string]string, err error) {
 	m, err := expectMap(node, "app.theme")
 	if err != nil {
@@ -405,16 +356,10 @@ func decodeAppSpecScreens(node *coreyaml.Node) ([]AppSpecScreen, error) {
 			if err := rejectUnknownKeys(accM, map[string]bool{"auth": true, "role": true}, fmt.Sprintf("screens[%d].access", i)); err != nil {
 				return nil, err
 			}
-			// access.auth is THE protective flag: false registers the screen with
-			// no policy, i.e. public. `auth: yes` used to land there silently.
 			auth, err := protectiveBool(accM, "auth", fmt.Sprintf("screens[%d].access", i))
 			if err != nil {
 				return nil, err
 			}
-			// role names the gate; a map/list role decodes to "" via
-			// stringValue, which leaves Auth=false and mounts the screen via
-			// bare site.Register — world-readable where the author wrote an
-			// access block. requireScalarString refuses the shape.
 			role, err := requireScalarString(accM["role"], fmt.Sprintf("screens[%d].access", i), "role")
 			if err != nil {
 				return nil, err
@@ -501,11 +446,6 @@ func decodeBlocks(node *coreyaml.Node) ([]AppSpecBlock, error) {
 			}
 			return nil, fmt.Errorf("app spec: body[%d]: %s is no longer a block kind; use %s", i, kind, what)
 		}
-		// The screen keys the entityui screens replaced are refused by
-		// name, with the error naming where the setting moved, so an
-		// author holding an old app spec hears the fix rather than
-		// "unknown key". island:/widget: keep their meaning on node
-		// blocks; on an entity screen they name a model that is gone.
 		if err := refuseReplacedBlockKeys(m, kind, fmt.Sprintf("body[%d]", i)); err != nil {
 			return nil, err
 		}
@@ -521,13 +461,6 @@ func decodeBlocks(node *coreyaml.Node) ([]AppSpecBlock, error) {
 		if err != nil {
 			return nil, err
 		}
-		// A catalog kind spelled `type:` is that kind: the block decodes
-		// as if `kind:` had named it, so the validator, the import scan
-		// and the emitter all read one field. They read different ones
-		// before: the load validated `type: card` as a card, and the
-		// emitter, which draws the catalog from Kind alone, sent it to the
-		// node renderer in a file that did not import it. `type: section`
-		// keeps its older meaning, the plain <section> tag.
 		blockType, blockKind := stringValue(m["type"]), stringValue(m["kind"])
 		if strings.TrimSpace(blockKind) == "" && typeNamesCatalogKind(blockType) {
 			blockType, blockKind = "", blockType
@@ -557,13 +490,6 @@ func decodeBlocks(node *coreyaml.Node) ([]AppSpecBlock, error) {
 	return out, nil
 }
 
-// refuseReplacedBlockKeys refuses the entity-block keys the entityui
-// screens replaced, naming the replacement for each: filters moved to the
-// entity's display.facets, transitions to the entity's states, search to
-// the entity's search_fields, and island/widget have no replacement
-// because entity lists are query-param pages now. The three data keys are
-// refused wherever they appear (no other block kind ever read them);
-// island/widget only on the entity screens.
 func refuseReplacedBlockKeys(m map[string]*coreyaml.Node, kind, context string) error {
 	entityBlock := kind == "entity_list" || kind == "entity_detail" || kind == "entity_form" ||
 		kind == "entity_create" || kind == "entity_edit"
@@ -698,9 +624,6 @@ func expectList(node *coreyaml.Node, label string) ([]*coreyaml.Node, error) {
 	return node.List, nil
 }
 
-// appLevelKeys are settings that live under `app:`. The most common
-// misplacement is writing them at the app spec root, where they silently
-// do nothing (an agent or a YAML-merge tool has no way to know).
 var appLevelKeys = map[string]bool{
 	"name": true, "description": true, "base_url": true, "module": true,
 	"db": true, "static_dir": true, "output_dir": true, "api_prefix": true,
@@ -708,15 +631,11 @@ var appLevelKeys = map[string]bool{
 	"pwa": true, "llm_md": true, "entity_llm_md": true, "locale_prefixes": true,
 }
 
-// topLevelKeys are the app spec's root sections; written under `app:`
-// they are equally dead.
 var topLevelKeys = map[string]bool{
 	"entities": true, "screens": true, "nav": true, "seed": true,
 	"endpoints": true, "middleware": true, "plugins": true, "helpers": true,
 }
 
-// unknownKeyLocationHint names the correct nesting for a known key found
-// at the wrong level, so the fix is one edit instead of a schema hunt.
 func unknownKeyLocationHint(key, label string) string {
 	switch label {
 	case "app spec":
@@ -734,10 +653,6 @@ func unknownKeyLocationHint(key, label string) string {
 	return ""
 }
 
-// rejectUnknownKeys reports EVERY unknown key at the level in one pass,
-// sorted for determinism, each with a location hint when the key is a
-// known setting nested at the wrong level. Reporting one per run turned
-// fixing an app spec into a serial guess-and-recompile loop.
 func rejectUnknownKeys(m map[string]*coreyaml.Node, allowed map[string]bool, label string) error {
 	var unknown []string
 	for key, node := range m {
