@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	xharness "github.com/DonaldMurillo/gofastr/framework/experimental/harness"
@@ -39,15 +38,12 @@ func runHarnessMCP(args []string) {
 	allowRepoSecrets := fs.Bool("allow-repo-secrets", false, "use provider keys from this repository's .harness-secrets/env without a remembered approval")
 	_ = fs.Parse(args)
 
-	home, err := os.UserHomeDir()
+	xdgConfig, xdgState, err := harnessDirs()
 	if err != nil {
 		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
+		return
 	}
-	xdgConfig := filepath.Join(home, ".config", "gofastr", "harness")
-	xdgState := filepath.Join(home, ".local", "share", "gofastr", "harness")
-	_ = os.MkdirAll(xdgConfig, 0o700)
-	_ = os.MkdirAll(xdgState, 0o700)
 
 	// Load repo-local secrets (gitignored) before reading any env vars.
 	// Shell env still wins. This is the fallback for cases where the

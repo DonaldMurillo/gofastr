@@ -212,6 +212,26 @@ func resolveHarnessXDGConfig() (string, error) {
 	return filepath.Join(home, ".config", "gofastr", "harness"), nil
 }
 
+// harnessDirs creates and returns the harness's config directory
+// (resolveHarnessXDGConfig) and its state directory, both owner-only.
+func harnessDirs() (config, state string, err error) {
+	config, err = resolveHarnessXDGConfig()
+	if err != nil {
+		return "", "", err
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", "", fmt.Errorf("home dir: %w", err)
+	}
+	state = filepath.Join(home, ".local", "share", "gofastr", "harness")
+	for _, d := range []string{config, state} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			return "", "", err
+		}
+	}
+	return config, state, nil
+}
+
 // noCredstoreKeyHelp is the single fail-closed refusal shared by every
 // CLI path that opens the credential store (harness, harness mcp,
 // harness creds). The repo shipped a hard-coded default passphrase

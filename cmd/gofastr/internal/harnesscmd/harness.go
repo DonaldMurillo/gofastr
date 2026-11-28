@@ -64,20 +64,11 @@ func RunHarness(args []string) {
 	_ = autoApprove // wiring lands with task 24 + 6 (multiplex auto-approve)
 
 	// Resolve XDG paths.
-	home, err := os.UserHomeDir()
+	xdgConfig, xdgState, err := harnessDirs()
 	if err != nil {
 		cli.Fprintf(os.Stderr, "gofastr harness: %v\n", err)
 		cli.OsExit(1)
-	}
-	xdgConfig := filepath.Join(home, ".config", "gofastr", "harness")
-	xdgState := filepath.Join(home, ".local", "share", "gofastr", "harness")
-	if err := os.MkdirAll(xdgConfig, 0o700); err != nil {
-		cli.Fprintln(os.Stderr, err)
-		cli.OsExit(1)
-	}
-	if err := os.MkdirAll(xdgState, 0o700); err != nil {
-		cli.Fprintln(os.Stderr, err)
-		cli.OsExit(1)
+		return
 	}
 
 	// Load repo-local secrets (gitignored) so .harness-secrets/env
