@@ -26,6 +26,12 @@ invariants:
       - test: cmd/gofastr/internal/devcmd.TestInterruptKillsBuildChildren
       - test: cmd/gofastr/internal/devcmd.TestShutdownInterruptsBuild
       - test: cmd/gofastr/internal/devcmd.TestBuildAfterSignalIsInterrupted
+  - id: interrupt-only-from-the-signal-owner
+    rule: Only a caller that handles SIGINT and SIGTERM itself and closes interrupt on them passes RunBuildWithHeartbeat a non-nil interrupt, because the build's own process group takes it out of the terminal's, so the terminal's Ctrl-C then reaches only the caller; any other caller passes nil and the build stays in the terminal's group.
+    judge: Does this change pass a non-nil interrupt to RunBuildWithHeartbeat from a caller that does not handle SIGINT and SIGTERM itself and close that channel on them?
+    applies:
+      - cmd/gofastr/internal/devcmd/dev.go
+      - cmd/gofastr/internal/desktopcmd/desktop.go
   - id: the-app-gets-to-drain
     rule: KillServer sends SIGTERM, returns as soon as the app has exited, sends SIGKILL after killGrace (5s), and clears *cmd; where there is no SIGTERM it kills at once and still waits up to killGrace for the exit.
     enforced_by:
@@ -59,3 +65,53 @@ decisions:
       - option: 100 ms.
         why: It cut every save's drain short; the framework ends its own event streams when the drain starts, so an app usually exits well inside five seconds and KillServer returns then.
     upholds: [the-app-gets-to-drain]
+  - id: wait-after-kill-without-sigterm
+    date: 2026-11-28
+    status: accepted
+    decision: Where there is no SIGTERM (Windows), stopProcess kills the app and still waits up to killGrace for it to be gone.
+    rejected:
+      - option: Return as soon as Kill returns.
+        why: TerminateProcess returns before the process is gone, and shutdown removes the binary directory next, which fails on an .exe still running.
+    upholds: [the-app-gets-to-drain]
+  - id: kill-the-build-group
+    date: 2026-11-28
+    status: accepted
+    decision: On Unix killBuild SIGKILLs the build's process group by its id and the leader directly, in case the group signal was refused.
+    rejected:
+      - option: Kill only the go process.
+        why: The compiler, the linker and cgo's C toolchain outlive it and keep the build's output pipe open.
+      - option: Avoid kill(-pid) for fear of signalling another group that reused the id.
+        why: A process-group id stays reserved while any member lives, even after the leader was reaped, so the signal cannot reach a stranger's group while anything is left to kill.
+    upholds: [interrupt-ends-the-build]
+  - id: taskkill-then-kill
+    date: 2026-11-28
+    status: accepted
+    decision: Off Unix killBuild runs taskkill /T /F on the pid this process started, the tree walk the e2e harness uses, and then kills that process directly.
+    rejected:
+      - option: taskkill alone.
+        why: taskkill can be refused or missing, and the direct Kill still ends the go process then.
+    upholds: [interrupt-ends-the-build]
+  - id: heartbeat-on-a-silent-build
+    date: 2026-11-28
+    status: accepted
+    decision: RunBuildWithHeartbeat prints a progress line while go build runs.
+    rejected:
+      - option: Print nothing until the build ends.
+        why: go build is silent however long it takes, the banner has already named an address, and under load a build runs for minutes, so a reader cannot tell still building from wedged; the dev-loop e2e suite fails on output silence, not on a wall clock.
+    upholds: [build-heartbeat]
+  - id: heartbeat-writer-captured-at-entry
+    date: 2026-11-28
+    status: accepted
+    decision: RunBuildWithHeartbeat reads os.Stdout once at entry and writes every heartbeat there.
+    rejected:
+      - option: Read os.Stdout at each heartbeat.
+        why: The coverage tests swap os.Stdout around buildAndServe, and a later read races their restore.
+    upholds: [build-heartbeat]
+  - id: start-before-the-wait
+    date: 2026-11-28
+    status: accepted
+    decision: RunBuildWithHeartbeat calls Start itself and only then starts the goroutine that waits on the build.
+    rejected:
+      - option: Start the build inside the waiting goroutine.
+        why: The interrupt arm reads buildCmd.Process to kill the group, and Start sets it, so starting in the goroutine races that read.
+    upholds: [interrupt-ends-the-build]

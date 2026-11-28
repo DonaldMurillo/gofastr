@@ -1240,6 +1240,31 @@ HTTP in v0.3.
   no process boundary to lean on, so unauthenticated is not a
   posture the transport will serve.
 
+To use the stdio server from Claude Code, Codex or Cursor, add it to
+the client's MCP config. The harness reads its keys from the
+environment the client gives it:
+
+```json
+{
+  "mcpServers": {
+    "gofastr-harness": {
+      "command": "gofastr",
+      "args": ["harness", "mcp"],
+      "env": {
+        "GOFASTR_HARNESS_PASSPHRASE": "your-passphrase",
+        "ZAI_API_KEY": "your-zai-key"
+      }
+    }
+  }
+}
+```
+
+Add `"--framework"` to `args` for the framework profile, or
+`"--profile", "/path/to/profile.toml"` for one of your own. With
+`--required-token <t>`, the server refuses to start unless the
+client sets `GOFASTR_HARNESS_TOKEN` to `<t>` in `env`. Step-by-step setup is in
+[harness end-to-end testing](harness-e2e-testing.md).
+
 #### Tools exposed
 
 The tool that runs the agent is named honestly to make the
