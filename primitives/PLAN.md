@@ -249,9 +249,8 @@ task reads `battery/` (`2026-11-20-replay-battery-sweep.md`).
 `dup-column-key` reads an entry that names its sibling sites and went
 from 1 of 4 to 4 of 4 (`2026-11-20-dup-column-key-twin.md`).
 
-`cmd/` is under way. Its nine small tools are swept, 22.4% to 2.7%, their
-tests 13.6% to 11.9%. `cmd/` as a whole is at 15.4%, nearly all of it in
-`cmd/gofastr`, which is next, in PRs split by job. Every tool directory is in
+`cmd/` is swept, 15.5% to 4.4%. Its nine small tools went first, 22.4% to
+2.7%, their tests 13.6% to 11.9%. Every tool directory is in
 `TestCoveredPackagesHaveNoUnownedFile`. Per tool (before, after):
 
 | Tool | Before | After | | Tool | Before | After |
@@ -291,8 +290,67 @@ follow-up (#923, with the three items a post-merge review of #918 added)
 gave each a test watched failing, or narrowed the rule to what the code
 does (#924, its proofs in the PR).
 
-Next: `cmd/gofastr`, then `internal/`. The repository as a whole is at
-10.1%.
+`cmd/gofastr` is swept, 16.7% to 4.5%, its tests 10.8% to 10.4%, in a stack
+of six PRs split by job (#931 to #936). Every one of its directories is in
+`TestCoveredPackagesHaveNoUnownedFile`. A new `cli` primitive owns `main.go`
+and has one child per subcommand or shared part; `appgen` stays top level
+with eleven children by job, and `devcmd` became `cli.dev`. Per directory
+(before, after):
+
+| Directory | Before | After | | Directory | Before | After |
+|---|---|---|---|---|---|---|
+| agentscmd | 25.4% | 5.1% | | loopback | 26.2% | 8.2% * |
+| appgen | 17.5% | 7.0% | | migratecmd | 16.5% | 0.4% |
+| appspec | 18.3% | 1.5% | | newcmd | 13.0% | 0.9% |
+| auditcmd | 8.8% | 1.2% | | packages (tree) | 34.7% | 15.3% * |
+| buildcmd | 27.2% | 1.3% | | packcmd | 12.4% | 0.2% |
+| cli | 24.4% | 8.9% * | | project | 19.4% | 6.7% |
+| clitest | 12.9% | 4.7% | | projectfs | 28.5% | 6.3% |
+| deploycmd | 10.5% | 0.7% | | releasecmd | 12.5% | 0.5% |
+| desktopcmd | 8.8% | 0.2% | | semanticcmd | 13.8% | 0.7% |
+| devcmd | 27.8% | 2.7% | | telemetrycmd | 7.9% | 0.7% |
+| docscmd | 13.0% | 0.6% | | testcmd | 7.4% | 1.1% |
+| exportcmd | 11.6% | 2.2% | | themecmd | 27.3% | 10.5% ** |
+| gates | 11.1% | 5.8% | | unmountcmd | 10.3% | 1.1% |
+| generatecmd | 10.5% | 1.5% | | upgradecmd | 14.3% | 0.7% |
+| harnesscmd | 15.8% | 0.7% | | validatecmd | 19.5% | 3.7% |
+| initcmd | 21.9% | 0.5% | | main.go | 16.7% | 0.3% |
+
+In the starred directories what remains is a doc on each exported
+identifier; the site packages are 64 to 94 lines each. In `themecmd`, double
+starred, the rest is the theme editor's script, whose JavaScript comments
+the counter reads as Go comments: the script stays a Go string because a
+`.js` file falls under the shipped-JS lints the runtime's page code meets.
+In `appgen` about 520 of the remaining lines are comments inside the
+templates it emits. `appgen`'s `appspec.go`, its largest file, was not swept
+line by line and is the follow-up.
+
+The stack added 81 primitives, 608 invariants (20 judged only) and 122
+decisions, plus about 165 tests for rules that had none. It recorded 8 twins
+and merged 6: `gates`' two walks into `auditTree`, the harness's three config
+directory lookups into `harnessDirs`, `runSingle`'s copy of the REPL loop,
+and `project.InstalledFrameworkVersion`'s copy of `CliVersion`'s lookup.
+Fixed on the way: `gofastr harness` and `harness mcp` read
+`~/.config/gofastr/harness` while `harness creds` wrote under
+`$XDG_CONFIG_HOME` (breaking for anyone who set it); `gofastr telemetry
+--json` printed C1, bidi and zero-width runes raw, in a torn line too (the
+second found by Bugbot). The stack itself tripped on three things a later
+sweep should check first: `.gitignore`'s bare `screens/` hid a registry
+directory (now exempt), a mutation run left two files in a package
+directory, and moving an embedded script to a `.js` file put it under the
+repo's JS lints. A review of #931 found eight rules whose named tests pass
+with the code broken and six reasons recorded nowhere; each got a test
+watched failing, a narrower rule or a decision.
+
+Left judged only or unproven: the harness MCP server's never-prompt and
+stderr-only rules and the `RunDev` loop's signal and order rules, which need
+the whole loop; the Windows and macOS desktop packaging rules, whose tests
+run only there; the theme editor's constant-time token compare; and the
+Postgres-only migrate checks, which were not watched failing here.
+
+The replay eval after it has not run yet.
+
+Next: `internal/`. The repository as a whole is at 8.8%.
 
 ### 3. Bring the known twins in, and merge them
 
