@@ -69,6 +69,7 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/migratecmd.TestMigrateStatusShowsDrift
       - test: cmd/gofastr/internal/migratecmd.TestMigrateStatusDirtyNamesARunnableGroup
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateStatusShowsTheGroupOfAPendingMigration
 decisions:
   - id: no-apply-from-spec
     date: 2026-11-28

@@ -71,7 +71,7 @@ decisions:
   - id: archive-caps-sized-from-a-real-export
     date: 2026-11-28
     status: accepted
-    decision: The archive caps (128 MiB download, 512 MiB extracted, 50,000 entries) are about ten times the v0.86.0 export, which is 6 MB compressed and 32 MB on disk across about 1,000 files.
+    decision: The archive caps (128 MiB download, 512 MiB extracted, 50,000 entries) are at least ten times the v0.86.0 export, which is 6 MB compressed and 32 MB on disk across about 1,000 files.
     rejected:
       - option: No caps, trusting the checksum.
         why: The checksum comes from the same release as the archive, so a hostile or corrupt release passes it and can still fill the disk.
