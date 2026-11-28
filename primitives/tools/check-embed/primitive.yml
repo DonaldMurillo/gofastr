@@ -12,7 +12,7 @@ on_change:
   - gofastr build runs the same driver through buildEmbedGate in cmd/gofastr/internal/buildcmd/build.go; a change to what fails the CLI changes what fails the build there too.
 twins:
   - job: Turn CheckAll's findings and notes into a verdict, printing every note and failing on a finding or a blocking note.
-    why: The build gate adds --allow-unverified-embeds and prints through the gofastr cli helpers; nothing but work keeps the verdict out of embedcheck, and cmd/gofastr is swept in a later pull request.
+    why: The build gate adds --allow-unverified-embeds and prints through the gofastr cli helpers; nothing but work keeps the verdict out of embedcheck. Until it moves there, cli.build's TestBuildEmbedGateFailsOnlyOnBlockingNotes runs buildEmbedGate on check-embed's own testdata.
     sites:
       - path: cmd/check-embed/main.go
         note: main, the standalone CLI.
