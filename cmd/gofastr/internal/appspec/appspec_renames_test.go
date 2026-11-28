@@ -144,6 +144,9 @@ func TestAuthFooterHrefRejectedAtValidate(t *testing.T) {
 		{"login javascript", "login_form", "register_href", "javascript:fetch('//x')", true},
 		{"signup javascript", "signup_form", "login_href", "javascript:alert(1)", true},
 		{"login data uri", "login_form", "register_href", "data:text/html,<script>", true},
+		{"login forgot javascript", "login_form", "forgot_href", "javascript:alert(1)", true},
+		{"signup register javascript", "signup_form", "register_href", "javascript:alert(1)", true},
+		{"login login_href javascript", "login_form", "login_href", "javascript:alert(1)", true},
 		{"relative ok", "login_form", "register_href", "/signup", false},
 		{"mailto ok", "login_form", "register_href", "mailto:help@example.com", false},
 	} {

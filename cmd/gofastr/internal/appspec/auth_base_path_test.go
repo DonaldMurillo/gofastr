@@ -84,6 +84,27 @@ func TestAuthFormAbsoluteActionNeedsBaseURL(t *testing.T) {
 	}
 }
 
+func TestAuthFormAbsoluteActionCarriesNoUserinfo(t *testing.T) {
+	for action, refused := range map[string]bool{
+		"https://app.example/auth/login":        false,
+		"https://u:p@app.example/auth/login":    true,
+		"https://user@app.example/auth/login":   true,
+		"https://evil.example/auth/login":       true,
+		"http://app.example/auth/login?next=/x": true,
+	} {
+		bp := AppSpec{App: AppSpecApp{Name: "app", Module: "m", BaseURL: "https://app.example"}}
+		bp.App.Auth.Enabled = true
+		bp.App.Auth.DevMode = true
+		bp.Screens = []AppSpecScreen{{Name: "signin", Route: "/signin", Type: "page", Body: []AppSpecBlock{
+			{Kind: "login_form", Props: map[string]any{"action": action}},
+		}}}
+		err := ValidateAppSpec(bp)
+		if got := err != nil && strings.Contains(err.Error(), "is not on app.base_url"); got != refused {
+			t.Errorf("action %q: refused = %v, want %v (err %v)", action, got, refused, err)
+		}
+	}
+}
+
 // A fragment (generate app --add) carries no app: section, so it cannot
 // say where the project mounted auth: an action at the project's real
 // base is not refused against the /auth default.

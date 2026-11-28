@@ -36,7 +36,9 @@ func TestCanonicalDBDriver(t *testing.T) {
 		" postgres ": "postgres",
 		"PostgreSQL": "postgres",
 		"mysql":      "mysql",
+		"MySQL":      "mysql",
 		" mssql ":    "mssql",
+		" MSSQL ":    "MSSQL",
 		"":           "",
 	} {
 		if got := CanonicalDBDriver(in); got != want {
@@ -100,6 +102,22 @@ func stubReadBuildInfo(t *testing.T, info *debug.BuildInfo) {
 	old := ReadBuildInfo
 	ReadBuildInfo = func() (*debug.BuildInfo, bool) { return info, info != nil }
 	t.Cleanup(func() { ReadBuildInfo = old })
+}
+
+func TestCliVersionReadsOnlyTheGofastrModule(t *testing.T) {
+	withCLIVersion(t, "dev")
+	for main, want := range map[string]string{
+		GofastrModule:                  "v0.87.0",
+		GofastrModule + "/cmd/gofastr": "v0.87.0",
+		GofastrModule + "X":            "dev",
+		GofastrModule + "/framework":   "dev",
+		"example.com/app":              "dev",
+	} {
+		stubReadBuildInfo(t, &debug.BuildInfo{Main: debug.Module{Path: main, Version: "v0.87.0"}})
+		if got := CliVersion(); got != want {
+			t.Errorf("CliVersion() with main module %q = %q, want %q", main, got, want)
+		}
+	}
 }
 
 func TestInstalledFrameworkVersionIsEmptyForADevBuild(t *testing.T) {

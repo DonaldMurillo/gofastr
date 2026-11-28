@@ -30,7 +30,7 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/project.TestFirstGoPackageNameSkipsIgnoredFilesAndReadsUnfinishedClause
   - id: one-db-alias-table
-    rule: CanonicalDBDriver trims and case-folds a database name, maps sqlite and sqlite3 to sqlite3 and postgres and postgresql to postgres, and returns any other name trimmed and otherwise unchanged.
+    rule: CanonicalDBDriver trims a database name and, compared case-folded, maps sqlite and sqlite3 to sqlite3, postgres and postgresql to postgres and mysql to mysql, and returns any other name trimmed with its case kept.
     enforced_by:
       - test: cmd/gofastr/internal/project.TestCanonicalDBDriver
   - id: only-require-names-the-version
