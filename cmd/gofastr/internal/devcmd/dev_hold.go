@@ -146,6 +146,10 @@ func (h *devHold) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
+		if !h.exposed && !loopback.HostAllowed(r.Host, h.hosts) {
+			http.Error(w, "gofastr dev: this address answers only its own host names", http.StatusForbidden)
+			return
+		}
 		h.serveLiveReload(w, r)
 		return
 	case holdScriptURL:
