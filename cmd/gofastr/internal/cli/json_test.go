@@ -144,3 +144,18 @@ func TestJSONWriterFailure(t *testing.T) {
 		t.Fatalf("second write = %v", err)
 	}
 }
+
+func TestJSONEscapesSupplementaryControlsAndCarriageReturns(t *testing.T) {
+	output := clitest.CovT_capStdout(t, func() {
+		if err := cli.EmitRawJSON([]byte("{\"tag\":\"a\U000E0041b\",\r\"n\":1}")); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if want := "{\"tag\":\"a\\udb40\\udc41b\", \"n\":1}\n"; output != want {
+		t.Fatalf("output = %q, want the tag rune as a surrogate pair and the carriage return as a space", output)
+	}
+	var document map[string]any
+	if err := json.Unmarshal([]byte(output), &document); err != nil || document["tag"] != "a\U000E0041b" {
+		t.Fatalf("document = %v, error = %v", document, err)
+	}
+}

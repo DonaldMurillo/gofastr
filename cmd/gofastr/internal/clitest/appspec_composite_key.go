@@ -1,8 +1,6 @@
 package clitest
 
-// CompositeScreensSpec gives a composite-key entity the screens an app
-// spec hangs off a record: a list with a create form, a detail screen
-// and an edit form, both at {id}.
+// CompositeScreensSpec gives a composite-key entity a list, a detail and an edit screen.
 const CompositeScreensSpec = `app:
   name: Roster
   module: example.com/roster

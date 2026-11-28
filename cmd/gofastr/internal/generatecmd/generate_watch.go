@@ -18,17 +18,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 )
 
-// runGenerateWatch polls the codegen config and its inputs for changes and
-// re-runs generateProject whenever their content shifts. Polling rather
-// than fsnotify so we stay dependency-free; debounced to ~250ms. It watches
-// derived generators only: re-running a scaffold generator on every save
-// would overwrite code the user owns.
-//
-// Usage:
-//
-//	gofastr generate --watch [--config=gofastr.settings.yml] [--out=...]
-//
-// Stop with Ctrl-C.
 func runGenerateWatch(args []string) {
 	options, err := appgen.ParseGenerateOptions(args)
 	if err != nil {
@@ -43,7 +32,6 @@ func runGenerateWatch(args []string) {
 		cli.Info("Watching generator inputs: Ctrl-C to stop.")
 	}
 
-	// Initial pass.
 	runOnce(args)
 
 	lastHash := hashGenerateInputs(options)
@@ -59,15 +47,13 @@ func runGenerateWatch(args []string) {
 		if asJSON {
 			cli.Fprintln(os.Stderr, "Detected codegen input change: regenerating...")
 		} else {
-			fmt.Printf("\033[2J\033[H") // clear terminal
+			fmt.Printf("\033[2J\033[H")
 			cli.Info("Detected codegen input change: regenerating...")
 		}
 		runOnce(args)
 	}
 }
 
-// runOnce invokes generateProject with the same args but stripping --watch
-// so it doesn't recurse.
 func runOnce(args []string) {
 	filtered := make([]string, 0, len(args))
 	for _, a := range args {
@@ -95,10 +81,6 @@ func runOnce(args []string) {
 	}
 }
 
-// hashEntitiesDir returns a content hash over every *.json file in dir,
-// sorted by name. Used to detect "did anything change since last tick".
-// Missing directory or read errors collapse to an empty hash (the watch
-// silently waits for the directory to appear / become readable).
 func hashEntitiesDir(dir string) string {
 	var paths []string
 	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
@@ -143,7 +125,6 @@ func hashGenerateInputs(options appgen.GenerateOptions) string {
 			hashFileInto(h, filepath.Join(moduleRoot, "go.mod"))
 		}
 	}
-	// The entity declarations feed entities/client, the CLI and the SDK.
 	hashEntityDecls(h, filepath.Join(projectDir, "entities"))
 	if err == nil && discovery.Found {
 		hashFileInto(h, discovery.Path)
@@ -159,11 +140,7 @@ func hashGenerateInputs(options appgen.GenerateOptions) string {
 				hashFileInto(h, projectRelativePath(projectDir, ext.Command[0]))
 			}
 		}
-		// A gofastr.settings.yml extension generator may still feed itself a
-		// json_file/json_dir source via the general codegen framework; hash
-		// those inputs so --watch reacts to them.
 		for _, gen := range discovery.Config.Codegen.Generators {
-			// A cli or sdk entry reads its OpenAPI document from config, not source.
 			if (gen.Name == "cli" || gen.Name == "sdk") && gen.Extension == "" {
 				if doc, ok := gen.Config["from_openapi"].(string); ok && strings.TrimSpace(doc) != "" {
 					hashFileInto(h, projectRelativePath(projectDir, strings.TrimSpace(doc)))
@@ -195,9 +172,6 @@ func projectRelativePath(projectDir, path string) string {
 	return filepath.Join(projectDir, path)
 }
 
-// hashEntityDecls hashes the Go files directly in the entities directory,
-// the declarations the derived clients are rebuilt from. Subdirectories
-// (entities/client among them) are output, not input, and are skipped.
 func hashEntityDecls(h interface{ Write([]byte) (int, error) }, dir string) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

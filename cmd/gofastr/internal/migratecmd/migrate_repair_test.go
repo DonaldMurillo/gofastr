@@ -1,6 +1,7 @@
 package migratecmd
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
+	fwmigrate "github.com/DonaldMurillo/gofastr/framework/migrate"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
@@ -177,5 +179,17 @@ func TestMigrateRepairNeedsAppSpec(t *testing.T) {
 	}
 	if !strings.Contains(out, "--from") {
 		t.Fatalf("missing --from error does not name the flag:\n%s", out)
+	}
+}
+
+func TestMigrateRepairFailsWhenTheRescanStillFinds(t *testing.T) {
+	bp, dbPath := repairT_setup(t)
+	repairT_legacyDB(t, dbPath)
+	real := repairStaleOwnerKeys
+	repairStaleOwnerKeys = func(context.Context, *sql.DB, []fwmigrate.StaleOwnerFK) error { return nil }
+	t.Cleanup(func() { repairStaleOwnerKeys = real })
+	out, code := repairT_run(t, "repair", "--from="+bp, "--db-url="+dbPath, "--apply")
+	if code != 1 || !strings.Contains(out, "re-scan still finds") {
+		t.Fatalf("a repair that changed nothing exited %d:\n%s", code, out)
 	}
 }

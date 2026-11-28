@@ -40,10 +40,13 @@ func TestPIIUnscopedFlagged(t *testing.T) {
 		t.Fatalf("want 1 finding, got %d: %+v", len(got), got)
 	}
 	msg := got[0].Message()
-	for _, want := range []string{"patients", "email", "ssn", "owner_field", "access", "multi_tenant"} {
+	for _, want := range []string{"patients", "email", "ssn", "owner_field", "access"} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("message %q should mention %q", msg, want)
 		}
+	}
+	if strings.Contains(msg, "multi_tenant") {
+		t.Fatalf("validate refuses multi_tenant for a generated app, so the message must not suggest it: %q", msg)
 	}
 	if strings.Contains(msg, "auth") {
 		t.Fatalf("enabling auth is not a remedy, message must not suggest it: %q", msg)

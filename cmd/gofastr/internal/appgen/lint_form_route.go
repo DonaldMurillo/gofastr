@@ -9,11 +9,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 )
 
-// postFormFinding is a custom_form that POSTs to a screen route.
 type postFormFinding struct {
-	Screen string // screen holding the form
-	Action string // the form's action as written
-	Route  string // the screen route it lands on
+	Screen string
+	Action string
+	Route  string
 }
 
 func (f postFormFinding) Message() string {
@@ -22,15 +21,7 @@ func (f postFormFinding) Message() string {
 		f.Screen, f.Action, f.Route)
 }
 
-// LintPostFormsOnScreens flags a custom_form whose method is POST (the
-// default) and whose action lands on one of the app's screen routes,
-// authored or synthesized. uihost answers every method but GET and HEAD
-// on a screen path with 405, and the runtime leaves a plain POST form
-// native, so the form never submits, JavaScript or not. A warning from
-// `gofastr validate` and `gofastr generate`, never an error:
-// `generate screen --from-a11y` emits exactly this shape on purpose,
-// for the author to point at a handler written after generation.
-// An action on another host, or one matching no screen, is left alone.
+// LintPostFormsOnScreens flags a POST custom_form whose action lands on one of the app's screen routes, which answer POST with 405.
 func LintPostFormsOnScreens(bp appspec.AppSpec) []postFormFinding {
 	bp = appspec.AppSpecSynthesizeCRUDScreens(bp)
 	router := appSpecScreenProbeRouter(bp)
@@ -61,9 +52,6 @@ func LintPostFormsOnScreens(bp appspec.AppSpec) []postFormFinding {
 	return out
 }
 
-// formActionPath resolves a form action against the route of the screen
-// it sits on, the way a browser resolves it against the page URL. ok is
-// false for an action on another host or one that does not parse.
 func formActionPath(route, action string) (string, bool) {
 	ref, err := url.Parse(action)
 	if err != nil || ref.Host != "" || ref.Opaque != "" || (ref.Scheme != "" && ref.Scheme != "http" && ref.Scheme != "https") {

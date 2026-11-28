@@ -1,0 +1,63 @@
+primitive: cli.project
+summary: What the gofastr command reads off the project it runs in, the enclosing go.mod and its gofastr requirement, build targets, Go package names and file names, shared by its subcommands.
+code:
+  - cmd/gofastr/internal/project/appspec.go
+  - cmd/gofastr/internal/project/build_target.go
+  - cmd/gofastr/internal/project/doc.go
+  - cmd/gofastr/internal/project/goenv.go
+  - cmd/gofastr/internal/project/gopackagename.go
+  - cmd/gofastr/internal/project/migrate_cmd.go
+  - cmd/gofastr/internal/project/upgrade.go
+  - cmd/gofastr/internal/project/validate.go
+  - cmd/gofastr/internal/project/winname.go
+docs:
+  - framework/docs/content/cli.md
+invariants:
+  - id: go-identifier-is-ascii
+    rule: IsGoIdentifier accepts only a non-empty ASCII name whose first rune is a letter or underscore and whose rest are letters, digits or underscores.
+    enforced_by:
+      - test: cmd/gofastr/internal/project.TestIsGoIdentifier
+  - id: package-name-never-runs-git
+    rule: PackageName runs go list with -buildvcs=false, so asking for a package name never runs git in the app's repository.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestDevGoCommandsRunNoGit
+  - id: build-target-is-main
+    rule: ValidateBuildTarget refuses a package whose name is not main, naming the name it found.
+    enforced_by:
+      - test: cmd/gofastr/internal/project.TestValidateBuildTargetWantsPackageMain
+  - id: package-clause-discovery
+    rule: FirstGoPackageName reads only the package clause of non-test .go files whose names start with neither a dot nor an underscore, so a syntax error after the clause does not hide the package.
+    enforced_by:
+      - test: cmd/gofastr/internal/project.TestFirstGoPackageNameSkipsIgnoredFilesAndReadsUnfinishedClause
+  - id: one-db-alias-table
+    rule: CanonicalDBDriver trims a database name and, compared case-folded, maps sqlite and sqlite3 to sqlite3, postgres and postgresql to postgres and mysql to mysql, and returns any other name trimmed with its case kept.
+    enforced_by:
+      - test: cmd/gofastr/internal/project.TestCanonicalDBDriver
+  - id: only-require-names-the-version
+    rule: GoModGofastrVersion takes the version from a require of the gofastr module only, never from an exclude, retract or replace line in either form, and reports a replace of the module as replaced.
+    enforced_by:
+      - test: cmd/gofastr/internal/project.TestGoModGofastrVersion
+      - test: cmd/gofastr/internal/project.TestGoModGofastrVersionReplaceDirective
+      - test: cmd/gofastr/internal/project.TestGoModGofastrVersionBlockReplace
+      - test: cmd/gofastr/internal/project.TestGoModVersionIgnoresExcludeBlock
+  - id: windows-file-names
+    rule: ValidWindowsFileName refuses any of <>:"/\|?*, a control byte, a trailing dot or space, and a reserved device stem (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM1-9, LPT1-9 and their superscript forms) before any extension.
+    enforced_by:
+      - test: cmd/gofastr/internal/project.TestValidWindowsFileName
+decisions:
+  - id: parse-go-mod-with-modfile
+    date: 2026-11-28
+    status: accepted
+    decision: go.mod is read with golang.org/x/mod/modfile, the go command's own grammar.
+    rejected:
+      - option: Scan go.mod lines for the module path.
+        why: A gofastr line inside an exclude, retract or replace block reads as a require.
+    upholds: [only-require-names-the-version]
+  - id: one-alias-table-for-init-and-migrate
+    date: 2026-11-28
+    status: accepted
+    decision: gofastr init --db and gofastr migrate --db/--driver share CanonicalDBDriver, and each caller decides what an unmapped name means (init refuses it, migrate checks it against the registered drivers).
+    rejected:
+      - option: Each subcommand keeps its own spellings.
+        why: The two commands accepted different names for one database.
+    upholds: [one-db-alias-table]

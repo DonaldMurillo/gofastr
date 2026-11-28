@@ -1,0 +1,29 @@
+primitive: cli.json
+summary: The CLI's --json mode in cmd/gofastr/internal/cli - a session that reserves stdout for exactly one JSON document and sends every other line to stderr.
+code:
+  - cmd/gofastr/internal/cli/json.go
+docs:
+  - framework/docs/content/cli.md
+invariants:
+  - id: one-document-on-reserved-stdout
+    rule: While a session is open os.Stdout is stderr, a nested BeginJSON shares the outer session and its end is a no-op, and the reserved stdout receives one document; a second EmitJSON or EmitRawJSON is refused without writing.
+    enforced_by:
+      - test: cmd/gofastr/internal/cli.TestJSONSessionOwnsStdout
+  - id: validated-before-writing
+    rule: EmitRawJSON writes nothing for input that is not exactly one JSON value, trims the whitespace around a valid one, and never modifies the slice it was given.
+    enforced_by:
+      - test: cmd/gofastr/internal/cli.TestJSONValidationBeforeWriting
+  - id: terminal-runes-escaped
+    rule: The written document carries every textsafe.IsUnsafe rune but newline and tab as a \u escape, a surrogate pair above U+FFFF, and a carriage return as a space, so it decodes to the same value and moves no terminal.
+    enforced_by:
+      - test: cmd/gofastr/internal/cli.TestJSONSessionOwnsStdout
+      - test: cmd/gofastr/internal/cli.TestJSONEscapesSupplementaryControlsAndCarriageReturns
+  - id: write-consumes-the-session
+    rule: The first write attempt in a session uses up its one document even when the writer fails, so a retry is refused rather than appended.
+    enforced_by:
+      - test: cmd/gofastr/internal/cli.TestJSONWriterFailure
+  - id: end-restores-stdout
+    rule: The end BeginJSON returns puts back the stdout it reserved, also when the command leaves through OsExit under a deferred end.
+    enforced_by:
+      - test: cmd/gofastr/internal/cli.TestJSONSessionRestoresOnExit
+      - test: cmd/gofastr/internal/cli.TestJSONSessionOwnsStdout

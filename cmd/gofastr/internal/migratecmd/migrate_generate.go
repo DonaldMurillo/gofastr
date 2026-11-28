@@ -14,16 +14,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// runMigrateGenerate turns a change to the entity declarations into a reviewable,
-// reversible, versioned migration file: the offline declarative workflow.
-//
-//	gofastr migrate generate <name> --from=<gofastr.yml> [--migrations=dir]
-//	                                [--snapshot=path] [--driver=name]
-//
-// It diffs the app spec's entities against a committed schema snapshot (no
-// database needed), writes `migrations/NNNN_<name>.sql` with Up and Down
-// sections, and updates the snapshot. Review the file, commit it, then
-// `gofastr migrate up`.
 func runMigrateGenerate(args []string) {
 	opts := parseMigrateGenOptions(args)
 	if opts.name == "" {
@@ -48,9 +38,6 @@ func runMigrateGenerate(args []string) {
 		cli.Fail("Failed to load app spec %s: %v", opts.from, err)
 		cli.OsExit(1)
 	}
-	// With no --db/--driver the app spec's own database decides: a spec
-	// that declares Postgres got SQLite DDL (DATETIME, BOOLEAN DEFAULT 1),
-	// which its database refuses on the first `migrate up`.
 	if !opts.driverSet {
 		if d := specDriver(bp); d != "" {
 			dialect, err = generateDialect(d)
@@ -72,10 +59,6 @@ func runMigrateGenerate(args []string) {
 		cli.OsExit(1)
 	}
 
-	// Both generation paths, this CLI and a host binary calling
-	// framework.GenerateMigrationFile with its own compiled registry, go
-	// through one implementation, so the file naming, directive layout and
-	// snapshot format cannot drift apart.
 	path, err := framework.GenerateMigrationFile(
 		framework.MigrationPlan{Registry: reg},
 		opts.name,
@@ -109,19 +92,6 @@ func runMigrateGenerate(args []string) {
 	}
 }
 
-// destructiveDrops names every DROP TABLE and DROP COLUMN a rendered
-// migration's Up section runs. A drop can lose rows the Down cannot restore,
-// and an undeclared rename generates as DROP + CREATE, so the reviewer
-// gets one loud line naming each drop before the file is committed. Only
-// the Up counts: the Down of an additive migration drops what it added,
-// which is the rollback, not a loss. Statements are split with string
-// literals, quoted identifiers and comments respected, so a DEFAULT
-// carrying the words DROP TABLE is not a drop.
-//
-// A SQLite rebuild drops a column with no DROP COLUMN statement: the new
-// table leaves it out. The generator writes one comment line above the
-// rebuild for each such column (rebuildDropNote), and that line, the one
-// comment read here, is named like the statement it stands in for.
 func destructiveDrops(content string) []string {
 	up, ok := upSection(content)
 	if !ok {
@@ -145,8 +115,6 @@ func destructiveDrops(content string) []string {
 	return drops
 }
 
-// upSection returns the body between the "-- +migrate Up" directive and
-// the next directive (or EOF), the statements `migrate up` runs.
 func upSection(content string) (string, bool) {
 	var b strings.Builder
 	in := false
@@ -166,10 +134,6 @@ func upSection(content string) (string, bool) {
 	return b.String(), in
 }
 
-// walkSQL splits SQL on ";" outside single-quoted strings, double-quoted
-// identifiers, dollar-quoted bodies and comments, and hands each statement
-// to stmt in order. Each "--" comment outside those goes to lineComment,
-// whole, as it is met.
 func walkSQL(sql string, stmt, lineComment func(string)) {
 	var cur []byte
 	var quote byte
@@ -250,23 +214,15 @@ func walkSQL(sql string, stmt, lineComment func(string)) {
 	}
 }
 
-// identPart and qualName match the spellings query.QuoteKeyword emits:
-// a part is bare unless it is a keyword, and a schema-qualified table
-// (`archive.posts`, `posts."order"`) is parts joined by dots.
 const (
 	identPart = `(?:\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_$]*)`
 	qualName  = identPart + `(?:\.` + identPart + `)*`
 )
 
 var (
-	dollarQuoteRe = regexp.MustCompile(`^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$`)
-	dropTableRe   = regexp.MustCompile(`(?i)^DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(` + qualName + `)`)
-	dropColumnRe  = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + qualName + `)\s+DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?(` + identPart + `)`)
-	// rebuildDropNote matches the comment framework/migrate writes above a
-	// SQLite rebuild for each column the rebuild leaves out
-	// ("-- DROP COLUMN posts.slug by table rebuild: …"). The table is
-	// greedy and the column one part, so a schema-qualified table keeps
-	// its dots.
+	dollarQuoteRe   = regexp.MustCompile(`^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$`)
+	dropTableRe     = regexp.MustCompile(`(?i)^DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(` + qualName + `)`)
+	dropColumnRe    = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + qualName + `)\s+DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?(` + identPart + `)`)
 	rebuildDropNote = regexp.MustCompile(`^-- DROP COLUMN (` + qualName + `)\.(` + identPart + `) by table rebuild`)
 )
 
@@ -286,8 +242,6 @@ func dropColumnTarget(stmt string) (table, column string, ok bool) {
 	return unquoteIdent(m[1]), unquoteIdent(m[2]), true
 }
 
-// unquoteIdent strips each part's keyword quotes, keeping the dots of a
-// schema-qualified name.
 func unquoteIdent(s string) string {
 	parts := strings.Split(s, ".")
 	for i, p := range parts {
@@ -296,10 +250,6 @@ func unquoteIdent(s string) string {
 	return strings.Join(parts, ".")
 }
 
-// generateDialect is the DDL dialect for a --db/--driver value. The
-// generator writes SQLite and Postgres only; anything else (mysql, or a
-// typo) fell back to SQLite in silence and committed DDL for an engine
-// nobody named.
 func generateDialect(driver string) (framework.Dialect, error) {
 	switch project.CanonicalDBDriver(driver) {
 	case "sqlite3":
@@ -310,8 +260,6 @@ func generateDialect(driver string) (framework.Dialect, error) {
 	return "", fmt.Errorf("migrate generate writes SQLite or Postgres DDL; --db=%q is neither (use sqlite or postgres)", driver)
 }
 
-// registerSpecEntities defines and registers the app spec's entities in
-// declaration order, qualifying a failure with the entity's name.
 func registerSpecEntities(reg *framework.Registry, decls []framework.EntityDeclaration) error {
 	for _, decl := range decls {
 		cfg, err := decl.Config()
@@ -325,10 +273,6 @@ func registerSpecEntities(reg *framework.Registry, decls []framework.EntityDecla
 	return nil
 }
 
-// specDriver is the driver an app spec names for its database: its
-// app.db.driver, or, when that is left out, the engine a postgres:// or
-// postgresql:// app.db.url points at (the rule `migrate up` applies to
-// its own URL). "" leaves the default.
 func specDriver(bp appspec.AppSpec) string {
 	if d := strings.TrimSpace(bp.App.DBDriver); d != "" {
 		return project.CanonicalDBDriver(d)
@@ -369,7 +313,6 @@ func parseMigrateGenOptions(args []string) migrateGenOptions {
 		case strings.HasPrefix(arg, "--group="):
 			opts.group = strings.TrimPrefix(arg, "--group=")
 		case strings.HasPrefix(arg, "--"):
-			// unknown flag: ignore
 		default:
 			if opts.name == "" {
 				opts.name = arg

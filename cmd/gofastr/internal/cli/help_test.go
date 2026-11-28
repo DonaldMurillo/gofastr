@@ -32,3 +32,21 @@ func TestHelpFlagBoundaries(t *testing.T) {
 		})
 	}
 }
+
+func TestFlagBeforeTerminator(t *testing.T) {
+	for _, fixture := range []struct {
+		args []string
+		want bool
+	}{
+		{args: nil},
+		{args: []string{"--json"}, want: true},
+		{args: []string{"query", "--json", "--", "x"}, want: true},
+		{args: []string{"query", "--", "--json"}},
+		{args: []string{"query", "--json=true"}},
+		{args: []string{"query", "--jsonish"}},
+	} {
+		if got := cli.HasFlagBeforeTerminator(fixture.args, "--json"); got != fixture.want {
+			t.Errorf("HasFlagBeforeTerminator(%q, --json) = %v, want %v", fixture.args, got, fixture.want)
+		}
+	}
+}

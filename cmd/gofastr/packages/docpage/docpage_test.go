@@ -36,7 +36,7 @@ func TestRenderPageRegions(t *testing.T) {
 	html := string(docpage.Render(full()))
 	for _, want := range []string{
 		// The owned root and its three regions.
-		`data-cui-scope="docpage"`, `class="nav"`, `class="article"`, `class="toc"`,
+		`data-cui-scope="docpage"`, `class="nav"`, `<article class="article"`, `class="toc"`,
 		// The crumbs sit inside the article, above the body.
 		`class="crumbs"`, "Getting started",
 		// The TOC content lands in its rail.
@@ -157,5 +157,20 @@ func TestPagerSpeaksTheLocale(t *testing.T) {
 	en := string(docpage.Pager(docpage.PagerConfig{PrevHref: "/a", PrevLabel: "A"}))
 	if !strings.Contains(en, `aria-label="More articles"`) || !strings.Contains(en, "Previous") {
 		t.Errorf("a pager with no Ctx should read English:\n%s", en)
+	}
+}
+
+func TestPagerWithoutCtxUsesTheDefaultTranslator(t *testing.T) {
+	cat := i18n.NewMapCatalog()
+	cat.Set("es", "ui.pagination.previous", i18n.Message{Text: "Anterior"})
+	cat.Set("es", "ui.nav.moreArticles", i18n.Message{Text: "Más artículos"})
+	prev := i18n.Default()
+	i18n.SetDefault(i18n.NewTranslator(cat, "es"))
+	t.Cleanup(func() { i18n.SetDefault(prev) })
+	got := string(docpage.Pager(docpage.PagerConfig{PrevHref: "/a", PrevLabel: "A"}))
+	for _, want := range []string{"Anterior", `aria-label="Más artículos"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("a pager with no Ctx ignores the default translator, lacks %q:\n%s", want, got)
+		}
 	}
 }

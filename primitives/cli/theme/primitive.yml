@@ -1,0 +1,82 @@
+primitive: cli.theme
+summary: gofastr theme and theme init - write a starter theme.go the project owns, emitted from the framework's default theme by the same Go emitter theme edit writes back with; theme edit is its child.
+code:
+  - cmd/gofastr/internal/themecmd/theme.go
+  - cmd/gofastr/internal/themecmd/theme_edit_writeback.go
+  - cmd/gofastr/internal/themecmd/doc.go
+docs:
+  - framework/docs/content/theming.md
+  - framework/docs/content/cli.md
+invariants:
+  - id: starter-is-the-default-theme
+    rule: theme init writes framework/ui/theme.Default through the write-back emitter, named app with no component options, under a header that quotes the primary it sets, and the file compiles and boots.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestThemeStarterBoots
+      - test: cmd/gofastr/internal/themecmd.TestThemeStarterIsTheAppsOwn
+      - test: cmd/gofastr/internal/themecmd.TestThemeStarterDocQuotesPrimary
+      - test: cmd/gofastr/internal/themecmd.TestThemeStarterDarkColorsMatchCanonical
+      - test: cmd/gofastr/internal/themecmd.TestRunThemeInitScaffoldCompiles
+  - id: init-never-clobbers
+    rule: theme init refuses an existing --out file, a dangling link included, unless --force is given, and --force replaces it whole through a temporary file.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestRunThemeInitWritesFile
+      - test: cmd/gofastr/internal/themecmd.TestThemeInitForceReplacesWhole
+  - id: file-joins-its-package
+    rule: The theme file takes the package of the Go files already in its directory, and a new directory's sanitized name, always a legal identifier.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestThemeInitAdoptsDirPackage
+      - test: cmd/gofastr/internal/themecmd.TestThemeInitDefaultIsPackageTheme
+      - test: cmd/gofastr/internal/themecmd.TestPackageNameForPath
+      - test: cmd/gofastr/internal/themecmd.TestPackageNameForPathIsAlwaysALegalIdentifier
+  - id: writes-stay-in-the-project
+    rule: A theme file inside the working directory is written through an os.Root on it, so a theme/ or theme.go linked out of the checkout is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestThemeInitRefusesALinkOutOfTheProject
+      - test: cmd/gofastr/internal/themecmd.TestThemeInitRefusesALinkBehindAnAbsoluteOutInsideTheProject
+      - test: cmd/gofastr/internal/themecmd.TestThemeWritesStayInsideTheProject
+  - id: emitted-values-stay-data
+    rule: The emitter writes every theme value as a Go double-quoted literal, map keys sorted, so no value can end its literal and the output is byte-stable.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditWritebackInjectionSafety
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditWritebackProducesParseableGo
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditWritebackIsByteStable
+  - id: emitter-keeps-every-token
+    rule: The emitter writes every token set of style.Theme, the dark palette, component options, knobs and type scale, leaves unset strokes, leadings, trackings and opacities unset, and writes durations as literals that round-trip exactly; token names come from AutoFillNames in the emitted init.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestWritebackEmitsEveryTokenSet
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditWritebackRoundTripsDarkPalette
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditWritebackKeepsComponentOptions
+      - test: cmd/gofastr/internal/themecmd.TestWritebackKeepsTypeScaleAndKnobs
+      - test: cmd/gofastr/internal/themecmd.TestDurationLiteral
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditWritebackBoots
+  - id: usage-and-output
+    rule: A bare gofastr theme prints its usage to stderr and exits 2, and every path the commands print is scrubbed for the terminal.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestBareThemePrintsUsageToStderrAndExitsTwo
+      - test: cmd/gofastr/internal/themecmd.TestThemeCommandsPrintRepoPathsInert
+      - test: cmd/gofastr/internal/themecmd.TestThemeInitTakesSpaceSeparatedOut
+decisions:
+  - id: one-emitter
+    date: 2026-11-28
+    status: accepted
+    decision: theme init and theme edit write the file through one emitter that walks every field of style.Theme.
+    rejected:
+      - option: A hand-kept starter template.
+        why: It omitted required fields (Colors.CodeSurface, the overlay, toast and dropdown durations, the easings) and a fresh scaffold panicked at boot.
+    upholds: [starter-is-the-default-theme, emitter-keeps-every-token]
+  - id: names-from-autofill
+    date: 2026-11-28
+    status: accepted
+    decision: The emitted file leaves every token Name out and ends with an init that calls style.AutoFillNames.
+    rejected:
+      - option: Emit each Name.
+        why: It repeats what AutoFillNames derives from the field path and gives a value one more place to reach.
+    upholds: [emitted-values-stay-data]
+  - id: starter-declares-no-components
+    date: 2026-11-28
+    status: accepted
+    decision: theme init's starter sets Components to nil, so the file declares no component options.
+    rejected:
+      - option: Emit the framework's default component options.
+        why: The complete default set is compiled into :root anyway, so a host declares Components only to deviate from it, and a copied set would hide which options the app chose.
+    upholds: [starter-is-the-default-theme]

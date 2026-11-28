@@ -2,7 +2,10 @@ package appgen
 
 import (
 	"errors"
+	"go/parser"
+	"go/token"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -115,4 +118,32 @@ func TestPackageCopyUndo(t *testing.T) {
 	if entries, err := os.ReadDir(filepath.Join(dir, "mine")); err != nil || len(entries) != 0 {
 		t.Errorf("undo removed the target that existed, or left files: %v %v", entries, err)
 	}
+}
+
+func TestUnmountHookImportCannotCollide(t *testing.T) {
+	tree := UnmountTree{Source: project.GofastrModule + "/battery/demo", Version: "v0.91.0", Files: []PackageFile{
+		{Name: "demo.go", Content: "package demo\n\nvar unmounted = 1\n"},
+	}}
+	files, err := BuildUnmountCopy(tree, "example.com/app/demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		if f.Name != UnmountHookFile {
+			continue
+		}
+		hook, err := parser.ParseFile(token.NewFileSet(), f.Name, f.Content, parser.ImportsOnly)
+		if err != nil {
+			t.Fatal(err)
+		}
+		local := path.Base(UnmountRegistryImport)
+		if hook.Imports[0].Name != nil {
+			local = hook.Imports[0].Name.Name
+		}
+		if local == "unmounted" {
+			t.Fatalf("the hook imports the registry as %q, a name the package declares:\n%s", local, f.Content)
+		}
+		return
+	}
+	t.Fatal("no root hook file")
 }

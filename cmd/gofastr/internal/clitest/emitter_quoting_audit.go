@@ -7,8 +7,7 @@ import (
 	"strings"
 )
 
-// AuditInjectedIdent reports whether src contains the marker as a Go
-// identifier (the injection oracle), and whether it parses at all.
+// AuditInjectedIdent reports whether src parses and declares an identifier containing PWNX.
 func AuditInjectedIdent(name, src string) (injected bool, parseErr error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, name, src, parser.AllErrors)

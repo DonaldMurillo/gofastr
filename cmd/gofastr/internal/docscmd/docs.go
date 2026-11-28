@@ -14,23 +14,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/textcut"
 )
 
-// RunDocs implements `gofastr docs`. Four modes:
-//
-//	gofastr docs                    list every topic with one-line summaries
-//	gofastr docs <topic>            print the topic's full markdown
-//	gofastr docs --grep <term>      search across every topic
-//	gofastr docs serve              browse the docs site on localhost
-//
-// The list, topic and grep modes read docs embedded into the binary at
-// build time, so they always speak for the version of the framework you
-// have installed, with no GitHub or module-cache fetch. By default,
-// serve downloads and caches a static export of a release's site.
+// RunDocs implements `gofastr docs`: list, read or grep the embedded docs, or
+// serve the docs site.
 func RunDocs(args []string) {
 	if len(args) > 0 && args[0] == "serve" {
 		runDocsServe(args[1:])
 		return
 	}
-	// --grep / -g, as `--grep <term>` or `--grep=<term>`
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		joined := false
@@ -45,8 +35,6 @@ func RunDocs(args []string) {
 			if i+1 < len(args) {
 				term = args[i+1]
 			}
-			// `--grep --serve` would search for "--serve": a term that
-			// starts with a dash is written --grep=<term>.
 			if !joined && cli.IsFlagToken(term) {
 				cli.Fprintf(os.Stderr, "docs: %v\n", cli.NeedsValue(arg))
 				cli.OsExit(2)
@@ -101,7 +89,6 @@ func runDocsList() {
 		if summary == "" {
 			summary = t.Title
 		}
-		// Trim long summaries to fit ~120-col terminals.
 		const lineCap = 100
 		summary = textcut.Ellipsis(summary, lineCap)
 		cli.Printf("  "+cli.Green("%s")+"%s  %s\n",
@@ -113,9 +100,6 @@ func runDocsList() {
 	fmt.Printf("\n%s `gofastr docs --grep <term>` to search across every topic.\n", cli.Dim("→"))
 }
 
-// grepHitCap is how many hits `docs --grep` prints. It asks for one
-// more, so it can say when the list was cut rather than print the cap
-// as the total.
 const grepHitCap = 50
 
 func runDocsGrep(term string) {
@@ -144,7 +128,6 @@ func runDocsGrep(term string) {
 		if h.Heading != "" {
 			cli.Printf("  "+cli.Dim("L%d")+"    "+cli.Dim("%s")+"\n", h.Line, h.Heading)
 		}
-		// highlight scrubs the excerpt before it bolds the matches in it.
 		fmt.Print("  " + cli.Green("L"+strconv.Itoa(h.Line)) + "  " + highlight(h.Excerpt, term) + "\n")
 	}
 }
@@ -172,18 +155,6 @@ func pluralS(n int) string {
 	return "es"
 }
 
-// highlight wraps each case-insensitive occurrence of `term` in `s`
-// with ANSI bold so the matching word stands out in --grep output. The
-// text is scrubbed (textsafe.ScrubTerminal) before the bold goes on,
-// so the caller prints the result raw and keeps the colour.
-//
-// It scans s directly, rune by rune, rather than locating the match in
-// strings.ToLower(s) and slicing the original. strings.ToLower is not
-// length-preserving. U+0130 'İ' lowers to a single-byte 'i', shrinking
-// 2 bytes to 1, so the two strings' byte offsets diverge and the old
-// `s[i+idx : i+idx+len(term)]` either sliced mid-rune (emitting invalid
-// UTF-8) or ran past the end. `gofastr docs --grep 'entİty'` panicked
-// with "slice bounds out of range".
 func highlight(s, term string) string {
 	if term == "" {
 		return textsafe.ScrubTerminal(s)
@@ -202,10 +173,6 @@ func highlight(s, term string) string {
 	return b.String()
 }
 
-// foldPrefixLen reports the byte length of s's leading run of runes that
-// case-folds equal to term, and whether such a prefix exists. Because it
-// advances by whole runes in both strings, the returned length is always a
-// valid slice bound into s.
 func foldPrefixLen(s, term string) (int, bool) {
 	i := 0
 	for _, tr := range term {

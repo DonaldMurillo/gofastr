@@ -8,9 +8,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/mediatype"
 )
 
-// renderCLISelfClient emits internal/client/client.gen.go for --from-openapi
-// mode: the shared OpenAPI client, plus the batch envelope types the
-// shared CLI scaffolding (parseGlobals, apiFail, custom.go) references.
 func renderCLISelfClient(spec cliSpec) string {
 	return renderOpenAPIClient(oaClientFile{
 		PackageDoc: `// Package client is the ` + spec.Binary + ` CLI's self-contained HTTP
@@ -23,8 +20,6 @@ func renderCLISelfClient(spec cliSpec) string {
 	})
 }
 
-// renderCLIOpsFile emits operations.go: one command per OpenAPI
-// operation plus the shared plumbing they need.
 func renderCLIOpsFile(spec cliSpec) string {
 	needsStrconv := false
 	needsFmt := false
@@ -54,8 +49,6 @@ func renderCLIOpsFile(spec cliSpec) string {
 		}
 	}
 
-	// An optional binary body declares an io.Reader that stays nil when
-	// --file is left out; it builds nothing, so it needs no bytes.
 	needsBody, needsIO := false, false
 	for _, op := range spec.Ops {
 		if op.BodyKind == "json" || op.BodyKind == "raw" {
@@ -72,7 +65,7 @@ func renderCLIOpsFile(spec cliSpec) string {
 		sb.WriteString("\t\"bytes\"\n")
 	}
 	if slices.ContainsFunc(spec.Ops, func(op cliOp) bool { return op.BodyKind == "json" }) {
-		sb.WriteString("\t\"encoding/json\"\n") // a JSON body checks --json and marshals its field flags
+		sb.WriteString("\t\"encoding/json\"\n")
 	}
 	if needsFlag {
 		sb.WriteString("\t\"flag\"\n")
@@ -138,9 +131,6 @@ func operationCommands() []command {
 	return sb.String()
 }
 
-// opNeedsVisited reports whether a runner consults the set-flags map:
-// any required parameter or body field, or any non-repeated query or
-// header parameter (sent only when the caller set it).
 func opNeedsVisited(op cliOp) bool {
 	for _, p := range op.PathParams {
 		_ = p
@@ -151,12 +141,9 @@ func opNeedsVisited(op cliOp) bool {
 			return true
 		}
 	}
-	// A JSON body always consults visited: the body-was-given check
-	// walks the field flags.
 	return op.BodyKind == "json"
 }
 
-// flagDecl emits one parameter's flag declaration into the runner.
 func flagDecl(sb *strings.Builder, varName string, p cliOpParam, usage string) {
 	if p.Repeated {
 		fmt.Fprintf(sb, "\tvar %s multiFlag\n\tfs.Var(&%s, %q, %q)\n", varName, varName, p.Flag, usage+" (repeatable)")
@@ -174,8 +161,6 @@ func flagDecl(sb *strings.Builder, varName string, p cliOpParam, usage string) {
 	}
 }
 
-// paramString emits the expression converting a declared flag var back
-// to the string the wire wants.
 func paramString(varName string, p cliOpParam) string {
 	switch p.GoType {
 	case "int":
@@ -240,7 +225,6 @@ func renderCLIOpRunner(sb *strings.Builder, spec cliSpec, op cliOp) {
 		sb.WriteString("\tvisited := map[string]bool{}\n\tfs.Visit(func(f *flag.Flag) { visited[f.Name] = true })\n")
 	}
 
-	// Required checks: path params always, plus flagged query/header/body.
 	var required []cliOpParam
 	required = append(required, op.PathParams...)
 	for _, p := range op.QueryParams {
@@ -262,9 +246,6 @@ func renderCLIOpRunner(sb *strings.Builder, spec cliSpec, op cliOp) {
 			flags = append(flags, fmt.Sprintf("%q", f.Flag))
 		}
 		fmt.Fprintf(sb, "\tfieldSet := false\n\tfor _, fl := range []string{%s} {\n\t\tif visited[fl] {\n\t\t\tfieldSet = true\n\t\t}\n\t}\n", strings.Join(flags, ", "))
-		// The schema's required properties bind the object the field
-		// flags build. An optional body may be left out entirely, so they
-		// apply only once a field flag starts one.
 		built := ""
 		if !op.BodyRequired {
 			built = " && fieldSet"
@@ -285,20 +266,12 @@ func renderCLIOpRunner(sb *strings.Builder, spec cliSpec, op cliOp) {
 		return v, paramString(v, p), fmt.Sprintf("visited[%q]", p.Flag)
 	})
 
-	// An operation whose security names another scheme sends the token
-	// under that scheme's header: it rides in hdr, and the copy of the
-	// client it calls through holds no token, so DoRaw adds no default.
 	caller := "g.client"
 	if op.AuthHeader != "" {
 		caller = "authed"
 		fmt.Fprintf(sb, "\tauthed := *g.client\n\tif authed.Token != \"\" {\n\t\thdr.Set(%q, %q+authed.Token)\n\t\tauthed.Token = \"\"\n\t}\n", op.AuthHeader, op.AuthPrefix)
 	}
 
-	// Body + request. Bodies are optional unless the spec marks the
-	// requestBody required: with no --json and no field flags, nothing
-	// is sent. Body construction is runner-local (NOT buildBody, whose
-	// exclusivity check would count this runner's query and header
-	// flags as body-field flags and refuse valid --json invocations).
 	switch op.BodyKind {
 	case "json":
 		sb.WriteString("\tif *jsonF != \"\" && fieldSet {\n\t\tfmt.Fprintln(os.Stderr, \"--json and body field flags are mutually exclusive\")\n\t\treturn 2\n\t}\n")
@@ -326,8 +299,6 @@ func renderCLIOpRunner(sb *strings.Builder, spec cliSpec, op cliOp) {
 			fmt.Fprintf(sb, "\tdata, respCT, err := %s.DoRaw(g.ctx, %q, path, q, hdr, %q, f)\n", caller, op.Method, op.BodyContentType)
 			break
 		}
-		// rdr stays a nil interface without --file: a nil *os.File in it
-		// would read as a body.
 		fmt.Fprintf(sb, "\tct := \"\"\n\tvar rdr io.Reader\n\tif *fileF != \"\" {\n\t\tf, err := openBodyFile(*fileF)\n\t\tif err != nil {\n\t\t\treturn apiFail(err)\n\t\t}\n\t\tif f != os.Stdin {\n\t\t\tdefer f.Close()\n\t\t}\n\t\tct, rdr = %q, f\n\t}\n", op.BodyContentType)
 		fmt.Fprintf(sb, "\tdata, respCT, err := %s.DoRaw(g.ctx, %q, path, q, hdr, ct, rdr)\n", caller, op.Method)
 	default:

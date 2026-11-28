@@ -1,0 +1,41 @@
+primitive: cli.chrome.docpage
+summary: docpage, the app's help/docs page - article nav, article with crumbs and a previous/next pager, and table of contents - whose regions are whatever the app passes in, outlets included, drawn with its own owned sheet.
+code:
+  - cmd/gofastr/packages/docpage/
+docs:
+  - framework/docs/content/ui-composition-recipes.md
+invariants:
+  - id: regions-in-order
+    rule: Render draws one root with data-cui-scope="docpage" holding the nav rail, an article element with the crumbs above Body and then Pager, and the contents rail, in that order.
+    enforced_by:
+      - test: cmd/gofastr/packages/docpage.TestRenderPageRegions
+  - id: empty-rail-shapes
+    rule: Render wraps Nav and Toc in their rail element and nothing else, so an unset region is a rail with no child and an empty outlet is a rail whose only child is empty, the two shapes the sheet collapses.
+    enforced_by:
+      - test: cmd/gofastr/packages/docpage.TestRenderTocRegionCollapse
+      - test: cmd/gofastr/packages/docpage.TestRenderNavRegionEmpty
+  - id: empty-means-only-child-empty
+    rule: docpage.style.css never selects a rail's emptiness with a bare "> :empty", which also matches a rail holding content beside an empty outlet, and uses "> :only-child:empty".
+    enforced_by:
+      - test: cmd/gofastr/packages/docpage.TestEmptyRailSelectorsUseOnlyChild
+  - id: pager-cards
+    rule: Pager draws nothing when both hrefs are empty, otherwise a nav labelled by i18nui's NavMoreArticles holding a card per href, the next one marked as such, with PrevDir and NextDir defaulting to i18nui's Previous and Next.
+    enforced_by:
+      - test: cmd/gofastr/packages/docpage.TestPager
+  - id: pager-follows-the-locale
+    rule: The pager's nav label and direction defaults resolve through i18nui in PagerConfig.Ctx's language, and when Ctx is nil through the app's default translator, else in English.
+    enforced_by:
+      - test: cmd/gofastr/packages/docpage.TestPagerSpeaksTheLocale
+      - test: cmd/gofastr/packages/docpage.TestPagerWithoutCtxUsesTheDefaultTranslator
+  - id: rails-collapse-when-empty
+    rule: In Chrome the page draws three columns at lg and up, and a rail that is unset or holds only an empty outlet collapses so the article takes its column, while a rail holding content beside an empty outlet stays.
+    enforced_by:
+      - test: cmd/gofastr/packages/docpage.TestDocPageLayoutPromises
+  - id: no-rails-is-one-centred-column
+    rule: In Chrome a page with neither rail draws the article centred between equal gaps and no wider than --size-prose-measure.
+    enforced_by:
+      - test: cmd/gofastr/packages/docpage.TestDocPageLayoutPromises
+  - id: narrow-widths-drop-columns
+    rule: In Chrome the contents rail is gone below lg with the nav still beside the article, and on a phone the page is one column, the nav above the article and the pager cards stacked, with no sideways scroll.
+    enforced_by:
+      - test: cmd/gofastr/packages/docpage.TestDocPageLayoutPromises

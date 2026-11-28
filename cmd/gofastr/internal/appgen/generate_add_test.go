@@ -196,6 +196,38 @@ func TestOverwriteErrorNamesAddPath(t *testing.T) {
 	}
 }
 
+func TestGenerateRefusesOverwritingSettingsEndpoints(t *testing.T) {
+	spec := addTestAppSpec("example.com/addtest") + `endpoints:
+  - name: publish_post
+    entity: posts
+    method: POST
+    path: "{id}/publish"
+    handler: entities/posts_endpoints.go#PublishPost
+`
+	dir, bp := clitest.AddSetup(t, spec)
+	existing := `endpoints:
+  - name: archive_post
+    entity: posts
+    method: POST
+    path: "{id}/archive"
+    handler: entities/posts_endpoints.go#ArchivePost
+`
+	clitest.WriteTestFile(t, filepath.Join(dir, "gofastr.settings.yml"), existing)
+	var code int
+	out := clitest.CovT_capOutput(t, func() {
+		code = clitest.CovT_capExit(t, func() { GenerateFromAppSpec(GenerateOptions{Spec: bp}) })
+	})
+	if code != 1 {
+		t.Fatalf("want exit 1 when the settings file holds other endpoints, got %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "gofastr.settings.yml (its endpoints section)") {
+		t.Errorf("conflict error does not name the endpoints section:\n%s", out)
+	}
+	if got := clitest.ReadFile(t, dir, "gofastr.settings.yml"); got != existing {
+		t.Errorf("settings file changed:\n%s", got)
+	}
+}
+
 // ---- Test 2: --add into empty dir ≡ plain generate ----
 
 func TestAddEmptyDirMatchesPlainGenerate(t *testing.T) {

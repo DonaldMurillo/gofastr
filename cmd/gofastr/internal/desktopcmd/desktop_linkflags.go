@@ -8,13 +8,8 @@ import (
 	"unicode/utf8"
 )
 
-// builtLaunchArgsVar is the battery/desktop variable --launch-args
-// stamps; desktop.LaunchArgs reads it.
 const builtLaunchArgsVar = "github.com/DonaldMurillo/gofastr/battery/desktop.builtLaunchArgs"
 
-// builtLaunchSchemeVar carries --scheme beside --launch-args, so
-// desktop.LaunchArgs recognises a deep link passed as an argument on
-// every platform (macOS builds keep the scheme itself in Info.plist).
 const builtLaunchSchemeVar = "github.com/DonaldMurillo/gofastr/battery/desktop.builtLaunchScheme"
 
 const (
@@ -22,11 +17,6 @@ const (
 	maxLaunchArgBytes = 256
 )
 
-// parseLaunchArgs splits --launch-args on whitespace and refuses what
-// would not survive the trip into argv: a control byte, invalid UTF-8,
-// an empty or oversized list. A value is one or more words ("desktop",
-// "desktop --profile=work"); a single argument holding a space is not
-// expressible.
 func parseLaunchArgs(s string) ([]string, error) {
 	if s == "" {
 		return nil, nil
@@ -54,10 +44,6 @@ func parseLaunchArgs(s string) ([]string, error) {
 	return args, nil
 }
 
-// extraLinkerFlags is what --launch-args and --ldflags add to a build's
-// own linker flags. The launch arguments travel as base64url JSON, so
-// no quoting inside -ldflags is needed; --ldflags goes last, verbatim
-// (the go command parses its quoting).
 func extraLinkerFlags(f desktopBuildFlags) (string, error) {
 	var extra string
 	args, err := parseLaunchArgs(f.launchArgs)

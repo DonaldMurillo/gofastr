@@ -74,6 +74,19 @@ func TestAgentFilesStayInsideTheProject(t *testing.T) {
 		_ = WriteHostSkill(dir, false)
 		unchanged(t, victim)
 	})
+	t.Run("forced skill file linked out", func(t *testing.T) {
+		dir, victim := t.TempDir(), victimFile(t)
+		symlink(t, victim, filepath.Join(dir, ".claude", "skills", "gofastr-host", "SKILL.md"))
+		_ = WriteHostSkill(dir, true)
+		unchanged(t, victim)
+	})
+	t.Run("project file read through a link out", func(t *testing.T) {
+		dir, victim := t.TempDir(), victimFile(t)
+		symlink(t, victim, filepath.Join(dir, "CLAUDE.md"))
+		if got, err := ReadProjectFile(dir, "CLAUDE.md"); err == nil {
+			t.Errorf("SECURITY: [agents-symlink-escape] ReadProjectFile read a file outside the project: %q", got)
+		}
+	})
 	t.Run("skill directory linked out", func(t *testing.T) {
 		dir, out := t.TempDir(), t.TempDir()
 		symlink(t, out, filepath.Join(dir, ".claude"))

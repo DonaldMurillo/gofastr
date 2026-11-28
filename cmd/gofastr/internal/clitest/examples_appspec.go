@@ -7,11 +7,7 @@ import (
 	"testing"
 )
 
-// ExampleAppSpecs returns every examples/<name>/gofastr.yml and
-// internal/testapps/<name>/gofastr.yml in the repo,
-// skipping the test when there are none (a checkout without examples/).
-// A caller's test file declares
-// //gofastr:test-reads examples/*/gofastr.yml internal/testapps/*/gofastr.yml for what this reads.
+// ExampleAppSpecs is ExampleAppSpecPaths, skipping the test when there are none.
 func ExampleAppSpecs(t *testing.T) []string {
 	t.Helper()
 	matches := ExampleAppSpecPaths(t)
@@ -21,13 +17,8 @@ func ExampleAppSpecs(t *testing.T) []string {
 	return matches
 }
 
-// ExampleAppSpecPaths is ExampleAppSpecs without the skip, for a test
-// whose fixtures ARE the committed specs, where finding none is a
-// failure: a skip reads as a pass.
-//
-// It walks directories only. filepath.Glob would stat every top-level
-// file under examples/ on the way to <name>/gofastr.yml, and the
-// test-reads audit counts each stat as a read the caller must declare.
+// ExampleAppSpecPaths returns every examples/<name>/gofastr.yml and
+// internal/testapps/<name>/gofastr.yml in the repo.
 func ExampleAppSpecPaths(t *testing.T) []string {
 	t.Helper()
 	root := RepoRootDir(t)
@@ -50,8 +41,7 @@ func ExampleAppSpecPaths(t *testing.T) []string {
 	return matches
 }
 
-// AppSpecOutputDir extracts an uncommented `output_dir:` from an app spec.
-// Returns "" when the app generator scaffolds into the module root.
+// AppSpecOutputDir returns an app spec's uncommented output_dir, or "".
 func AppSpecOutputDir(appSpec string) string {
 	for _, line := range strings.Split(appSpec, "\n") {
 		trimmed := strings.TrimSpace(line)

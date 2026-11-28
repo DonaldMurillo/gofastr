@@ -95,6 +95,11 @@ invariants:
       - test: framework/contracts/analyzers.TestUnscopedPIIEntityIsReported
       - test: framework/contracts/analyzers.TestSweepAppAcronymStaysOneToken
       - test: framework/contracts/analyzers.TestSweepAppPIIMatchesWholeTokens
+  - id: app-spec-pii-auth-is-no-remedy
+    rule: Enabling app.auth suppresses no app-spec PII finding, and the finding's message names owner_field and an access.read permission as remedies, and never auth or multi_tenant, which cli.appspec.validate refuses for a generated app.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestPIIUnscopedFlagged
+      - test: cmd/gofastr/internal/appspec.TestPIIAuthAloneStillFlagged
   - id: auth-wiring-attribution
     rule: auth.New counts once per package and only when called; a reader counts by selector whether called or passed, through a dot import only as a bare use of a name the file never declares, and a configure is covered by a mount anywhere in the closure of a binary that links it.
     enforced_by:
@@ -187,3 +192,11 @@ decisions:
     rejected:
       - option: Infer a default layering from the package tree.
         why: An invented layering is wrong more often than right, and a wrong rule teaches people to ignore the analyzer.
+  - id: auth-alone-is-no-pii-remedy
+    date: 2026-11-28
+    status: accepted
+    decision: The unscoped-PII finding names owner_field, an access.read permission and multi_tenant as its remedies and never enabling auth.
+    rejected:
+      - option: List enabling auth as a remedy.
+        why: SessionMiddleware is pass-through, so auth alone leaves the rows world-readable.
+    upholds: [app-spec-pii-auth-is-no-remedy]

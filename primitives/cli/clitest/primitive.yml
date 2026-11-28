@@ -1,0 +1,13 @@
+primitive: cli.clitest
+summary: cmd/gofastr/internal/clitest, the helpers the CLI's test packages share - the run harness and shared builds, the variant gate, output and exit capture, fixtures, and readers of committed repo files - which only _test.go files import; each child owns one of those jobs.
+code:
+  - cmd/gofastr/internal/clitest/doc.go
+docs:
+  - docs/contributing.md
+invariants:
+  - id: only-tests-import-it
+    rule: No non-test Go file under cmd/gofastr outside clitest itself imports clitest, so no test helper or fixture ships in the gofastr binary.
+    enforced_by:
+      - test: cmd/gofastr/internal/clitest.TestOnlyTestsImportClitest
+    applies:
+      - cmd/gofastr/

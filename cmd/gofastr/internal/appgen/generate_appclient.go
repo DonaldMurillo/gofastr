@@ -9,14 +9,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// appClientPath is where the client generator writes the app's typed Go
-// client, relative to the app root (the directory holding entities/).
 const appClientPath = "entities/client/client.go"
 
-// renderAppClient renders entities/client/client.go, stamped as the client
-// generator's derived output. The app generator writes the first copy
-// through the same function, so a fresh app and a later rebuild agree byte
-// for byte.
 func renderAppClient(decls []framework.EntityDeclaration) (string, error) {
 	for _, decl := range decls {
 		if err := validateDeclarationStates(decl); err != nil {
@@ -32,19 +26,12 @@ func renderAppClient(decls []framework.EntityDeclaration) (string, error) {
 	return stampFile("client", appClientPath, src)
 }
 
-// appClientPlan is what a client rebuild would do to the file on disk.
 type appClientPlan struct {
-	content string
-	// unchanged: the file already holds exactly this content.
+	content   string
 	unchanged bool
-	// owned: the file on disk is the app generator's scaffold copy (or has
-	// no marker) and was edited, so it holds code the user wrote. A rebuild
-	// discards that code; only an explicit --force may.
-	owned bool
+	owned     bool
 }
 
-// planAppClient renders the client for the entities under dir and compares
-// it with the file there now. ok is false when dir has no entities package.
 func planAppClient(dir string) (plan appClientPlan, ok bool, err error) {
 	decls, err := ReadAppDecls(dir)
 	if err != nil {
@@ -69,7 +56,6 @@ func planAppClient(dir string) (plan appClientPlan, ok bool, err error) {
 	return plan, true, nil
 }
 
-// writeAppClient writes a planned client under dir.
 func writeAppClient(dir string, plan appClientPlan) error {
 	fileSet, err := FileSetFromGeneratedFiles([]GeneratedFile{{Name: appClientPath, Content: plan.content}}, "client")
 	if err != nil {
@@ -78,9 +64,7 @@ func writeAppClient(dir string, plan appClientPlan) error {
 	return codegen.WriteFiles(fileSet, codegen.WriteOptions{OutputRoot: dir, SkipManifest: true, Conflict: codegen.ConflictOverwrite})
 }
 
-// RunGenerateClient is `gofastr generate client`: rebuild entities/client
-// from entities/. A client.go the app generator wrote and the user edited
-// is theirs until --force says otherwise.
+// RunGenerateClient is gofastr generate client, which rebuilds entities/client from entities/.
 func RunGenerateClient(args []string) {
 	const usage = "Usage: gofastr generate client [--force] [--dry-run] [--json]"
 	if showGenerateHelp(args, usage) {
@@ -147,13 +131,7 @@ func RunGenerateClient(args []string) {
 	cli.Success("Rebuilt %s", appClientPath)
 }
 
-// RefreshAppClient is the rebuild plain `gofastr generate`, `gofastr
-// build` and `generate app --add` run: only when dir already has
-// entities/client/client.go, never creating one, and never over an edited
-// scaffold copy. That copy gets a warning naming the one command that
-// takes it over. quiet drops the progress lines, for --json runs whose
-// stdout is a document. It returns the file it wrote, or would write under
-// dryRun.
+// RefreshAppClient rebuilds an existing, unedited entities/client/client.go and returns what it wrote, or would write under dryRun.
 func RefreshAppClient(dir string, dryRun, quiet bool) ([]GeneratedFile, error) {
 	say := cli.Warn
 	note := cli.Info

@@ -1,0 +1,47 @@
+primitive: cli.appspec.synth
+summary: The screens a spec implies beyond the ones it writes, the create screen of a writable list and the sign-in screen, plus which list is an entity's home and which file each screen is generated into.
+code:
+  - cmd/gofastr/internal/appspec/screens.go
+docs:
+  - framework/docs/content/app-spec.md
+invariants:
+  - id: create-screen-hangs-off-the-home-list
+    rule: For each entity with an entity_list set to create true, AppSpecSynthesizeCRUDScreens adds one entity_create screen at the home list's route plus /create with the home list's layout and access, unless a screen already sits at that route.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestSynthesizedCreateScreenHangsOffTheHomeList
+  - id: synthesis-leaves-the-caller-alone
+    rule: AppSpecSynthesizeCRUDScreens never writes into the spare capacity of the Screens slice it was given.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestSynthesizeLeavesTheCallersArrayAlone
+  - id: home-list-choice
+    rule: An entity's home list is the list screen its detail screen sits under, else the first list screen with create true, else the first list screen, in declaration order.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestHomeListPrefersTheDetailBaseThenCreate
+  - id: login-screen-only-when-none-exists
+    rule: With auth on, synthesis adds a /login screen whose login_form posts to the auth base path plus /login, takes the marketing layout when any screen uses it and links the first signup_form screen whose route has no parameter, unless a screen is named login, sits at /login or holds a login_form.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestLoginScreenIsSynthesizedOnlyWhenNoneExists
+  - id: login-read-back-is-exact
+    rule: IsSynthesizedLoginScreen is true only for a /login screen equal in every field to the one AppSpecLoginScreen adds to the spec without it.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestLoginScreenIsSynthesizedOnlyWhenNoneExists
+  - id: screen-file-names
+    rule: ScreenFileName is screen_ plus the snake-case name plus .go, except screen_screen_shared.go for a screen named shared, so no screen file replaces a fixed package file.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestScreenFileNameCollisionGuard
+decisions:
+  - id: login-block-spells-the-defaults
+    date: 2026-11-28
+    status: accepted
+    decision: The synthesized sign-in screen's login_form sets the action, next and title the renderer would default, the way pack reads an AuthCard back.
+    rejected:
+      - option: Emit a bare login_form and let the renderer fill it in.
+        why: pack would read the screen back with those defaults spelled out, fail to recognize it as synthesized and write it into the packed spec.
+    upholds: [login-read-back-is-exact]
+  - id: no-synthesized-edit-screen
+    date: 2026-11-28
+    status: accepted
+    decision: Only a create screen is synthesized; editing happens on the record page.
+    rejected:
+      - option: Synthesize <list>/{id}/edit as well.
+        why: The entity_detail record page already holds the edit form, so a second screen would duplicate it.

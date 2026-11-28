@@ -1,0 +1,15 @@
+primitive: cli.clitest.capture
+summary: The CovT_ capture helpers CLI tests use to run a command in process - stdout and stderr capture, the cli.OsExit recorder, chdir and a forced terminal.
+code:
+  - cmd/gofastr/internal/clitest/coverage_helpers.go
+docs:
+  - docs/contributing.md
+invariants:
+  - id: exit-stops-at-the-first-code
+    rule: CovT_capExit returns the code of fn's first cli.OsExit call, or -1 when there is none, runs nothing of fn after that call, and puts the previous cli.OsExit back.
+    enforced_by:
+      - test: cmd/gofastr/internal/clitest.TestCapExitStopsAtTheFirstExitAndRestores
+  - id: capture-restores-the-stream
+    rule: CovT_capStdout and CovT_capStderr put the stream back even when fn panics, and CovT_capOutput returns stdout's capture followed by stderr's.
+    enforced_by:
+      - test: cmd/gofastr/internal/clitest.TestCaptureRestoresTheStreamOnPanic

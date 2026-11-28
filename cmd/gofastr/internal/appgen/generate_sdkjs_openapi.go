@@ -10,18 +10,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/sdk"
 )
 
-// jsQuote spells s as a JavaScript string literal: JSON's escapes, which
-// also cover U+2028 and U+2029, the line terminators a JS string cannot
-// hold raw.
 func jsQuote(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
 }
 
-// oaJSDescriptor is what client.js's _call reads about one operation.
-// Query and header entries are [name, mode]: "" one value, "repeat" a
-// repeated one (a header joins it with commas), "join" a form array sent
-// comma-joined.
 type oaJSDescriptor struct {
 	Name         string      `json:"name"`
 	Method       string      `json:"method"`
@@ -89,9 +82,6 @@ func oaJSDescribe(op oaSDKOp) oaJSDescriptor {
 	return d
 }
 
-// renderOASDKJSFiles emits the OpenAPI JS SDK: client.js, one async
-// method per operation, and client.d.ts, typed from the same model the Go
-// SDK is.
 func renderOASDKJSFiles(spec oaSDKSpec) []GeneratedFile {
 	var js, dts strings.Builder
 	header := "// " + spec.Header() + "\n// Regenerate: gofastr generate sdk --from-openapi\n\n"
@@ -107,7 +97,7 @@ func renderOASDKJSFiles(spec oaSDKSpec) []GeneratedFile {
 	for _, op := range spec.Ops {
 		desc, err := json.Marshal(oaJSDescribe(op))
 		if err != nil {
-			panic(fmt.Sprintf("appgen: encode the %s descriptor: %v", op.JSName, err)) // strings, string lists and a bool always encode
+			panic(fmt.Sprintf("appgen: encode the %s descriptor: %v", op.JSName, err))
 		}
 		var args []string
 		params, body := "{}", "undefined"
@@ -147,7 +137,6 @@ func renderOASDKJSFiles(spec oaSDKSpec) []GeneratedFile {
 		case oaHasRequiredParam(op):
 			args = append(args, "params: "+op.ParamsType)
 		case bodyRequired:
-			// An optional parameter cannot come before a required one.
 			args = append(args, "params: "+op.ParamsType+" | undefined")
 		default:
 			args = append(args, "params?: "+op.ParamsType)
@@ -173,7 +162,6 @@ func renderOASDKJSFiles(spec oaSDKSpec) []GeneratedFile {
 		result := "null"
 		switch op.Result {
 		case "json":
-			// An empty or 204 answer resolves to null.
 			result = op.ResultType.tsExpr() + " | null"
 		case "binary":
 			result = "Blob"
@@ -189,7 +177,6 @@ func renderOASDKJSFiles(spec oaSDKSpec) []GeneratedFile {
 	}
 }
 
-// oaHasRequiredParam reports whether an operation takes a required parameter.
 func oaHasRequiredParam(op oaSDKOp) bool {
 	for _, p := range slices.Concat(op.PathParams, op.QueryParams, op.HeaderParams) {
 		if p.Required {
@@ -214,7 +201,6 @@ func oaTSParamType(p cliOpParam) string {
 	return "string"
 }
 
-// jsOADoc is an operation's one-line doc comment, inert in /** */.
 func jsOADoc(op oaSDKOp) string {
 	doc := op.Method + " " + oaCommentText(op.PathTemplate)
 	if s := oaSummary(op.cliOp); s != "" {
@@ -223,14 +209,11 @@ func jsOADoc(op oaSDKOp) string {
 	return sdkCommentSafe(doc)
 }
 
-// jsOARuntime is the OpenAPI client.js's request plumbing before the
-// Client class.
 const jsOARuntime = `/** formEncode spells one value the way a form-encoded query does. */
 const formEncode = (value) => new URLSearchParams([["", String(value)]]).toString().slice(1);
 
 `
 
-// jsOAClientHead opens the Client class, before the operation methods.
 const jsOAClientHead = `export class Client {
   /**
    * @param {{baseURL: string, token?: string, fetch?: typeof fetch, maxBlobBytes?: number}} opts
@@ -248,8 +231,6 @@ const jsOAClientHead = `export class Client {
 
 `
 
-// jsOAClientTail closes the Client class: the escape hatch, the request
-// plumbing every operation method calls, and the capped body readers.
 const jsOAClientTail = `  async do(method, path, body) {
     const json = body !== undefined && body !== null;
     const resp = await this._send(method, path, "", {}, json ? JSON.stringify(body) : undefined, json ? "application/json" : "", null);

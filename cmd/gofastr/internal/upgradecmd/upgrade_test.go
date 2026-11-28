@@ -107,6 +107,7 @@ func TestUpgradeReportRendersHits(t *testing.T) {
 			Hits: map[*upgrade.Note][]scan.Hit{
 				// Deliberately out of order: the renderer sorts.
 				note: {
+					{File: "web/b.go", Line: 7, Col: 4, Why: "why-b7"},
 					{File: "web/b.go", Line: 3, Col: 1, Why: "why-b"},
 					{File: "theme/theme.go", Line: 5, Col: 12, Why: "p.N"},
 					{File: "gofastr.yml", Line: 9, Why: "config auth"}, // no column
@@ -127,8 +128,9 @@ func TestUpgradeReportRendersHits(t *testing.T) {
 			t.Errorf("report missing %q, got:\n%s", want, report)
 		}
 	}
-	if strings.Index(report, "theme/theme.go") > strings.Index(report, "web/b.go") {
-		t.Errorf("hits must print in file order, got:\n%s", report)
+	if strings.Index(report, "theme/theme.go") > strings.Index(report, "web/b.go") ||
+		strings.Index(report, "web/b.go:3:1") > strings.Index(report, "web/b.go:7:4") {
+		t.Errorf("hits must print in file and line order, got:\n%s", report)
 	}
 	if strings.Contains(report, "Compile errors") {
 		t.Errorf("no Unexplained errors were reported, got:\n%s", report)

@@ -15,24 +15,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// An app spec's endpoints: list holds exactly what the endpoints section of
-// gofastr.settings.yml holds. generate app writes the section, a typed
-// handler stub for each linked handler that answers 501 until it is
-// written, the endpoints registration, and a client with a typed call for
-// each. From then on the settings file is where the endpoints live, and
-// pack reads them back from it.
-
-// renderAppSpecEndpoints renders what bp's endpoints add to the app: the
-// handler stubs, entities/endpoints.gen.go, the settings file, and the
-// client rebuilt with the endpoint calls. entityFiles is the rendered
-// entities package, named relative to entities/; the returned client
-// replaces the one in it.
 func renderAppSpecEndpoints(bp appspec.AppSpec, decls []framework.EntityDeclaration, entityFiles []GeneratedFile) (files []GeneratedFile, client string, err error) {
 	if len(bp.Endpoints) == 0 {
 		return nil, "", nil
 	}
-	// Each value lands in generated Go and YAML; a render that skipped
-	// validateAppSpec (tests, --add fragments) still refuses a bad one.
 	if err := appspec.ValidateAppSpecEndpoints(bp); err != nil {
 		return nil, "", err
 	}
@@ -98,24 +84,15 @@ func renderAppSpecEndpoints(bp appspec.AppSpec, decls []framework.EntityDeclarat
 	return files, client, nil
 }
 
-// renderEndpointStubFile renders one linked handler file: for each
-// endpoint, an input struct carrying the route's path values and a
-// handler that answers 501 Not Implemented. The output is the entity the
-// endpoint hangs under; the developer changes either type as the handler
-// takes shape, and `gofastr generate` reads the new ones.
 func renderEndpointStubFile(eps []settings.Endpoint, entityStructs, entityTables map[string]string) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("package entities\n\nimport (\n\t\"context\"\n\t\"net/http\"\n\n\t\"github.com/DonaldMurillo/gofastr/core/handler\"\n)\n")
 	for _, e := range eps {
 		name := e.HandlerName()
-		// Validate already holds the name to an exported Go identifier;
-		// the emitted declarations below must not rely on a caller having
-		// run it.
 		if !token.IsIdentifier(name) || !token.IsExported(name) {
 			return "", fmt.Errorf("app spec: endpoint %s: handler %q is not an exported Go name", e.Name, name)
 		}
 		input := name + "Input"
-		// The endpoint mounts under its entity's table, not the raw name.
 		route := "/" + entityTables[e.Entity] + "/" + e.Path
 		fmt.Fprintf(&sb, "\n// %s is what endpoint %s takes. A path value is tagged path and\n", input, e.Name)
 		sb.WriteString("// json:\"-\"; every other field is a JSON body key (a query value on a\n// GET or DELETE).\n")
@@ -141,9 +118,6 @@ func renderEndpointStubFile(eps []settings.Endpoint, entityStructs, entityTables
 	return sb.String(), nil
 }
 
-// splitSettingsFile takes the settings file out of files: generate app
-// merges the endpoints section into the file instead of writing it whole,
-// so the rest of a settings file already there is kept.
 func splitSettingsFile(files []GeneratedFile) (rest []GeneratedFile, found bool) {
 	rest = slices.DeleteFunc(slices.Clone(files), func(f GeneratedFile) bool { return f.Name == settings.FileName })
 	return rest, len(rest) != len(files)
@@ -167,8 +141,6 @@ func ExistingEndpoints(dir string) ([]settings.Endpoint, string, error) {
 	return endpoints, f.Path, err
 }
 
-// endpointsConflict reports whether writing eps into dir's settings file
-// would replace a different endpoints section.
 func endpointsConflict(dir string, eps []settings.Endpoint) bool {
 	have, _, err := ExistingEndpoints(dir)
 	if err != nil {
@@ -177,9 +149,6 @@ func endpointsConflict(dir string, eps []settings.Endpoint) bool {
 	return len(have) > 0 && !slices.Equal(have, eps)
 }
 
-// mergeEndpoints adds the fragment's endpoints to the project's, the way
-// --add unions entities: a name the project already has keeps the
-// project's entry.
 func mergeEndpoints(project, fragment []settings.Endpoint) []settings.Endpoint {
 	out := slices.Clone(project)
 	for _, e := range fragment {
@@ -190,11 +159,6 @@ func mergeEndpoints(project, fragment []settings.Endpoint) []settings.Endpoint {
 	return out
 }
 
-// checkAddEndpoints resolves bp's endpoints, the project's and the
-// fragment's, against the entities package --add leaves behind: the files
-// on disk plus the new ones in written. --add skips a file that exists, so
-// a fragment's handler stub never lands in one; a handler missing from the
-// result is refused here, before the settings file or any Go is written.
 func checkAddEndpoints(dir string, bp appspec.AppSpec, written []GeneratedFile) error {
 	files, err := readEntitiesFiles(dir)
 	if err != nil {
@@ -216,8 +180,6 @@ func checkAddEndpoints(dir string, bp appspec.AppSpec, written []GeneratedFile) 
 	return nil
 }
 
-// pathFieldName names the input field for path value p, spelling an id
-// word the way Go does: {id} is ID, {order_id} is OrderID.
 func pathFieldName(p string) string {
 	var b strings.Builder
 	for _, word := range strings.Split(p, "_") {

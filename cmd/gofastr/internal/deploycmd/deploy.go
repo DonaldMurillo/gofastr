@@ -1,16 +1,5 @@
 // Package deploycmd implements `gofastr deploy`: putting an app on one
 // Linux server over SSH, as a systemd service.
-//
-// The model is the smallest that holds up: one binary, copied to
-// /opt/<name>/releases/<time>/, a "current" link that names the
-// release running, a systemd unit that runs it as its own user and
-// brings it back after a crash, and a health check that decides
-// whether a new release stays. If activation or the check fails, the
-// command tries to restore the previous release.
-//
-// Nothing is installed on the server but the app: no agent, no
-// container runtime. The server needs sshd, systemd and bash, and the
-// SSH user needs root or passwordless sudo.
 package deploycmd
 
 import (
@@ -65,7 +54,6 @@ const usage = `
 
 `
 
-// errUsage marks a mistake in the command line.
 var errUsage = errors.New("usage")
 
 // RunDeploy runs the command and exits non-zero when it fails.
@@ -103,15 +91,9 @@ type options struct {
 }
 
 var (
-	// A name is a systemd unit, a Unix user and a directory at once, so
-	// it is held to what all three take: lower-case letters, digits and
-	// hyphens, starting with a letter.
-	nameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}$`)
-	// user@host, or a host or an alias from ~/.ssh/config. It never
-	// starts with a hyphen: ssh would read it as an option.
+	nameRe   = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}$`)
 	targetRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]*(@[A-Za-z0-9\[][A-Za-z0-9.:_\]-]*)?$`)
 	healthRe = regexp.MustCompile(`^/[A-Za-z0-9/_.~-]*$`)
-	// What "mktemp -d" answers with on the server.
 	uploadRe = regexp.MustCompile(`^/[A-Za-z0-9._/-]+$`)
 )
 
@@ -135,21 +117,14 @@ func (o *options) validate() error {
 	return nil
 }
 
-// runner runs things: ssh on the server, go build here. Tests put a
-// recording one in its place.
 type runner interface {
-	// ssh runs command on the target with stdin, and returns what it
-	// printed on each stream and its exit code. A non-nil error is ssh itself failing
-	// (no route, refused, no such key), not the command.
 	ssh(ctx context.Context, o *options, command string, stdin io.Reader) (stdout, stderr string, code int, err error)
-	// build compiles pkg for linux/arch into out.
 	build(ctx context.Context, pkg, arch, out string) error
-	// root is where the server's files start: empty on a server, a
-	// directory for a test that runs the scripts on this machine.
 	root() string
 }
 
-// Run executes one `gofastr deploy` command line, writing to w.
+// Run executes one `gofastr deploy` command line, writing to w. A
+// command-line mistake wraps errUsage.
 func Run(w io.Writer, args []string, now time.Time, r runner) error {
 	if len(args) == 0 {
 		return fmt.Errorf("%w: name a server", errUsage)
@@ -174,7 +149,6 @@ func Run(w io.Writer, args []string, now time.Time, r runner) error {
 	fs.IntVar(&o.keep, "keep", 5, "")
 	fs.IntVar(&o.sshPort, "ssh-port", 0, "")
 	fs.StringVar(&o.identity, "i", "", "")
-	// The server may come before or after the flags.
 	positional, err := cli.ParsePositionals(fs, args)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -219,9 +193,6 @@ func Run(w io.Writer, args []string, now time.Time, r runner) error {
 	return deploy(ctx, w, &o, p, now, r)
 }
 
-// asRoot runs the script on stdin as root: directly for root, through
-// sudo for anyone else. sudo -n fails at once where it would ask for a
-// password, which no one is there to type.
 const asRoot = `if [ "$(id -u)" = 0 ]; then bash -s; else sudo -n bash -s; fi`
 
 func deploy(ctx context.Context, w io.Writer, o *options, p plan, now time.Time, r runner) error {
@@ -241,8 +212,6 @@ func deploy(ctx context.Context, w io.Writer, o *options, p plan, now time.Time,
 		}
 		env = f
 	}
-	// One round trip says what to build for and where to put it. The
-	// directory is the server's own choice of a fresh, private one.
 	out, stderr, code, err := r.ssh(ctx, o, `uname -m && umask 077 && mktemp -d`, nil)
 	if err != nil {
 		return err
@@ -282,8 +251,6 @@ func deploy(ctx context.Context, w io.Writer, o *options, p plan, now time.Time,
 			return err
 		}
 	}
-	// A binary that can take a socket from systemd gets its port held
-	// for it; any other opens its own, as before.
 	if p.socket, err = takesSocket(bin); err != nil {
 		return err
 	}
@@ -309,13 +276,10 @@ func deploy(ctx context.Context, w io.Writer, o *options, p plan, now time.Time,
 	if err != nil {
 		return err
 	}
-	// The install script removes the upload before checking the service.
 	removeUpload = code != 0 && code != exitRolledBack && code != exitDown
 	return report(w, o, out, stderr, code)
 }
 
-// takesSocket reports whether the binary at path links the framework's
-// socket hand-off, by the marker that code leaves in it.
 func takesSocket(path string) (bool, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -323,8 +287,6 @@ func takesSocket(path string) (bool, error) {
 	}
 	defer f.Close()
 	marker := []byte(sdlisten.Marker)
-	// Read in pieces that overlap by a marker's length, so one that
-	// straddles two reads is still found.
 	buf := make([]byte, 1<<20)
 	keep := 0
 	for {
@@ -342,8 +304,6 @@ func takesSocket(path string) (bool, error) {
 	}
 }
 
-// send copies a local file to path on the server through ssh's stdin:
-// one program to depend on, and the file is created private.
 func send(ctx context.Context, o *options, r runner, f *os.File, path string) error {
 	out, stderr, code, err := r.ssh(ctx, o, "umask 077 && cat > "+shellQuote(path), f)
 	if err != nil {
@@ -355,7 +315,6 @@ func send(ctx context.Context, o *options, r runner, f *os.File, path string) er
 	return nil
 }
 
-// report turns the last line of stdout and the exit code into what happened.
 func report(w io.Writer, o *options, out, stderr string, code int) error {
 	if stderr != "" {
 		fmt.Fprint(w, textsafe.ScrubTerminal(stderr))
@@ -392,7 +351,6 @@ func report(w io.Writer, o *options, out, stderr string, code int) error {
 	return fmt.Errorf("the server stopped part way (exit %d). If it says sudo needs a password, give %s passwordless sudo or deploy as root", code, o.target)
 }
 
-// execRunner is the real runner.
 type execRunner struct{}
 
 func (execRunner) ssh(ctx context.Context, o *options, command string, stdin io.Reader) (string, string, int, error) {
@@ -403,14 +361,11 @@ func (execRunner) ssh(ctx context.Context, o *options, command string, stdin io.
 	if o.identity != "" {
 		args = append(args, "-i", o.identity)
 	}
-	// "--" ends ssh's own options: the target is the next word whatever
-	// it looks like.
 	args = append(args, "--", o.target, command)
 	cmd := exec.CommandContext(ctx, "ssh", args...)
 	cmd.Stdin = stdin
 	var out, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &stderr
-	// A child that keeps the pipe open must not hold Wait for ever.
 	cmd.WaitDelay = 10 * time.Second
 	err := cmd.Run()
 	var exit *exec.ExitError
@@ -418,7 +373,6 @@ func (execRunner) ssh(ctx context.Context, o *options, command string, stdin io.
 	case err == nil:
 		return out.String(), stderr.String(), 0, nil
 	case errors.As(err, &exit) && exit.ExitCode() == 255:
-		// 255 is ssh's own failure, not the remote command's.
 		return "", "", 255, fmt.Errorf("ssh could not reach %s: %s", o.target, strings.TrimSpace(out.String()+"\n"+stderr.String()))
 	case errors.As(err, &exit):
 		return out.String(), stderr.String(), exit.ExitCode(), nil

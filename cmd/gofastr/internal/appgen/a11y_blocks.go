@@ -13,13 +13,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 )
 
-// a11ySnapshotMaxBytes caps the snapshot `generate screen --from-a11y`
-// reads. A full-page snapshot of a busy app is a few hundred KiB.
 const a11ySnapshotMaxBytes = 4 << 20
 
-// a11yScreenBody reads an aria snapshot (path "-" is stdin) and maps it to
-// a screen body whose forms post to route. Mapping warnings go to stdout,
-// or to stderr in --json mode so stdout stays machine-readable.
 func a11yScreenBody(path, route string, jsonMode bool) ([]appspec.AppSpecBlock, error) {
 	var r io.Reader = os.Stdin
 	if path != "-" {
@@ -55,17 +50,13 @@ func a11yScreenBody(path, route string, jsonMode bool) ([]appspec.AppSpecBlock, 
 	return blocks, nil
 }
 
-// a11yMapper turns an aria snapshot into app spec screen blocks, each a
-// framework/ui catalog component. It never emits markup or CSS of its own:
-// a role with no catalog counterpart is inlined or skipped, and the skip is
-// reported so the author can finish that part by hand.
 type a11yMapper struct {
-	action    string // form action: the screen's own route
+	action    string
 	warnings  []string
 	warned    map[string]bool
-	names     map[string]bool // field names in use: ui fields use the name as the element id
-	tables    map[string]int  // caption → tables so far: the caption derives the table's id
-	formDepth int             // >0 while mapping a form's contents: forms do not nest
+	names     map[string]bool
+	tables    map[string]int
+	formDepth int
 	titled    bool
 }
 
@@ -73,9 +64,6 @@ func newA11yMapper(action string) *a11yMapper {
 	return &a11yMapper{action: action, warned: map[string]bool{}, names: map[string]bool{}, tables: map[string]int{}}
 }
 
-// mapA11yToBlocks maps a parsed snapshot to screen body blocks. action is
-// the route generated forms post to. Warnings name every node the mapping
-// dropped or flattened.
 func mapA11yToBlocks(nodes []*ariaNode, action string) ([]appspec.AppSpecBlock, []string) {
 	m := newA11yMapper(action)
 	blocks := m.siblings(nodes)
@@ -90,21 +78,16 @@ func (m *a11yMapper) warn(key, format string, args ...any) {
 	m.warnings = append(m.warnings, fmt.Sprintf(format, args...))
 }
 
-// a11yTransparentRoles carry no meaning of their own in a screen body:
-// their children are spliced into the parent.
 var a11yTransparentRoles = map[string]bool{
 	"generic": true, "none": true, "presentation": true, "main": true,
 	"document": true, "application": true, "tabpanel": true, "labeltext": true, "superscript": true, "subscript": true,
 }
 
-// a11yLandmarkRoles become a ui.Section when they carry a name; an
-// unnamed one is transparent.
 var a11yLandmarkRoles = map[string]bool{
 	"region": true, "article": true, "complementary": true, "group": true,
 	"search": true, "figure": true,
 }
 
-// a11yTextRoles render as a paragraph of their text.
 var a11yTextRoles = map[string]bool{
 	"text": true, "paragraph": true, "statictext": true, "blockquote": true,
 	"code": true, "strong": true, "emphasis": true, "caption": true,
@@ -112,14 +95,11 @@ var a11yTextRoles = map[string]bool{
 	"status": true, "log": true, "mark": true, "insertion": true, "deletion": true,
 }
 
-// a11yFieldRoles are the controls a run is grouped into a form around.
 var a11yFieldRoles = map[string]bool{
 	"textbox": true, "searchbox": true, "spinbutton": true, "checkbox": true,
 	"switch": true, "combobox": true, "listbox": true, "radiogroup": true, "radio": true,
 }
 
-// flatten splices transparent containers so that controls wrapped in
-// layout divs still land side by side for form grouping.
 func (m *a11yMapper) flatten(nodes []*ariaNode) []*ariaNode {
 	out := make([]*ariaNode, 0, len(nodes))
 	for _, n := range nodes {
@@ -144,9 +124,6 @@ func (m *a11yMapper) flatten(nodes []*ariaNode) []*ariaNode {
 	return out
 }
 
-// siblings maps one sibling list. Outside a form, a run of controls holding
-// at least one input becomes a form block; inside one, the controls are its
-// fields directly.
 func (m *a11yMapper) siblings(nodes []*ariaNode) []appspec.AppSpecBlock {
 	nodes = dropRedundantLabels(m.flatten(nodes))
 	var out []appspec.AppSpecBlock
@@ -172,13 +149,10 @@ func (m *a11yMapper) siblings(nodes []*ariaNode) []appspec.AppSpecBlock {
 		}
 		out = append(out, m.node(n)...)
 		i++
-		// A table right under a heading with the same text keeps its
-		// caption for assistive technology but stops repeating it on screen.
 		if last := len(out) - 1; last >= 1 && out[last].Kind == "data_table" && out[last-1].Type == "heading" &&
 			strings.EqualFold(out[last-1].Text, appspec.AppSpecProp(out[last], "caption")) {
 			out[last].Props["caption_hidden"] = true
 		}
-		// A paragraph right under the page title is its subtitle.
 		if last := len(out) - 1; last >= 0 && out[last].Kind == "page_header" && out[last].Props["subtitle"] == nil &&
 			i < len(nodes) && (nodes[i].Role == "paragraph" || nodes[i].Role == "text") &&
 			len(nodes[i].Children) == 0 && nodes[i].Label() != "" {
@@ -189,9 +163,6 @@ func (m *a11yMapper) siblings(nodes []*ariaNode) []appspec.AppSpecBlock {
 	return out
 }
 
-// a11yFormPart reports whether n belongs in a form run: a control, or a
-// named group (a fieldset) holding one. field is true when n takes input,
-// which a row of plain buttons does not.
 func a11yFormPart(n *ariaNode) (part, field bool) {
 	switch {
 	case a11yFieldRoles[n.Role]:
@@ -213,11 +184,6 @@ func a11yHasField(n *ariaNode) bool {
 	return false
 }
 
-// a11yFormRun returns the end of the form run that starts at nodes[i]:
-// the controls, and the help, hint and error text between them, up to the
-// last control. A paragraph between two fields is the first field's help
-// line, so it must not split one form in two and strand its submit
-// button. ok is false when the run takes no input (a row of buttons).
 func a11yFormRun(nodes []*ariaNode, i int) (end int, ok bool) {
 	end = i
 	for j := i; j < len(nodes); j++ {
@@ -235,9 +201,6 @@ func a11yFormRun(nodes []*ariaNode, i int) (end int, ok bool) {
 	return end, ok
 }
 
-// dropRedundantLabels removes a text node that only repeats the name of
-// the control right after it: the visible <label> a snapshot lists beside
-// its input. The generated field renders its own label.
 func dropRedundantLabels(nodes []*ariaNode) []*ariaNode {
 	out := make([]*ariaNode, 0, len(nodes))
 	for i, n := range nodes {
@@ -263,8 +226,6 @@ func (m *a11yMapper) node(n *ariaNode) []appspec.AppSpecBlock {
 		return m.heading(n)
 	case a11yTextRoles[n.Role]:
 		if len(n.Children) > 0 {
-			// A paragraph holding a link (`Already a member? Sign in`) keeps
-			// its pieces together.
 			parts := m.siblings(n.Children)
 			if n.Text != "" {
 				parts = append([]appspec.AppSpecBlock{{Type: "text", Text: n.Text}}, parts...)
@@ -304,7 +265,6 @@ func (m *a11yMapper) node(n *ariaNode) []appspec.AppSpecBlock {
 	case n.Role == "separator":
 		return []appspec.AppSpecBlock{{Kind: "divider"}}
 	case a11yLandmarkRoles[n.Role] || n.Role == "dialog" || n.Role == "alertdialog":
-		// A fieldset of radios is the radio group, its legend the name.
 		if radios, ok := a11yOnlyRadios(n); ok {
 			return m.radioGroup(n.Name, n.Line, radios)
 		}
@@ -323,8 +283,6 @@ func (m *a11yMapper) node(n *ariaNode) []appspec.AppSpecBlock {
 	return nil
 }
 
-// a11yOnlyRadios returns a group's radios when radios are all it holds,
-// besides a text line repeating its name (the legend).
 func a11yOnlyRadios(n *ariaNode) ([]*ariaNode, bool) {
 	var radios []*ariaNode
 	for _, c := range dropRedundantLabels(newA11yMapper("").flatten(n.Children)) {
@@ -339,9 +297,6 @@ func a11yOnlyRadios(n *ariaNode) ([]*ariaNode, bool) {
 	return radios, len(radios) > 0
 }
 
-// a11yGroup keeps several pieces together: inline ones (text, links,
-// buttons) on one line, anything block-level stacked. One piece needs no
-// wrapper.
 func a11yGroup(parts []appspec.AppSpecBlock) []appspec.AppSpecBlock {
 	if len(parts) <= 1 {
 		return parts
@@ -369,15 +324,12 @@ func (m *a11yMapper) heading(n *ariaNode) []appspec.AppSpecBlock {
 			m.titled = true
 			return []appspec.AppSpecBlock{{Kind: "page_header", Props: map[string]any{"title": n.Label()}}}
 		}
-		// The page header is the page's one h1.
 		m.warn(fmt.Sprintf("h1:%d", n.Line), "heading %q (line %d) is a second level-1 heading: made level 2", n.Label(), n.Line)
 		level = 2
 	}
 	return []appspec.AppSpecBlock{{Type: "heading", Level: level, Text: n.Label()}}
 }
 
-// alert maps to a callout: the alert's name is its title, its text the
-// body. An alert with only a name shows the name as the body.
 func (m *a11yMapper) alert(n *ariaNode) appspec.AppSpecBlock {
 	body := n.Text
 	if body == "" {
@@ -434,8 +386,6 @@ func (m *a11yMapper) button(n *ariaNode, typ string) appspec.AppSpecBlock {
 	return appspec.AppSpecBlock{Kind: "action_button", Props: props}
 }
 
-// form groups controls into a ui.Form posting to the screen's route. The
-// last button becomes the form's submit; earlier ones stay plain buttons.
 func (m *a11yMapper) form(nodes []*ariaNode) appspec.AppSpecBlock {
 	m.formDepth++
 	children := m.siblings(nodes)
@@ -485,7 +435,6 @@ func (m *a11yMapper) field(n *ariaNode) appspec.AppSpecBlock {
 			props["options"] = options
 			return appspec.AppSpecBlock{Kind: "select_field", Props: props}
 		}
-		// A combobox with no listed options is a typeahead input.
 	case "textbox", "searchbox":
 		if n.Text != "" {
 			m.warn(fmt.Sprintf("value:%d", n.Line), "%s %q (line %d): dropped its current value %q; the generated field starts empty", n.Role, label, n.Line, n.Text)
@@ -509,8 +458,6 @@ func (m *a11yMapper) fieldLabel(n *ariaNode) string {
 	return label
 }
 
-// fieldName derives a field name from a label, unique across the screen:
-// the ui fields render the name as the element id too.
 func (m *a11yMapper) fieldName(label string) string {
 	base := a11ySlug(label, '_')
 	switch {
@@ -527,7 +474,6 @@ func (m *a11yMapper) fieldName(label string) string {
 	return name
 }
 
-// a11ySlug lowercases s to ASCII letters and digits joined by sep.
 func a11ySlug(s string, sep byte) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(s) {
@@ -541,8 +487,6 @@ func a11ySlug(s string, sep byte) string {
 	return strings.TrimRight(b.String(), string(sep))
 }
 
-// radioGroup maps radios to a ui.RadioGroup. Two radios with the same
-// label get distinct values, which keeps their ids distinct.
 func (m *a11yMapper) radioGroup(legend string, line int, radios []*ariaNode) []appspec.AppSpecBlock {
 	var options []any
 	seen := map[string]bool{}
@@ -576,9 +520,6 @@ func (m *a11yMapper) radioGroup(legend string, line int, radios []*ariaNode) []a
 	return []appspec.AppSpecBlock{{Kind: "radio_group", Props: map[string]any{"legend": legend, "name": m.fieldName(legend), "options": options}}}
 }
 
-// navigation becomes a labelled nav of its links. Page-level navigation
-// usually belongs in the app layout; an in-page one (a table of contents,
-// a pager) keeps its links here.
 func (m *a11yMapper) navigation(n *ariaNode) appspec.AppSpecBlock {
 	var links []appspec.AppSpecBlock
 	for _, l := range a11yDescendants(n, "link") {
@@ -592,8 +533,6 @@ func (m *a11yMapper) navigation(n *ariaNode) appspec.AppSpecBlock {
 	return appspec.AppSpecBlock{Kind: "nav_links", Props: map[string]any{"label": label}, Children: links}
 }
 
-// warnDropped reports the text inside n that a mapping keeping only the
-// kept roles leaves out.
 func (m *a11yMapper) warnDropped(n *ariaNode, what string, kept ...string) {
 	var lost []string
 	var walk func(*ariaNode)
@@ -645,8 +584,6 @@ func (m *a11yMapper) list(n *ariaNode) appspec.AppSpecBlock {
 	return appspec.AppSpecBlock{Kind: "item_list", Children: items}
 }
 
-// table reads header and body rows (directly or inside rowgroups) into a
-// static ui.DataTable. Cells become text.
 func (m *a11yMapper) table(n *ariaNode) (appspec.AppSpecBlock, bool) {
 	var header []string
 	var rows []any
@@ -697,14 +634,10 @@ func (m *a11yMapper) table(n *ariaNode) (appspec.AppSpecBlock, bool) {
 	}
 	props := map[string]any{"caption": n.Name, "columns": columns, "rows": rows}
 	if n.Name == "" {
-		// The caption names the table for assistive technology; a stand-in
-		// one stays off screen.
 		m.warn(fmt.Sprintf("caption:%d", n.Line), "table (line %d) has no accessible name: captioned \"Table\" for screen readers only", n.Line)
 		props["caption"] = "Table"
 		props["caption_hidden"] = true
 	}
-	// ui.DataTable derives its caption id from the caption, so a repeated
-	// caption needs an id of its own.
 	caption := props["caption"].(string)
 	key := strings.ToLower(caption)
 	m.tables[key]++
@@ -714,9 +647,6 @@ func (m *a11yMapper) table(n *ariaNode) (appspec.AppSpecBlock, bool) {
 	return appspec.AppSpecBlock{Kind: "data_table", Props: props}, true
 }
 
-// section maps a named landmark (or a dialog's content) to a ui.Section,
-// lifting a leading heading into the section heading. A leading level-1
-// heading on a page with no title yet becomes the page header instead.
 func (m *a11yMapper) section(n *ariaNode) []appspec.AppSpecBlock {
 	children := n.Children
 	props := map[string]any{"label": n.Name}
@@ -733,8 +663,6 @@ func (m *a11yMapper) section(n *ariaNode) []appspec.AppSpecBlock {
 	return append(out, appspec.AppSpecBlock{Kind: "section", Props: props, Children: m.siblings(children)})
 }
 
-// a11yDescendants collects every descendant with the given role, in order,
-// without descending into a match.
 func a11yDescendants(n *ariaNode, role string) []*ariaNode {
 	var out []*ariaNode
 	for _, c := range n.Children {
@@ -747,8 +675,6 @@ func a11yDescendants(n *ariaNode, role string) []*ariaNode {
 	return out
 }
 
-// a11yTextOf is a node's readable text: its name, its inline text, else
-// its descendants' text joined by spaces.
 func a11yTextOf(n *ariaNode) string {
 	if l := n.Label(); l != "" {
 		return l
@@ -762,8 +688,6 @@ func a11yTextOf(n *ariaNode) string {
 	return strings.Join(parts, " ")
 }
 
-// a11yAttrOn reports a boolean snapshot attribute: `[checked]` or
-// `[checked=true]`. `[checked=mixed]` is not on.
 func a11yAttrOn(n *ariaNode, attr string) bool {
 	v, ok := n.Attrs[attr]
 	return ok && (v == "true" || v == "")

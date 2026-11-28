@@ -43,12 +43,6 @@ func printThemeHelp(w io.Writer) {
 	fmt.Fprintln(w, "  edit     Launch a local theme configurator with a live preview.")
 }
 
-// runThemeInit writes a starter theme.go to the user's project. The
-// generated file is the full DefaultTheme inlined as a Go file the
-// user owns forever: edit values to customize, the framework never
-// touches it again.
-//
-// Refuses to overwrite an existing file; pass --force to opt in.
 func runThemeInit(args []string) {
 	dest := "theme/theme.go"
 	force := false
@@ -59,9 +53,6 @@ func runThemeInit(args []string) {
 		fmt.Println("Refuses to overwrite an existing file unless --force is set.")
 		return
 	}
-	// cli.ParseFlags: --out=path and --out path both work, as on the
-	// other commands; the hand-rolled loop called `--out path` an unknown
-	// flag.
 	if _, err := cli.ParseFlags(args,
 		map[string]*string{"--out": &dest, "-o": &dest},
 		map[string]*bool{"--force": &force, "-f": &force}); err != nil {
@@ -70,10 +61,6 @@ func runThemeInit(args []string) {
 		return
 	}
 
-	// dest is read and written through an os.Root (projectfs): a local
-	// path is confined to the working directory, so a theme/ or theme.go
-	// linked out of the checkout is refused rather than written through.
-	// Lstat, not Stat: a dangling theme.go link is a file already there.
 	rootDir, rel, err := projectfs.UserPath(dest)
 	if err != nil {
 		cli.Fail("mkdir %s: %v", filepath.Dir(dest), err)
@@ -92,16 +79,11 @@ func runThemeInit(args []string) {
 		return
 	}
 
-	// The file joins whatever package already lives in its directory
-	// (--out=theme.go beside main.go is package main), the way
-	// `theme edit` writes back; a new directory takes its own name.
 	pkg := packageNameForPath(dest)
 	src := themeStarter
 	if pkg != "theme" {
 		src = themeStarterSource(pkg)
 	}
-	// --force replaces an existing theme through a temporary file, so a
-	// crash mid-write leaves the old one, not an empty one.
 	if err := projectfs.WriteFile(rootDir, rel, []byte(src), 0o644); err != nil {
 		cli.Fail("write %s: %v", dest, err)
 		cli.OsExit(1)
@@ -143,19 +125,8 @@ func runThemeInit(args []string) {
 	fmt.Println("StyleSheet builders). See examples/site/main.go for a full setup.")
 }
 
-// themeStarter is the file the scaffold writes: the canonical
-// framework theme (framework/ui/theme.Default) through the same
-// emitter `gofastr theme edit` writes back with, under the starter's
-// orientation header. One source: the emitter writes every field of
-// style.Theme by construction, and AutoFillNames (the emitted init)
-// derives every token Name from the struct-field path, so the user
-// writes only Values. The previous hand-maintained template omitted
-// required fields (Colors.CodeSurface, the overlay/toast/dropdown
-// durations, the easings) and a fresh scaffold panicked at boot.
 var themeStarter = themeStarterSource("theme")
 
-// starterDoc is the explanatory header `gofastr theme init` writes
-// above the emitted theme.
 var starterDoc = []string{
 	"Every field of style.Theme is required except the optional",
 	"groups (Strokes, Leading, Tracking, Opacities, Code), whose",
@@ -174,13 +145,8 @@ var starterDoc = []string{
 
 func themeStarterSource(pkg string) string {
 	t := uitheme.Default()
-	// The app's own name, and no component options: the framework's
-	// complete default set is compiled into :root anyway, so a host
-	// declares Components only to deviate from it.
 	t.Name = "app"
 	t.Components = nil
-	// The header quotes the primary this file sets, so it cannot go
-	// stale when the default palette changes.
 	doc := make([]string, len(starterDoc))
 	for i, line := range starterDoc {
 		doc[i] = strings.ReplaceAll(line, "{{primary}}", strconv.Quote(t.Colors.Primary.Value))

@@ -31,10 +31,13 @@ func TestValidatePIIExits1(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("want exit 1, got %d\n%s", code, out)
 	}
-	for _, want := range []string{"patients", "email", "ssn", "owner_field", "access", "multi_tenant"} {
+	for _, want := range []string{"patients", "email", "ssn", "owner_field", "access"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output should contain %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "multi_tenant") {
+		t.Fatalf("validate refuses multi_tenant for a generated app, so the output must not suggest it:\n%s", out)
 	}
 }
 

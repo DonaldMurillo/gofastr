@@ -2,9 +2,11 @@ package appgen
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -37,6 +39,61 @@ func TestGeneratePackageListsAllPackages(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("list output missing %q:\n%s", want, out)
 		}
+	}
+	for _, name := range []string{"docpage", "sitefooter", "siteheader"} {
+		var summary string
+		for line := range strings.SplitSeq(out, "\n") {
+			if f := strings.Fields(line); len(f) > 1 && f[0] == name {
+				summary = strings.Join(f[1:], " ")
+			}
+		}
+		if summary == "" || strings.Contains(summary, ". ") || strings.ContainsAny(summary[len(summary)-1:], " ,;") {
+			t.Errorf("%s's summary is not one sentence: %q", name, summary)
+		}
+	}
+}
+
+func TestFirstDocSentenceStopsAtTheFirstSentence(t *testing.T) {
+	for _, tc := range []struct{ text, want string }{
+		{"Package x is A. B.", "is A."},
+		{"Package x is A! B.", "is A!"},
+		{"Package x is A? B.", "is A?"},
+		{"Package x reads x.style.css and\nx_style.gen.go. Then more.", "reads x.style.css and x_style.gen.go."},
+		{"Package x is A\n\nB. C.", "is A"},
+		{"Package x ends at the end.", "ends at the end."},
+	} {
+		if got := firstDocSentence(tc.text, "x"); got != tc.want {
+			t.Errorf("firstDocSentence(%q) = %q, want %q", tc.text, got, tc.want)
+		}
+	}
+}
+
+func TestCanonicalPackageInfosSkipRootFiles(t *testing.T) {
+	entries, err := fs.ReadDir(canonicalPackages, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dirs, files []string
+	for _, e := range entries {
+		if e.IsDir() {
+			dirs = append(dirs, e.Name())
+		} else {
+			files = append(files, e.Name())
+		}
+	}
+	if len(files) == 0 {
+		t.Fatal("the embedded root holds no file, so this test checks nothing")
+	}
+	infos, err := canonicalPackageInfos()
+	if err != nil {
+		t.Fatalf("a file at the embedded root (%v) broke the listing: %v", files, err)
+	}
+	var names []string
+	for _, p := range infos {
+		names = append(names, p.Name)
+	}
+	if !slices.Equal(names, dirs) {
+		t.Errorf("listed %v, want only the directories %v", names, dirs)
 	}
 }
 
@@ -552,4 +609,30 @@ func packageCopyFiles(t *testing.T, dir string) []copiedFile {
 		t.Fatal(err)
 	}
 	return out
+}
+
+func TestGeneratePackageRefusesASiblingModule(t *testing.T) {
+	dir := t.TempDir()
+	if err := errors.Join(os.MkdirAll(filepath.Join(dir, "a"), 0o755), os.MkdirAll(filepath.Join(dir, "b"), 0o755)); err != nil {
+		t.Fatal(err)
+	}
+	clitest.WriteTestModule(t, filepath.Join(dir, "a"))
+	clitest.WriteTestFile(t, filepath.Join(dir, "b", "go.mod"), "module example.com/other\n")
+	if _, err := ResolvePackageTarget("siteheader", "../b/hdr", filepath.Join(dir, "a")); err == nil || !strings.Contains(err.Error(), "sits outside the module") {
+		t.Fatalf("a target in another module must be refused, got %v", err)
+	}
+}
+
+func TestCanonicalSheetFindingsFailUnlessWaived(t *testing.T) {
+	d := ownstyle.Diagnostic{Rule: "raw-dimension", Severity: ownstyle.SeverityWarning, Line: 1, Col: 1, Message: "use a token"}
+	if err := canonicalPackageSheetFinding("x.style.css", ".a { margin: 3px; }\n", d); err == nil {
+		t.Fatal("an unwaived warning in a canonical sheet must fail the copy")
+	}
+}
+
+func TestFirstDocSentenceSkipsDotsInNames(t *testing.T) {
+	got := firstDocSentence("Package siteheader renders the header from siteheader.style.css and _style.gen.go. It is owned.\n", "siteheader")
+	if want := "renders the header from siteheader.style.css and _style.gen.go."; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
 }

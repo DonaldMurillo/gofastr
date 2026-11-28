@@ -11,17 +11,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/gates"
 )
 
-// runAuditA11y is the `gofastr audit a11y` entry point.
-//
-//	gofastr audit a11y [root]              static lint (default root ".")
-//	gofastr audit a11y --url <base>        axe-core scan of a running app
-//	    [--email EMAIL]                    sign in through /login first
-//	    [--password -]                     password: "-" reads stdin;
-//	                                       GOFASTR_AUDIT_PASSWORD env wins
-//	    [--pages /a,/b]                    explicit page list (default: the
-//	                                       app's /sitemap.xml, else "/")
-//
-// Both modes exit 1 when issues are found, so either can gate CI.
 func runAuditA11y(args []string) {
 	opts := parseA11yArgs(args)
 	if opts.help {
@@ -102,20 +91,12 @@ func runAuditA11y(args []string) {
 	}
 }
 
-// parseA11yArgs resolves the `audit a11y` argument forms: an optional
-// positional root, `--url`/`--pages` in BOTH `--flag=value` and
-// `--flag value` spellings (the docs use the space form), and
-// --help/-h. badFlag carries the first unrecognized flag, "" when all
-// args parsed. Only the first argument error is recorded: badFlag and
-// missingValue are never both set.
 type a11yArgs struct {
 	root, baseURL, email, password string
 	pages                          []string
 	help                           bool
 	badFlag                        string
-	// missingValue is the first valued flag given no value, an empty one,
-	// or the next flag where its value belongs.
-	missingValue string
+	missingValue                   string
 }
 
 func parseA11yArgs(args []string) a11yArgs {
@@ -169,13 +150,6 @@ func parseA11yArgs(args []string) a11yArgs {
 	return out
 }
 
-// resolveAuditPassword implements the credentials-never-in-argv doctrine
-// for `audit a11y --password`. "-" is the conventional stdin marker:
-// resolution order is GOFASTR_AUDIT_PASSWORD first, then piped stdin,
-// and the literal marker is never used as the password. A literal value
-// keeps working (documented interface) but draws a one-line warning: it
-// sits in ps/procfs world-readable state for the whole scan, the exact
-// local observer the marker channels exist to avoid.
 func resolveAuditPassword(literal string) string {
 	if literal != "-" {
 		fmt.Fprintln(os.Stderr, "warning: --password <value> is visible to every local process via ps; prefer GOFASTR_AUDIT_PASSWORD or `--password -` (reads the secret from stdin)")

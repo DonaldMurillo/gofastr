@@ -15,19 +15,10 @@ import (
 	"strings"
 )
 
-// defaultTimestampURL is the RFC 3161 server --timestamp-url defaults
-// to. A timestamped signature stays valid after the certificate
-// expires; an untimestamped one does not.
 const defaultTimestampURL = "http://timestamp.digicert.com"
 
-// thumbprintRe matches a certificate's SHA-1 thumbprint as the
-// certificate manager and Get-ChildItem Cert:\ print it.
 var thumbprintRe = regexp.MustCompile(`^[0-9A-Fa-f]{40}$`)
 
-// signtoolArgs builds the signtool command line for one file. cert is a
-// SHA-1 thumbprint (/sha1) or a subject-name substring (/n) of a code
-// signing certificate in the current user's personal store;
-// timestampURL "none" skips the timestamp.
 func signtoolArgs(path, cert, timestampURL string) []string {
 	args := []string{"sign", "/fd", "sha256"}
 	if thumbprintRe.MatchString(cert) {
@@ -41,10 +32,6 @@ func signtoolArgs(path, cert, timestampURL string) []string {
 	return append(args, path)
 }
 
-// signWindowsExecutable signs the executable with signtool. It is the
-// build's last write to the file: a resource update after it would
-// break the signature. WebView2Loader.dll is left alone; it already
-// carries Microsoft's signature, which the updater checks.
 func signWindowsExecutable(path, cert, timestampURL string) error {
 	tool, err := findSigntool()
 	if err != nil {
@@ -57,12 +44,8 @@ func signWindowsExecutable(path, cert, timestampURL string) error {
 	return nil
 }
 
-// lookSigntool is the PATH lookup, a test seam.
 var lookSigntool = func() (string, error) { return exec.LookPath("signtool.exe") }
 
-// findSigntool finds signtool.exe on PATH, then in the newest Windows
-// 10/11 SDK under Program Files (x86)\Windows Kits\10\bin for this
-// host's architecture.
 func findSigntool() (string, error) {
 	if p, err := lookSigntool(); err == nil {
 		return p, nil
@@ -80,8 +63,6 @@ func findSigntool() (string, error) {
 	return "", fmt.Errorf("signtool.exe is not on PATH or in %s; install the Windows SDK signing tools", root)
 }
 
-// compareSDKPaths orders ...\bin\<version>\<arch>\signtool.exe paths
-// by their dotted version, numerically.
 func compareSDKPaths(a, b string) int {
 	va := strings.Split(filepath.Base(filepath.Dir(filepath.Dir(a))), ".")
 	vb := strings.Split(filepath.Base(filepath.Dir(filepath.Dir(b))), ".")
@@ -101,16 +82,7 @@ func compareNumeric(a, b string) int {
 	return strings.Compare(a, b)
 }
 
-// zipWindowsBundle writes the update archive for a Windows build: one
-// <name>/ directory holding <name>.exe and WebView2Loader.dll, the shape
-// the updater and `gofastr desktop feed` accept. Entries carry no
-// timestamps, so two archives of the same build are byte-identical.
-// The archive is written to a temporary file beside dest and renamed
-// over it, so a failed write leaves an earlier archive alone and never
-// writes through a link at dest.
 func zipWindowsBundle(outDir, name, dest string) error {
-	// The name becomes the archive's top-level directory: one plain
-	// path element, never a separator or a dot segment.
 	root := path.Clean(name)
 	if root != name || root == "." || root == ".." || strings.ContainsAny(root, `/\:`) {
 		return fmt.Errorf("app name %q cannot name an archive directory", name)

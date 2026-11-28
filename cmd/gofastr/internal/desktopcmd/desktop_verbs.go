@@ -1,8 +1,5 @@
 package desktopcmd
 
-// desktopExtraVerb dispatches the desktop verbs added after run, build,
-// and types (the release tooling: keygen, feed). It reports whether
-// args[0] was one of them.
 func desktopExtraVerb(args []string) bool {
 	if len(args) == 0 {
 		return false

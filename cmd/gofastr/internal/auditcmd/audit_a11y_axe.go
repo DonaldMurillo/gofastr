@@ -32,8 +32,6 @@ type a11yUnreachable struct {
 	Reason string
 }
 
-// axeAuditRun carries both findings and coverage. Coverage is kept separate
-// from violations so a login redirect can never masquerade as a clean page.
 type axeAuditRun struct {
 	Pages       []string
 	Results     []AxePageResult
@@ -48,7 +46,6 @@ func (r axeAuditRun) onlyLogin() bool {
 	return len(r.Pages) == 1 && cleanPagePath(r.Pages[0]) == "/login" && len(r.Unreachable) == 0
 }
 
-// Incomplete reports coverage that must not pass CI as a clean audit.
 func (r axeAuditRun) Incomplete() bool { return len(r.Unreachable) > 0 || r.onlyLogin() }
 
 type a11ySitemap struct {
@@ -136,8 +133,6 @@ func readA11ySitemap(source string) (a11ySitemap, error) {
 	return doc, err
 }
 
-// auditA11yURL runs the vendored axe-core engine against every page
-// under both color schemes, discovering pages from the sitemap if omitted.
 func auditA11yURL(base string, pages []string, credentials a11yCredentials) (axeAuditRun, error) {
 	base = strings.TrimRight(base, "/")
 	browser, cancel, err := axetest.NewBrowserContext(context.Background())
@@ -188,12 +183,7 @@ func loginA11y(browser context.Context, base string, credentials a11yCredentials
 		chromedp.WaitVisible(`input[name="email"]`, chromedp.ByQuery),
 		chromedp.SetValue(`input[name="email"]`, credentials.Email, chromedp.ByQuery),
 		chromedp.SetValue(`input[name="password"]`, credentials.Password, chromedp.ByQuery),
-		// Submit does not dispatch the form's submit event. The app's real
-		// button is the user path and preserves cookie + redirect behavior.
 		chromedp.Click(`button[type="submit"], input[type="submit"]`, chromedp.ByQuery),
-		// A JS poll is tied to the pre-submit execution context and fails as
-		// soon as the successful redirect replaces that context. Let the normal
-		// navigation settle, then inspect the destination URL.
 		chromedp.Sleep(750*time.Millisecond),
 		chromedp.Location(&finalURL),
 	); err != nil {
@@ -269,9 +259,6 @@ func cleanPagePath(raw string) string {
 	return raw
 }
 
-// formatAxeReport renders the runtime audit: one block per page×scheme,
-// each violation with impact, help text, the axe help URL, and the DOM
-// targets: enough to find and fix the element without re-running.
 func formatAxeReport(run axeAuditRun) string {
 	total := 0
 	for _, r := range run.Results {

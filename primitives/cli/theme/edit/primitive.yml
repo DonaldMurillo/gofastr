@@ -1,0 +1,152 @@
+primitive: cli.theme.edit
+summary: gofastr theme edit - a loopback-only theme configurator that serves token controls beside a live gallery preview from a real UIHost, applies edits as registered theme variants, and writes the working theme back as a Go file.
+code:
+  - cmd/gofastr/internal/themecmd/theme_edit.go
+  - cmd/gofastr/internal/themecmd/theme_edit_page.go
+docs:
+  - framework/docs/content/theming.md
+  - framework/docs/content/cli.md
+invariants:
+  - id: loopback-only
+    rule: The editor binds only a loopback address; a wildcard bind becomes 127.0.0.1, and an empty, unparseable or non-loopback --addr is refused before listening.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditBindAddrFailsClosed
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditBindAddrAcceptsLoopbackForms
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditBindAddrResolvesToALoopbackSocket
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditAddrIsConfinedToLoopback
+  - id: host-pinned
+    rule: Every request whose Host is not the bound loopback authority is refused with 403.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditHostGuard
+  - id: api-needs-the-session-token
+    rule: Every /__theme/ endpoint needs the session's bearer token, and apply and writeback are POST only and refuse a foreign Origin, while a request with no Origin passes.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditApplyRequiresBearerToken
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditCheckOriginRejectsForeignOrigin
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditWritebackMethodGuard
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditWritebackHTTP
+  - id: token-compared-in-constant-time
+    rule: checkBearer compares the Authorization header with the expected bearer value through subtle.ConstantTimeCompare.
+    judge: Does this change compare the bearer token, or anything derived from it, with ==, !=, bytes.Equal or another comparison that returns at the first differing byte?
+  - id: token-is-per-session
+    rule: The bearer token is 32 fresh random bytes per run, never the harness signing key, and reaches the page only in a meta tag.
+    enforced_by:
+      - test: cmd/gofastr.TestThemeEditTokenIsNotTheHarnessSigningKey
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditTokenIs32RandomBytes
+  - id: apply-boundary
+    rule: An apply reads at most 64 KiB of strict JSON, refuses duplicate or case-folded keys, and changes the working theme only when the whole edited theme passes Validate, the check app.WithTheme runs at boot.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditApplyCapsTheBody
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditApplyMalformedBody
+      - test: cmd/gofastr/internal/themecmd.TestThemeApplyRejectsDuplicateKeys
+      - test: cmd/gofastr/internal/themecmd.TestThemeApplyRejectsCaseFoldedKeys
+      - test: cmd/gofastr/internal/themecmd.TestApplyRefusesAThemeThatWouldPanicAtBoot
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditApplyRejectsInvalidValue
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditRejectsDeclarationBreaks
+  - id: one-variant-per-session
+    rule: After each successful apply the session releases its previous theme variant, so it holds exactly one, even when the value did not change.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditReleasesSupersededVariants
+      - test: cmd/gofastr/internal/themecmd.TestApplySameValueReleasesVariant
+  - id: page-shows-the-working-theme
+    rule: The controls page renders the working theme's values and points the preview at its variant, and sends frame-ancestors 'none' and base-uri 'none'.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditControlsPageShowsTheWorkingTheme
+  - id: preview-may-be-framed-by-the-editor
+    rule: Responses from the UIHost lose X-Frame-Options and have frame-ancestors 'none' widened to 'self' in every CSP field, before the first byte, while the writer keeps ReadFrom and Unwrap.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestFrameFriendlyWriterStripsHeaders
+      - test: cmd/gofastr/internal/themecmd.TestFrameWriterKeepsEveryCSPField
+      - test: cmd/gofastr/internal/themecmd.TestFrameWriterKeepsReadFrom
+      - test: cmd/gofastr/internal/themecmd.TestFrameFriendlyWriterReachesDeadline
+  - id: write-back-never-clobbers
+    rule: Without --force, theme edit refuses at startup an --out that exists or is linked out of the project, and a write-back replaces only a file this session wrote, through a temporary file in the destination's package.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditRefusesDanglingOutput
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditRefusesLinkedThemeDirAtStartup
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditWriteBackRefusesLinkedThemeDir
+      - test: cmd/gofastr/internal/themecmd.TestWriteBackRefusesLateFile
+      - test: cmd/gofastr/internal/themecmd.TestWriteBackReplacesAtomically
+      - test: cmd/gofastr/internal/themecmd.TestWriteBackUsesSiblingPackage
+      - test: cmd/gofastr/internal/themecmd.TestWriteTwiceInSession
+      - test: cmd/gofastr/internal/themecmd.TestThemeWriteRetriesAfterFailure
+  - id: contrast-check-can-fail
+    rule: The contrast probes are stylesheet rules, not inline styles, a literal black-on-white sentinel gates every reading, and a status tone's fill is measured with the ink the design system paints on it, danger's own.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditContrastProbesAreNotInlineStyled
+      - test: cmd/gofastr/internal/themecmd.TestColorProbeUsesTwoSentinels
+      - test: cmd/gofastr/internal/themecmd.TestContrastFillsUseTheirOwnInk
+      - test: cmd/gofastr/internal/themecmd.TestContrastPanelReportsFailure
+      - test: cmd/gofastr/internal/themecmd.TestContrastCheckRunsAfterLateStylesheetLoad
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditContrastPanelReportsFailure
+  - id: contrast-reads-the-requested-sheet
+    rule: The contrast panel publishes a reading only once the stylesheet it last asked the preview to load has fired its load event.
+    judge: Does this change let the contrast panel publish a reading while the preview still shows an earlier theme's stylesheet?
+  - id: write-carries-the-last-edit
+    rule: Write flushes pending edits first, and a pending edit that failed blocks the write-back.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestWriteIncludesLastEdit
+      - test: cmd/gofastr/internal/themecmd.TestWriteBlocksOnInvalidPendingEdit
+  - id: controls-from-the-key
+    rule: A token's control comes from its key prefix, color, number, number-px or a select of the option catalogue, and any other key gets a text input, never none.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestTokenControlType
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditComponentOptionsRenderAsSelects
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditUnknownComponentKeyFallsBackToText
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditSelectShowsAnUnmatchedValue
+  - id: chrome-is-the-design-system
+    rule: The editor chrome and the preview compose framework/ui and core-ui components and add no class or stylesheet of their own beyond the off-screen probe rule.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditChromeHasNoBespokeClasses
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditGalleryPreviewRenders
+decisions:
+  - id: fresh-token-not-derived
+    date: 2026-11-28
+    status: accepted
+    decision: Each run mints a random bearer token.
+    rejected:
+      - option: Reuse the harness's derived listener secret.
+        why: With GOFASTR_HARNESS_MACHINE_KEY set it is the key that signs every harness control-plane token, and the unauthenticated controls page would publish it.
+    upholds: [token-is-per-session]
+  - id: token-in-a-meta-tag
+    date: 2026-11-28
+    status: accepted
+    decision: The controls page carries the bearer token in a meta tag, and its script sends it as Authorization Bearer on every call.
+    rejected:
+      - option: Put the token in the page URL's query string.
+        why: A query string leaks through the Referer header, browser history and server logs.
+    upholds: [token-is-per-session, api-needs-the-session-token]
+  - id: refuse-explicit-lan-bind
+    date: 2026-11-28
+    status: accepted
+    decision: A wildcard --addr is rewritten to loopback, and an explicit non-loopback one is refused.
+    rejected:
+      - option: Honour any --addr behind the Host pin.
+        why: The pin stops DNS rebinding in a browser, not a direct TCP client that reads the token off the page and rewrites a Go file on disk.
+    upholds: [loopback-only]
+  - id: inline-bootstrap-script
+    date: 2026-11-28
+    status: accepted
+    decision: The editor's bootstrap script is inlined in the controls page, under the check-csp ignore marker.
+    rejected:
+      - option: Serve it as a separate asset.
+        why: It is per-session glue between the controls and the preview iframe, and an asset route for it costs more than it saves on a loopback dev tool.
+      - option: Move the script into a .js file in the repository.
+        why: It would put a dev tool's page under the shipped-JS lints (no var, own-property reads, reserved-key writes, Trusted Types sinks, host fetch) that exist for the runtime apps load.
+  - id: csp-frames-and-base-only
+    date: 2026-11-28
+    status: accepted
+    decision: The controls page's Content-Security-Policy is exactly frame-ancestors 'none' and base-uri 'none', beside X-Frame-Options DENY.
+    rejected:
+      - option: Add a default-src policy.
+        why: It would block the page's one inline bootstrap script and break the tool, while framing, which the Host and Origin pins do not stop, is the threat that was open.
+    revisit_if: The bootstrap script leaves the page, so a script-src policy could forbid inline script.
+    upholds: [page-shows-the-working-theme]
+  - id: check-runs-in-the-browser
+    date: 2026-11-28
+    status: accepted
+    decision: The contrast check reads computed colours in the browser, by painting a pixel.
+    rejected:
+      - option: Compute contrast in Go.
+        why: The repository's Go helper reads hex only and returns 0 for the oklch values real themes use.
+    upholds: [contrast-check-can-fail]
