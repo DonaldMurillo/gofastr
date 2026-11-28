@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -59,11 +60,23 @@ func TestMCPWriteToolsMatchHTTP(t *testing.T) {
 	if e := call("mcp_policies_update", `{"id": "`+id+`", "note": null, "level": null, "features": null}`).Error; e != nil {
 		t.Fatalf("update setting optional fields to null: %+v", e)
 	}
-	// A required field stays required and non-null.
-	if e := call("mcp_policies_create", `{"note": "x"}`).Error; e == nil {
+	// A required field stays required and non-null. Over the wire a schema refusal is a tool execution error
+	// (isError) rather than a JSON-RPC error, so either one counts as refused.
+	refused := func(resp mcp.Response) bool {
+		if resp.Error != nil {
+			return true
+		}
+		b, _ := json.Marshal(resp.Result)
+		return strings.Contains(string(b), `"isError":true`)
+	}
+	if !refused(call("mcp_policies_create", `{"note": "x"}`)) {
 		t.Errorf("create without the required name was accepted")
 	}
-	if e := call("mcp_policies_update", `{"id": "`+id+`", "name": null}`).Error; e == nil {
+	if !refused(call("mcp_policies_update", `{"id": "`+id+`", "name": null}`)) {
 		t.Errorf("update nulling the required name was accepted")
+	}
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM mcp_policies WHERE name IS NULL OR name = ''`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("%d rows hold a null or empty name after the refused writes (%v)", n, err)
 	}
 }
