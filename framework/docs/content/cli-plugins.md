@@ -96,6 +96,33 @@ Repo-declared commands are **fail-closed**:
 - A conflicting or malformed project `gofastr.settings.yml` never disables or
   bypasses your globally registered hooks or overrides.
 
+### Project plugins from Go source
+
+A project can provide a package from its Go module or one of its dependencies.
+Declare its import path with `go_package` in place of `command`.
+
+```yaml
+plugins:
+  - name: release-helper
+    go_package: example.com/myapp/tools/release-helper
+    hooks: ["pre:release"]
+    config:
+      channel: staging
+```
+
+`gofastr plugin trust release-helper --allow-hook pre:release` builds the
+package for the host platform and verifies its manifest. The package must
+be a Go command that builds with CGO disabled and with the project's
+existing module dependencies. The verified executable is cached at
+`.gofastr/plugins/release-helper.exe` on every platform. Keep that
+directory out of version control.
+
+Discovery and command dispatch use the cached executable and apply the
+same SHA-256 pin as a directly declared project executable. Run the trust
+command again after changing the package or updating its dependencies.
+The optional `config` mapping is application data that the plugin can
+read from the project settings file.
+
 ## Hooks and built-in overrides (opt-in seam)
 
 By default, built-in commands can never be shadowed, wrapped, or hooked:

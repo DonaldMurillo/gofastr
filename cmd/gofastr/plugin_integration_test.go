@@ -687,3 +687,71 @@ func TestMigrateBuiltinRefusesFilteredDB(t *testing.T) {
 		t.Fatalf("expected --builtin migrate refusal when DATABASE_URL was stripped: code=%d err=%q", code, errOut)
 	}
 }
+
+func TestProjectPluginTrustBuildsGoPackage(t *testing.T) {
+	isolatePluginEnv(t)
+	t.Setenv("GOWORK", "off")
+	dir := t.TempDir()
+	t.Chdir(dir)
+	for path, body := range map[string]string{
+		"go.mod":  "module example.com/helper\n\ngo 1.27.4\n",
+		"main.go": mockSeamPluginSrc,
+		"gofastr.settings.yml": `version: 1
+plugins:
+  - name: seamer
+    go_package: example.com/helper
+    overrides: [validate]
+    config:
+      mode: test
+`,
+	} {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cached := filepath.Join(".gofastr", "plugins", "seamer.exe")
+	assertMissing := func() {
+		t.Helper()
+		if _, err := os.Stat(cached); !os.IsNotExist(err) {
+			t.Fatalf("plugin cache should not exist, stat returned %v", err)
+		}
+	}
+
+	if _, _, code := runDispatch(t, "seamer"); code == 0 {
+		t.Fatal("project plugin ran before trust")
+	}
+	assertMissing()
+	out, stderr, code := runDispatch(t, "plugin", "trust", "seamer")
+	if code == 0 || !strings.Contains(out+stderr, "--allow-override validate") || strings.Contains(out, "Building project plugin") {
+		t.Fatalf("trust without grants = %d: %s%s", code, out, stderr)
+	}
+	assertMissing()
+
+	_, stderr, code = runDispatch(t, "plugin", "trust", "seamer", "--allow-override", "validate")
+	if code != 0 {
+		t.Fatalf("explicit trust = %d: %s", code, stderr)
+	}
+	out, stderr, code = runDispatch(t, "validate")
+	if code != 0 || !strings.Contains(out, "OVERRIDDEN:validate") {
+		t.Fatalf("override = %d: %s%s", code, out, stderr)
+	}
+	if err := os.WriteFile("main.go", []byte("invalid Go"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, code = runDispatch(t, "plugin", "trust", "seamer", "--allow-override", "validate"); code == 0 {
+		t.Fatal("trust succeeded for a broken Go package")
+	}
+	out, stderr, code = runDispatch(t, "validate")
+	if code != 0 || !strings.Contains(out, "OVERRIDDEN:validate") {
+		t.Fatalf("failed rebuild lost trusted override = %d: %s%s", code, out, stderr)
+	}
+
+	if err := os.WriteFile(cached, []byte("changed after trust"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	out, stderr, code = runDispatch(t, "seamer")
+	if code == 0 || !strings.Contains(out+stderr, "changed since it was trusted") {
+		t.Fatalf("modified artifact = %d: %s%s", code, out, stderr)
+	}
+}

@@ -20,12 +20,14 @@ invariants:
       - test: core/cliplugin.TestResolveRejectsProjectLaunchers
       - test: core/cliplugin.TestPrepareVerifiedExecPreventsTOCTOU
       - test: cmd/gofastr.TestProjectPluginTrustAndTamper
+      - test: cmd/gofastr.TestProjectPluginTrustBuildsGoPackage
       - test: cmd/gofastr.TestTrustRequiresExplicitGrants
   - id: project-paths-confined
     rule: A project plugin path resolves inside the project root as a single direct executable, rejecting bare PATH launchers, traversal, and symlinks that escape it.
     enforced_by:
       - test: core/cliplugin.TestResolveRejectsProjectPathEscapeAndSymlinkEscape
       - test: core/cliplugin.TestResolveRejectsProjectLaunchers
+      - test: cmd/gofastr/internal/plugincmd.TestInstallProjectPluginConfinesCache
   - id: no-secret-env-leakage
     rule: Plugin subprocesses receive an allowlisted environment, manifest probes exclude toolchain credential vars, and protected secrets (GOFASTR_SECRET, DATABASE_URL, GOFASTR_HARNESS_*) never leak implicitly or via env_from_flags.
     enforced_by:
@@ -59,6 +61,14 @@ decisions:
     rejected:
       - option: Auto-discover and execute arbitrary gofastr-* executables from PATH or allow interpreter launchers like sh/go in project settings.
         why: Silent execution or hashing an interpreter while its script stays mutable defeats the SHA-256 trust pin.
+    upholds: [project-plugins-fail-closed, project-paths-confined]
+  - id: compile-go-project-plugin-at-trust
+    date: 2026-11-28
+    status: accepted
+    decision: A Go package declaration is built on explicit project trust and installs the probed bytes in a confined cache. Dispatch requires the same executable digest as a direct command.
+    rejected:
+      - option: Launch the Go toolchain for every invocation.
+        why: Dispatch must execute the artifact approved by the operator even after a source or dependency change.
     upholds: [project-plugins-fail-closed, project-paths-confined]
   - id: public-core-cliplugin-seam
     date: 2026-11-21
