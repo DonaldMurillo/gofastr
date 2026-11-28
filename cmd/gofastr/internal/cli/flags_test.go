@@ -1,6 +1,10 @@
 package cli
 
 import (
+	"errors"
+	"flag"
+	"io"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -41,5 +45,33 @@ func TestParseFlagsRefusals(t *testing.T) {
 		if quiet {
 			t.Errorf("ParseFlags(%q) set --quiet", tc.args)
 		}
+	}
+}
+
+func TestParseFlagsValidatesBeforeStoring(t *testing.T) {
+	addr := "default"
+	refuse := func(name, value string) error {
+		if value == "bad" {
+			return errors.New(name + " refused")
+		}
+		return nil
+	}
+	for _, args := range [][]string{{"--addr=bad"}, {"--addr", "bad"}} {
+		if _, err := ParseFlags(args, map[string]*string{"--addr": &addr}, nil, refuse); err == nil || addr != "default" {
+			t.Fatalf("ParseFlags(%q) = %v and stored %q, want the refusal and the default kept", args, err, addr)
+		}
+	}
+}
+
+func TestParsePositionalsAroundFlags(t *testing.T) {
+	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	dir := fs.String("dir", "", "")
+	got, err := ParsePositionals(fs, []string{"first", "--dir", "d", "second", "third"})
+	if err != nil || !slices.Equal(got, []string{"first", "second", "third"}) || *dir != "d" {
+		t.Fatalf("positionals %q, dir %q, err %v", got, *dir, err)
+	}
+	if _, err := ParsePositionals(fs, []string{"x", "-h"}); err != flag.ErrHelp {
+		t.Fatalf("help: err %v, want flag.ErrHelp unwrapped", err)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/packages/sitefooter"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 func full() sitefooter.Config {
@@ -41,14 +42,16 @@ func TestRenderTaglineAndNoteOptional(t *testing.T) {
 	cfg := full()
 	cfg.Tagline, cfg.Note = "", ""
 	html := string(sitefooter.Render(cfg))
-	for _, banned := range []string{`class="tagline"`, `class="note"`, "One line about the app.", "© 2026"} {
+	for _, banned := range []string{`class="tagline"`, `class="note"`, `class="language"`, "One line about the app.", "© 2026"} {
 		if strings.Contains(html, banned) {
 			t.Errorf("empty Tagline/Note should draw neither (%q present):\n%s", banned, html)
 		}
 	}
 
-	with := string(sitefooter.Render(full()))
-	for _, want := range []string{`class="tagline"`, "One line about the app.", `class="note"`} {
+	withCfg := full()
+	withCfg.Language = render.Raw(`<nav aria-label="Language">en</nav>`)
+	with := string(sitefooter.Render(withCfg))
+	for _, want := range []string{`class="tagline"`, "One line about the app.", `class="note"`, `class="language"`, `aria-label="Language"`} {
 		if !strings.Contains(with, want) {
 			t.Errorf("Tagline and Note should draw (%q missing):\n%s", want, with)
 		}

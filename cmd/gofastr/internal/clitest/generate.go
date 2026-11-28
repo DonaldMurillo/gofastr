@@ -42,9 +42,7 @@ func WriteReportExtension(t *testing.T, dir, marker string) string {
 	return string(encoded)
 }
 
-// CopyGoSum copies the repo's go.sum into the temp module so `go test`
-// inside the temp dir can satisfy transitive dependencies without needing
-// network access.
+// CopyGoSum copies the repo's go.sum into destDir.
 func CopyGoSum(repoRoot, destDir string) error {
 	src, err := os.ReadFile(filepath.Join(repoRoot, "go.sum"))
 	if err != nil {

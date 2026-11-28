@@ -12,8 +12,7 @@ func MeridianDir() string { return filepath.Join(mustModuleRoot(), "examples", "
 // MeridianYML is the flagship example app's app spec.
 func MeridianYML() string { return filepath.Join(MeridianDir(), "gofastr.yml") }
 
-// FirstAppSpecDiff walks two values and returns a description of the first
-// path where they differ, far more useful than a giant DeepEqual dump.
+// FirstAppSpecDiff describes the first path at which a and b differ.
 func FirstAppSpecDiff(a, b any) string {
 	if d := diffValue(reflect.ValueOf(a), reflect.ValueOf(b), "app spec"); d != "" {
 		return d
@@ -69,8 +68,6 @@ func diffValue(a, b reflect.Value, path string) string {
 			}
 		}
 	default:
-		// An unexported field (AppSpec.appless) cannot be Interface()d:
-		// compare and print it through fmt, which reads it by reflection.
 		if !a.CanInterface() {
 			if as, bs := fmt.Sprintf("%#v", a), fmt.Sprintf("%#v", b); as != bs {
 				return fmt.Sprintf("%s: %s != %s", path, as, bs)

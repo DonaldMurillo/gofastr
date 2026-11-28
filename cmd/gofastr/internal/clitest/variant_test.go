@@ -15,6 +15,7 @@ func TestVariantBuildRunsOnlyForTheFullRunOrItsInputs(t *testing.T) {
 		{"no inputs on a pull request", "0", "framework/app.go", nil, false},
 		{"input file changed", "0", "README.md\ninternal/testapps/lms/gofastr.yml", []string{"internal/testapps/lms/gofastr.yml"}, true},
 		{"other file in the input's directory", "0", "internal/testapps/lms/main.go", []string{"internal/testapps/lms/gofastr.yml"}, false},
+		{"file input is not a prefix", "0", "internal/testapps/lms/gofastr.yml.bak", []string{"internal/testapps/lms/gofastr.yml"}, false},
 		{"file under an input directory", "0", "cmd/gofastr/internal/initcmd/init.go", []string{"cmd/gofastr/internal/initcmd/"}, true},
 		{"sibling directory sharing the prefix", "0", "cmd/gofastr/internal/initcmdx/a.go", []string{"cmd/gofastr/internal/initcmd/"}, false},
 		{"no change set", "", "", []string{"internal/testapps/lms/gofastr.yml"}, false},

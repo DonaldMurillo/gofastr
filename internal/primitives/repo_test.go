@@ -305,6 +305,14 @@ var ownedPackages = []string{
 	"cmd/gofastr/internal/unmountcmd",
 	"cmd/gofastr/internal/upgradecmd",
 	"cmd/gofastr/internal/validatecmd",
+	// cmd/gofastr, the CLI shell and the site packages.
+	"cmd/gofastr",
+	"cmd/gofastr/internal/cli",
+	"cmd/gofastr/internal/clitest",
+	"cmd/gofastr/packages",
+	"cmd/gofastr/packages/docpage",
+	"cmd/gofastr/packages/sitefooter",
+	"cmd/gofastr/packages/siteheader",
 }
 
 //gofastr:test-reads primitives/ *.go

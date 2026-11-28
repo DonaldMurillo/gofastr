@@ -1,0 +1,26 @@
+primitive: cli.clitest.fixtures
+summary: The inputs CLI tests generate from - app spec and OpenAPI fixtures, settings and endpoint snippets - and the writers that lay down temp modules and file trees for them.
+code:
+  - cmd/gofastr/internal/clitest/access_appspec.go
+  - cmd/gofastr/internal/clitest/appspec.go
+  - cmd/gofastr/internal/clitest/appspec_*.go
+  - cmd/gofastr/internal/clitest/audit_a11y.go
+  - cmd/gofastr/internal/clitest/dev_appspec_e2e.go
+  - cmd/gofastr/internal/clitest/emitter_quoting_audit.go
+  - cmd/gofastr/internal/clitest/generate.go
+  - cmd/gofastr/internal/clitest/generate_*.go
+  - cmd/gofastr/internal/clitest/lint_*.go
+  - cmd/gofastr/internal/clitest/noquery_passthrough.go
+  - cmd/gofastr/internal/clitest/theme_edit.go
+  - cmd/gofastr/internal/clitest/unmount.go
+  - cmd/gofastr/internal/clitest/verify.go
+docs:
+  - docs/contributing.md
+on_change:
+  - A fixture that tests generate and build from stays a valid app spec for the current schema; a change to one reruns every test that names it.
+invariants:
+  - id: tree-writers-take-a-nil-map
+    rule: WriteModule and WriteA11yTree accept a nil map; WriteModule writes a go.mod, and WriteA11yTree writes none and leaves its map as it was.
+    enforced_by:
+      - test: cmd/gofastr/internal/clitest.TestWriteModuleTakesNilFiles
+      - test: cmd/gofastr/internal/clitest.TestWriteA11yTree

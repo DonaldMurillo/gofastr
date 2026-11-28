@@ -1,21 +1,5 @@
-// Package docpage is the app's help/docs page: the article nav on
-// the left, the article in the middle, the table of contents on the
-// right, and a previous/next pager under the article. It is built the
-// way siteheader and sitefooter are: plain html elements composed
-// here and the look in docpage.style.css (an owned style). Spacing,
-// the page measure and the prose measure use theme tokens. The grid
-// tracks use literal sizes. The grid sits on the page measure the
-// header and footer use.
-//
-// The regions are whatever the app passes in, so a layout can hand
-// it outlets and a route area. A rail left unset, or holding an
-// empty element (an outlet with no fill), collapses and its column
-// goes; no rails at all is the narrow reading shape, one centred
-// column at the prose measure. Below lg the contents rail goes.
-// Below md the page is one column and the nav is the Sidebar's own
-// phone drawer.
-//
-// This package is the app's own code: edit it freely.
+// Package docpage is the app's help/docs page. This package is the app's
+// own code: edit it freely.
 package docpage
 
 import (
@@ -28,23 +12,19 @@ import (
 
 // Config holds the page's regions.
 type Config struct {
-	// Nav is the left rail: the article list. Left unset, or holding
-	// an empty element, the rail collapses and its column goes.
+	// Nav is the left rail; unset or holding an empty element, it collapses.
 	Nav render.HTML
 	// Crumbs sits above the article body.
 	Crumbs render.HTML
 	// Body is the article.
 	Body render.HTML
-	// Pager sits under the article (see Pager).
+	// Pager sits under the article.
 	Pager render.HTML
-	// Toc is the right rail: the table of contents. Left unset, or
-	// holding an empty element (an outlet with no fill), the rail
-	// collapses and its column goes.
+	// Toc is the right rail; unset or holding an empty element, it collapses.
 	Toc render.HTML
 }
 
-// Render builds the page. The article element is what a table of
-// contents watches for the active heading (Target: "article").
+// Render builds the page; Body sits in its <article>, which a table of contents watches.
 func Render(cfg Config) render.HTML {
 	return Style.Scope(html.Div(html.DivConfig{},
 		html.Div(html.DivConfig{Class: Style.Nav()}, cfg.Nav),
@@ -57,19 +37,13 @@ func Render(cfg Config) render.HTML {
 	))
 }
 
-// PagerConfig names the neighbouring pages. An empty href draws no
-// card on that side.
+// PagerConfig names the neighbouring pages; an empty href draws no card.
 type PagerConfig struct {
-	// Ctx resolves the pager's own words (the nav label and the
-	// direction defaults) through i18nui in the request's language. Left
-	// unset, they come from the app's default translator in its fallback
-	// locale, and English only when that has no entry or there is no
-	// translator; pass the request context to follow the reader.
+	// Ctx resolves the pager's own words through i18nui; pass the request's.
 	Ctx                 context.Context
 	PrevHref, PrevLabel string
 	NextHref, NextLabel string
-	// PrevDir and NextDir are the small direction labels; they default
-	// to "Previous" and "Next" in the request's language.
+	// PrevDir and NextDir default to "Previous" and "Next" in Ctx's language.
 	PrevDir, NextDir string
 }
 

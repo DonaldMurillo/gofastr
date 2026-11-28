@@ -1,7 +1,4 @@
-// Command gofastr is the GoFastr CLI. main parses the subcommand and
-// dispatches to the package under internal/ that implements it; each
-// subcommand's code and tests live there, so a change to one selects
-// only that package's tests and the packages that import it.
+// Command gofastr is the GoFastr CLI.
 package main
 
 import (
@@ -42,9 +39,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/fuzzy"
 )
 
-// Version info: overridden via -ldflags at build time
-// (-X main.version=…). main hands them to cli, where every subcommand
-// reads them.
 var (
 	version   = "dev"
 	commit    = "none"
@@ -222,8 +216,6 @@ var commands = []commandSpec{
 	{names: []string{"desktop"}, run: desktopcmd.RunDesktop, ownsHelp: true, versionChecked: true},
 	{names: []string{"release"}, run: releasecmd.RunRelease, ownsHelp: true, versionChecked: true},
 	{names: []string{"audit"}, run: auditcmd.RunAudit, ownsHelp: true, versionChecked: true},
-	// telemetry reads an app's files wherever they are; it needs no
-	// project. deploy builds the project in this directory.
 	{names: []string{"telemetry"}, run: telemetrycmd.RunTelemetry, ownsHelp: true},
 	{names: []string{"deploy"}, run: deploycmd.RunDeploy, ownsHelp: true, versionChecked: true},
 	{names: []string{"verify"}, run: verifycmd.RunVerify, ownsHelp: true, versionChecked: true, json: func(args []string) bool {
@@ -256,19 +248,12 @@ func findCommand(name string) *commandSpec {
 	return nil
 }
 
-// dispatch routes a parsed argument vector (os.Args[1:]) to the matching
-// subcommand. main() is a thin wrapper so this dispatch logic is testable
-// in-process; behavior is identical to inlining it in main().
 func dispatch(args []string) {
-	// No args → help
 	if len(args) == 0 {
 		printHelp()
 		return
 	}
 
-	// Explicit plugin bypass (`gofastr --builtin <command> ...` or
-	// GOFASTR_NO_PLUGINS=1): skips plugin overrides, hooks, and namespaces so
-	// override/wrapper plugins can invoke the real built-in without recursion.
 	bypassPlugins := os.Getenv(cliplugin.EnvBypassPlugins) == "1"
 	if args[0] == "--builtin" {
 		bypassPlugins = true
@@ -279,14 +264,6 @@ func dispatch(args []string) {
 		}
 	}
 
-	// Global flags. --version/-v prints the version in the command's
-	// place only; after a command it is that command's argument (verify's
-	// -v, a desktop build's --version, and `test -v`, which go test users
-	// type and which must be refused rather than answered with the version
-	// and exit 0). --help/-h is routed through to subcommands (and external
-	// CLI plugins) that own help; for every other command it is intercepted
-	// anywhere in args (a side-effectful command like `dev --help` must
-	// never start a server because it lacks its own help path).
 	if isGlobalVersionFlag(args) {
 		cli.Println(project.VersionLine())
 		return
@@ -316,9 +293,6 @@ func dispatch(args []string) {
 
 	cmd := args[0]
 	cmdArgs := args[1:]
-	// `gofastr help` is the overview and `gofastr help <command>` is
-	// `gofastr <command> --help`. An unknown name falls through to the
-	// unknown-command answer below.
 	if cmd == "help" {
 		if len(cmdArgs) == 0 {
 			printHelp()
@@ -333,10 +307,6 @@ func dispatch(args []string) {
 	}
 	if command != nil && command.json != nil && command.json(cmdArgs) {
 		defer cli.BeginJSON()()
-		if cli.HasHelpFlagBeforeTerminator(cmdArgs) {
-			command.run(cmdArgs)
-			return
-		}
 	}
 
 	if command != nil {
@@ -359,7 +329,6 @@ func dispatch(args []string) {
 		}
 		cli.Fail("Unknown command: %s", cmd)
 		fmt.Println()
-		// Fuzzy suggestion: check if it's close to a known built-in or plugin command
 		candidates := make([]string, 0, len(commands))
 		for _, candidate := range commands {
 			candidates = append(candidates, candidate.names[0])
@@ -377,8 +346,6 @@ func dispatch(args []string) {
 	}
 }
 
-// versionCheckApplies reports whether warnVersionMismatch speaks for
-// this command line: a project command, not a help request.
 func versionCheckApplies(cmd string, args []string) bool {
 	command := findCommand(cmd)
 	if command == nil || !command.versionChecked {
@@ -392,9 +359,6 @@ func versionCheckApplies(cmd string, args []string) bool {
 	return true
 }
 
-// warnVersionMismatch prints, on stderr, a warning when the project in
-// the working directory requires a different GoFastr release than this
-// CLI (project.VersionMismatch). It never stops the command.
 func warnVersionMismatch(cmd string, args []string) {
 	if !versionCheckApplies(cmd, args) {
 		return
@@ -418,7 +382,6 @@ func warnVersionMismatch(cmd string, args []string) {
 	}
 }
 
-// projectDirFlag returns the directory selected by dev or pack arguments.
 func projectDirFlag(cmd string, args []string) string {
 	if cmd == "pack" {
 		dir, err := packcmd.AppDir(args)
@@ -430,7 +393,6 @@ func projectDirFlag(cmd string, args []string) string {
 	if cmd != "dev" {
 		return ""
 	}
-	// The last --dir wins, as in dev's own flag parser.
 	dir := ""
 	for i, a := range args {
 		if v, ok := strings.CutPrefix(a, "--dir="); ok {
@@ -442,8 +404,6 @@ func projectDirFlag(cmd string, args []string) string {
 	return dir
 }
 
-// isGlobalVersionFlag reports whether argv asks for the version as a
-// global flag: --version or -v where the command name goes.
 func isGlobalVersionFlag(args []string) bool {
 	return len(args) > 0 && (args[0] == "--version" || args[0] == "-v")
 }
