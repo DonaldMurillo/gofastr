@@ -30,9 +30,12 @@ func NewLangAware() *LangAware {
 
 // Chunk implements Chunker.
 func (l *LangAware) Chunk(doc Document) ([]Chunk, error) {
+	if !utf8.ValidString(doc.Text) {
+		return nil, fmt.Errorf("semantic: document text must be valid UTF-8")
+	}
 	config := *l
 	l = &config
-	if l.MaxRunes == 0 {
+	if l.MaxRunes <= 0 {
 		l.MaxRunes = 1024
 	}
 	if l.Fallback == nil {
@@ -92,18 +95,11 @@ func chunkSafely(c Chunker, doc Document) (chunks []Chunk, err error) {
 
 func (l *LangAware) detectKind(doc Document) string {
 	if v, ok := doc.Metadata["kind"].(string); ok && v != "" {
-		if v == "code" {
-			if lang, ok := doc.Metadata["lang"].(string); ok {
-				return lang
-			}
-		}
-		if v == "doc" {
-			if lang, ok := doc.Metadata["lang"].(string); ok && lang != "" {
-				return lang
-			}
-		}
 		if v != "code" && v != "doc" {
 			return v
+		}
+		if lang, ok := doc.Metadata["lang"].(string); ok && lang != "" {
+			return lang
 		}
 	}
 	source := strings.ToLower(doc.Source)

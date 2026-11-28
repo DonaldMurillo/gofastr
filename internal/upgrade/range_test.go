@@ -48,3 +48,10 @@ func TestReleasesInRange(t *testing.T) {
 		t.Errorf("empty current means from-the-beginning, got %+v", got)
 	}
 }
+
+func TestPrereleaseIncludesNotesWithBuildMetadata(t *testing.T) {
+	reg := &Registry{Releases: []Release{{Version: "v1.2.3+build-2"}}}
+	if got := ReleasesInRange(reg, "v1.2.2", "v1.2.3-rc.1"); len(got) != 1 {
+		t.Fatalf("ReleasesInRange = %v, want one release", got)
+	}
+}

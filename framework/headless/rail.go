@@ -1,6 +1,8 @@
 package headless
 
 import (
+	"net/url"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -89,7 +91,7 @@ func Rail(p RailProps, s Classes) render.HTML {
 			linkContent = append(linkContent, b.El("span", PartRailCount, nil, render.Text(count)))
 		}
 		items = append(items, b.El("li", PartRailItem, nil,
-			b.El("a", PartRailLink, Attrs(map[string]string{"href": "#" + it.Anchor}),
+			b.El("a", PartRailLink, Attrs(map[string]string{"href": fragmentHref(it.Anchor)}),
 				linkContent...)))
 	}
 
@@ -97,6 +99,11 @@ func Rail(p RailProps, s Classes) render.HTML {
 		b.El("div", PartLabel, Internal(nil), render.Text(p.Label)),
 		b.El("ol", PartRailList, Internal(nil), items...),
 	)
+}
+
+func fragmentHref(id string) string {
+	u := url.URL{Fragment: id}
+	return u.String()
 }
 
 func init() {

@@ -67,8 +67,11 @@ type commentStyle struct {
 }
 
 var (
-	slashStyle = commentStyle{open: "//", blankAfter: true}
-	hashStyle  = commentStyle{open: "# ", skipLeading: func(line string, i int) bool {
+	slashStyle  = commentStyle{open: "//", blankAfter: true}
+	scriptStyle = commentStyle{open: "//", blankAfter: true, skipLeading: func(line string, i int) bool {
+		return i == 0 && strings.HasPrefix(line, "#!")
+	}}
+	hashStyle = commentStyle{open: "# ", skipLeading: func(line string, i int) bool {
 		return i == 0 && strings.HasPrefix(line, "#!")
 	}}
 	dockerStyle = commentStyle{open: "# ", skipLeading: func(line string, _ int) bool {
@@ -110,8 +113,10 @@ func styleFor(p string) (commentStyle, bool) {
 		return dockerStyle, true
 	}
 	switch strings.ToLower(path.Ext(base)) {
-	case ".go", ".js", ".mjs", ".cjs", ".ts", ".mts", ".cts":
+	case ".go":
 		return slashStyle, true
+	case ".js", ".mjs", ".cjs", ".ts", ".mts", ".cts":
+		return scriptStyle, true
 	case ".css":
 		return cssStyle, true
 	case ".md", ".html", ".htm":
@@ -139,6 +144,7 @@ func Stamp(path, content string, m Marker) (string, error) {
 	if !ok {
 		return content, nil
 	}
+	content = StripMarker(path, content)
 	m.Sum = Sum(content)
 	if err := m.validate(); err != nil {
 		return "", err

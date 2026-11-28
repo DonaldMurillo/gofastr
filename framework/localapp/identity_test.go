@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
@@ -76,5 +77,15 @@ func TestLoadOrMintRefusesCorruptFile(t *testing.T) {
 		if u, err := LoadOrMint(dir); err == nil {
 			t.Errorf("identity file %q became owner %q", content, u.GetID())
 		}
+	}
+}
+
+func TestLoadOrMintReportsAnEmptyIdentityAsCorrupt(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, IdentityFile), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadOrMint(dir); err == nil || !strings.Contains(err.Error(), "Restore the file") {
+		t.Fatalf("LoadOrMint error = %v, want identity repair instructions", err)
 	}
 }

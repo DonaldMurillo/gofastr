@@ -33,8 +33,8 @@ func TestAPICatalog_RouteMountedWithAPI(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d, want 200 (api-catalog should mount when the app has entities)", rec.Code)
 	}
-	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
-		t.Errorf("Content-Type %q, want application/json", ct)
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/linkset+json") {
+		t.Errorf("Content-Type %q, want application/linkset+json", ct)
 	}
 	var doc map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
@@ -185,4 +185,31 @@ func TestOAuthAuthorizationServer(t *testing.T) {
 
 func TestOAuthAuthorizationServer_NotMountedByDefault(t *testing.T) {
 	expectDefaultApp404(t, "/.well-known/oauth-authorization-server", "want 404 by default,")
+}
+
+func TestAgentSkillsOptionOwnsEntries(t *testing.T) {
+	skills := []AgentSkillEntry{{Name: "initial"}}
+	app := NewApp(WithAgentSkills(skills))
+	skills[0].Name = "later"
+	rec := httptest.NewRecorder()
+	app.handleAgentSkillsIndex(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	var doc struct{ Skills []AgentSkillEntry }
+	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Skills) != 1 || doc.Skills[0].Name != "initial" {
+		t.Fatalf("agent skills = %#v, want registered entry", doc.Skills)
+	}
+}
+
+func TestOAuthAuthorizationServerOptionOwnsCapabilities(t *testing.T) {
+	scopes := []string{"profile"}
+	app := NewApp(WithOAuthAuthorizationServer(OAuthAuthorizationServerConfig{
+		Issuer: "https://issuer.example", ScopesSupported: scopes,
+	}))
+	scopes[0] = "changed"
+	if got := app.oauthAuthServer.ScopesSupported[0]; got != "profile" {
+		t.Fatalf("configured scope = %q after caller changed its slice", got)
+	}
 }

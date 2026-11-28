@@ -1,7 +1,10 @@
 // Package backoff holds the retry-delay policies shared by the outbox, queue, webhook and log batteries.
 package backoff
 
-import "time"
+import (
+	"math"
+	"time"
+)
 
 // Exponential returns base*2^(attempts-1) for a base of zero or more, clamped to a positive max and never overflowing.
 func Exponential(base, max time.Duration, attempts int) time.Duration {
@@ -17,7 +20,12 @@ func Exponential(base, max time.Duration, attempts int) time.Duration {
 		if max > 0 && d >= max {
 			return max
 		}
-		if d > (1<<63-1)/2 {
+		if d < math.MinInt64/2 {
+			return d
+		}
+		if d > math.MaxInt64/2 {
+			// The next doubling would overflow; clamp to max (or this
+			// value when uncapped).
 			if max > 0 {
 				return max
 			}

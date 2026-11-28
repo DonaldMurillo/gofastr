@@ -21,12 +21,6 @@ func (b *Builder) Watch(ctx context.Context, watchDirs []string, interval time.D
 	if interval == 0 {
 		interval = 500 * time.Millisecond
 	}
-	if _, err := b.Build(ctx); err != nil {
-		if onError != nil {
-			onError(err)
-		}
-	}
-
 	state := &mtimeMap{}
 	if b.OutDir != "" {
 		state.skip = resolvedWatchPath(b.OutDir)
@@ -35,6 +29,9 @@ func (b *Builder) Watch(ctx context.Context, watchDirs []string, interval time.D
 		state.skipFile = filepath.Join(resolvedWatchPath(dir), name)
 	}
 	state.files = state.scan(watchDirs)
+	if _, err := b.Build(ctx); err != nil && onError != nil {
+		onError(err)
+	}
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()

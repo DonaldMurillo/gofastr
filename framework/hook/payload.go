@@ -1,6 +1,9 @@
 package hook
 
-import "net/http"
+import (
+	"net/http"
+	"slices"
+)
 
 // WhereClause is a Before read hook's predicate; SQL is used verbatim, so caller values go in Args behind $N.
 type WhereClause struct {
@@ -17,7 +20,7 @@ type ListPayload struct {
 
 // AddWhere appends a parenthesised clause; its $N are renumbered in order, one argument each, never reused.
 func (p *ListPayload) AddWhere(sql string, args ...any) {
-	p.Where = append(p.Where, WhereClause{SQL: sql, Args: args})
+	p.Where = append(p.Where, WhereClause{SQL: sql, Args: slices.Clone(args)})
 }
 
 // GetPayload is the data of BeforeGet (AddWhere scopes the lookup and record writes, a miss is 404) and AfterGet (Result).
@@ -30,5 +33,5 @@ type GetPayload struct {
 
 // AddWhere appends a parameterised clause, as ListPayload.AddWhere.
 func (p *GetPayload) AddWhere(sql string, args ...any) {
-	p.Where = append(p.Where, WhereClause{SQL: sql, Args: args})
+	p.Where = append(p.Where, WhereClause{SQL: sql, Args: slices.Clone(args)})
 }

@@ -2,7 +2,9 @@ package expr
 
 import (
 	"fmt"
+	"math"
 	"slices"
+	"strings"
 )
 
 // node is the AST interface. eval is the only contract.
@@ -199,6 +201,14 @@ func (p *parser) parseUnary() (node, error) {
 		}
 		defer p.leave()
 		p.advance()
+		next := p.peek()
+		if t.value == "-" && next.kind == tokNumber && strings.TrimLeft(next.value, "0") == "9223372036854775808" {
+			p.advance()
+			if err := p.count(); err != nil {
+				return nil, err
+			}
+			return &literalNode{value: int64(math.MinInt64)}, nil
+		}
 		inner, err := p.parseUnary()
 		if err != nil {
 			return nil, err

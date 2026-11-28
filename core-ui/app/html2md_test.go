@@ -60,6 +60,19 @@ func TestHTML2MD_Links(t *testing.T) {
 	}
 }
 
+func TestHTML2MDUsesLinkAndImageAttributes(t *testing.T) {
+	for input, want := range map[string]string{
+		`<a href="/products" data-href="/preview">Products</a>`:             `[Products](/products)`,
+		`<a title='Contains href="/preview"' href='/products'>Products</a>`: `[Products](/products)`,
+		`<a data-href="/preview">Products</a>`:                              `Products`,
+		`<img alt="Logo" src="/logo.png" data-src="/placeholder.png">`:      `![Logo](/logo.png)`,
+	} {
+		if got := htmlToMarkdown(input); got != want {
+			t.Errorf("htmlToMarkdown(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func TestHTML2MD_Images(t *testing.T) {
 	html := `<img alt="Logo" src="/logo.png" />`
 	got := htmlToMarkdown(html)

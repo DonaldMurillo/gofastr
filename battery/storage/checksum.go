@@ -45,8 +45,11 @@ func VerifyChecksum(ctx context.Context, s Storage, key, wantSHA256 string) erro
 	defer rc.Close()
 
 	h := sha256.New()
-	if _, err := io.Copy(h, rc); err != nil {
+	if _, err := io.Copy(h, checksumReader{ctx, rc}); err != nil {
 		return fmt.Errorf("storage: hashing %q: %w", key, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	got := hex.EncodeToString(h.Sum(nil))
 
@@ -57,6 +60,20 @@ func VerifyChecksum(ctx context.Context, s Storage, key, wantSHA256 string) erro
 	return nil
 }
 
+type checksumReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (r checksumReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.r.Read(p)
+}
+
+// countReader counts the bytes read through r. It is used to obtain the
+// byte count alongside the io.TeeReader hash in a single pass.
 type countReader struct {
 	r io.Reader
 	n int64

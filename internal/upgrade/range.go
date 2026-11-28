@@ -33,7 +33,8 @@ func ReleasesInRange(reg *Registry, current, target string) []Release {
 // before it: v's core with the prerelease "-0". A version that is
 // itself a prerelease is returned as is.
 func lowestPrerelease(v string) string {
-	if strings.ContainsAny(v, "-+") {
+	v, _, _ = strings.Cut(v, "+")
+	if strings.Contains(v, "-") {
 		return v
 	}
 	return v + "-0"

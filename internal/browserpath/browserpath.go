@@ -28,7 +28,7 @@ var pathNames = []string{"chrome", "chromium", "chromium-browser", "google-chrom
 // Find returns the browser executable to launch and whether one was found.
 func Find() (string, bool) {
 	if p := os.Getenv("GOFASTR_BROWSER_PATH"); p != "" {
-		if _, err := os.Stat(p); err == nil {
+		if executable(p) {
 			return p, true
 		}
 	}
@@ -41,11 +41,16 @@ func Find() (string, bool) {
 		if path == "" {
 			continue
 		}
-		if _, err := os.Stat(path); err == nil {
+		if executable(path) {
 			return path, true
 		}
 	}
 	return "", false
+}
+
+func executable(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular() && (runtime.GOOS == "windows" || info.Mode().Perm()&0o111 != 0)
 }
 
 // candidates returns the standard install locations for the current OS, in

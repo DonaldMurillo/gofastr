@@ -1,8 +1,11 @@
 package expr
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
+	"math"
+	"math/big"
 	"reflect"
 )
 
@@ -88,8 +91,8 @@ func (n *indexNode) eval(scope Scope, env *Env) (any, error) {
 }
 
 func (n *callNode) eval(scope Scope, env *Env) (any, error) {
-	fn, ok := env.Functions[n.name]
-	if !ok {
+	fn := env.Functions[n.name]
+	if fn == nil {
 		return nil, fmt.Errorf("expr: undefined function %q", n.name)
 	}
 	args := make([]any, len(n.args))
@@ -116,15 +119,22 @@ func (n *unaryNode) eval(scope Scope, env *Env) (any, error) {
 		}
 		return !b, nil
 	case "-":
-		switch x := v.(type) {
-		case int64:
-			return -x, nil
-		case float64:
-			return -x, nil
+		i, f, numeric := numerics(v)
+		if numeric && i != nil {
+			if *i == math.MinInt64 {
+				return nil, fmt.Errorf("expr: integer overflow in unary -")
+			}
+			return -*i, nil
+		}
+		if numeric {
+			return -f, nil
 		}
 		return nil, fmt.Errorf("expr: - requires number, got %T", v)
 	case "+":
-		return v, nil
+		if _, _, ok := numerics(v); ok {
+			return v, nil
+		}
+		return nil, fmt.Errorf("expr: + requires number, got %T", v)
 	}
 	return nil, fmt.Errorf("expr: unknown unary %q", n.op)
 }
@@ -210,14 +220,29 @@ func arith(op string, l, r any) (any, error) {
 		a, b := *li, *ri
 		switch op {
 		case "+":
-			return a + b, nil
+			sum := a + b
+			if (b > 0 && sum < a) || (b < 0 && sum > a) {
+				return nil, fmt.Errorf("expr: integer overflow in +")
+			}
+			return sum, nil
 		case "-":
-			return a - b, nil
+			diff := a - b
+			if (b > 0 && diff > a) || (b < 0 && diff < a) {
+				return nil, fmt.Errorf("expr: integer overflow in -")
+			}
+			return diff, nil
 		case "*":
-			return a * b, nil
+			product := a * b
+			if (a == math.MinInt64 && b == -1) || (b != 0 && product/b != a) {
+				return nil, fmt.Errorf("expr: integer overflow in *")
+			}
+			return product, nil
 		case "/":
 			if b == 0 {
 				return nil, fmt.Errorf("expr: division by zero")
+			}
+			if a == math.MinInt64 && b == -1 {
+				return nil, fmt.Errorf("expr: integer overflow in /")
 			}
 			return a / b, nil
 		case "%":
@@ -279,10 +304,7 @@ func equals(l, r any) bool {
 	li, lf, lOK := numerics(l)
 	ri, rf, rOK := numerics(r)
 	if lOK && rOK {
-		if li != nil && ri != nil {
-			return *li == *ri
-		}
-		return lf == rf
+		return !math.IsNaN(lf) && !math.IsNaN(rf) && compareNumbers(li, lf, ri, rf) == 0
 	}
 	// Comparing two interface values panics at runtime when either dynamic
 	// type is uncomparable (slice, map, func). Those arrive routinely here:
@@ -310,21 +332,19 @@ func compare(op string, l, r any) (any, error) {
 	li, lf, lOK := numerics(l)
 	ri, rf, rOK := numerics(r)
 	if lOK && rOK {
-		// Two integers order as integers: float64 rounds past 2^53, so
-		// 9007199254740993 > 9007199254740992 came out false.
-		if li != nil && ri != nil {
-			return orderInts(op, *li, *ri), nil
+		if math.IsNaN(lf) || math.IsNaN(rf) {
+			return false, nil
 		}
-		a, b := lf, rf
+		order := compareNumbers(li, lf, ri, rf)
 		switch op {
 		case "<":
-			return a < b, nil
+			return order < 0, nil
 		case ">":
-			return a > b, nil
+			return order > 0, nil
 		case "<=":
-			return a <= b, nil
+			return order <= 0, nil
 		case ">=":
-			return a >= b, nil
+			return order >= 0, nil
 		}
 	}
 	ls, lok := l.(string)
@@ -344,17 +364,18 @@ func compare(op string, l, r any) (any, error) {
 	return nil, fmt.Errorf("expr: cannot compare %T %s %T", l, op, r)
 }
 
-// orderInts applies an ordering operator compare has already matched.
-func orderInts(op string, a, b int64) bool {
-	switch op {
-	case "<":
-		return a < b
-	case ">":
-		return a > b
-	case "<=":
-		return a <= b
-	default: // ">="
-		return a >= b
+// compareNumbers keeps integer precision even when the other operand is a float.
+// Callers handle NaN before comparing.
+func compareNumbers(li *int64, lf float64, ri *int64, rf float64) int {
+	switch {
+	case li == nil && ri == nil:
+		return cmp.Compare(lf, rf)
+	case li != nil && ri != nil:
+		return cmp.Compare(*li, *ri)
+	case li != nil:
+		return new(big.Float).SetInt64(*li).Cmp(new(big.Float).SetFloat64(rf))
+	default:
+		return new(big.Float).SetFloat64(lf).Cmp(new(big.Float).SetInt64(*ri))
 	}
 }
 

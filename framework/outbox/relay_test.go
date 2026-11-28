@@ -2,15 +2,70 @@ package outbox
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
+
+func TestRelayStopIsConcurrentSafe(t *testing.T) {
+	_, o := openOutbox(t)
+	o.Consume("logger", "order.placed", func(context.Context, event.Event) error { return nil })
+	for range 2048 {
+		stop := o.StartRelay(t.Context())
+		start := make(chan struct{})
+		const callers = 32
+		var ready, group sync.WaitGroup
+		ready.Add(callers)
+		for range callers {
+			group.Go(func() {
+				ready.Done()
+				<-start
+				stop()
+			})
+		}
+		ready.Wait()
+		close(start)
+		group.Wait()
+	}
+}
+
+func TestRelayPreservesJSONNumbersOutsideFloatRange(t *testing.T) {
+	conn, o := openOutbox(t)
+	want := []any{json.Number("1e400"), json.Number("-1e-400")}
+	got := make(chan any, 1)
+	o.Consume("logger", "order.placed", func(_ context.Context, ev event.Event) error {
+		got <- ev.Data
+		return nil
+	})
+	if _, err := o.Append(t.Context(), conn, "order.placed", want); err != nil {
+		t.Fatal(err)
+	}
+	o.pump(t.Context())
+	select {
+	case payload := <-got:
+		encoded, err := json.Marshal(payload)
+		if err != nil || string(encoded) != `[1e400,-1e-400]` {
+			t.Fatalf("consumer received %s (%v), want the original numbers", encoded, err)
+		}
+	default:
+		t.Fatal("consumer did not receive the staged payload")
+	}
+}
+
+func TestDeliveryErrorIsValidDatabaseTextBeforeTruncation(t *testing.T) {
+	message := truncateError(errors.New("read\x00fault\xff"))
+	if !utf8.ValidString(message) || message != "read�fault�" {
+		t.Fatalf("stored error = %q, want valid text without a NUL", message)
+	}
+}
 
 // waitForParent polls List until the parent row with id reaches want, or
 // fails after a short deadline. The relay is asynchronous, so tests must

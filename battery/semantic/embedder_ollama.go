@@ -110,7 +110,7 @@ func (e *OllamaEmbedder) Embed(ctx context.Context, texts []string) ([][]float32
 	if len(raw) > 10<<20 {
 		return nil, errors.New("semantic: ollama response exceeds 10 MB")
 	}
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("semantic: ollama returned %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 

@@ -89,7 +89,14 @@ func (mc *MemoryCache) evictExpired() {
 func (mc *MemoryCache) Len() int {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
-	return len(mc.items)
+	now := time.Now()
+	live := 0
+	for _, entry := range mc.items {
+		if !entry.hasExpiry || !now.After(entry.expiresAt) {
+			live++
+		}
+	}
+	return live
 }
 
 func (mc *MemoryCache) removeLocked(key string, entry *memoryEntry) {
@@ -146,11 +153,6 @@ func (mc *MemoryCache) Get(_ context.Context, key string, dest any) error {
 // Set stores a value in the cache with the given TTL.
 func (mc *MemoryCache) Set(_ context.Context, key string, value any, ttl time.Duration) error {
 	k := mc.prefixedKey(key)
-	data, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-
 	effectiveTTL := ttl
 	if effectiveTTL == 0 {
 		effectiveTTL = mc.cfg.defaultTTL
@@ -163,6 +165,11 @@ func (mc *MemoryCache) Set(_ context.Context, key string, value any, ttl time.Du
 		}
 		mc.mu.Unlock()
 		return nil
+	}
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
 	}
 
 	entry := &memoryEntry{

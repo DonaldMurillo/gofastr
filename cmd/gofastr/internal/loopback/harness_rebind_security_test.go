@@ -96,3 +96,11 @@ func TestHostAllowedFailsClosed(t *testing.T) {
 		t.Fatal("empty allow-list must deny, not admit")
 	}
 }
+
+func TestLoopbackGuardsKeepSpecificLoopbackAddress(t *testing.T) {
+	addr := "127.0.0.2:41234"
+	hosts, origins := LoopbackGuards(addr)
+	if !HostAllowed(addr, hosts) || len(origins) == 0 {
+		t.Fatalf("bound address missing: hosts %v, origins %v", hosts, origins)
+	}
+}

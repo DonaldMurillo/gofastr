@@ -86,7 +86,7 @@ func normalizePath(raw string) string {
 			return "/"
 		}
 	}
-	if raw == "" {
+	if raw == "" || raw[0] == '?' || raw[0] == '#' {
 		return "/"
 	}
 	return raw

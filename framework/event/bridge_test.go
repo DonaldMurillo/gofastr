@@ -1,8 +1,11 @@
 package event_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -162,6 +165,29 @@ func TestBridgeMarshalFailureSkipsPublish(t *testing.T) {
 	}
 }
 
+func TestBridgePreservesJSONNumbersOutsideFloatRange(t *testing.T) {
+	buses, _, stop := attachBuses(t, 2)
+	defer stop()
+	got := make(chan any, 1)
+	buses[1].On("numbers", func(_ context.Context, ev event.Event) error {
+		got <- ev.Data
+		return nil
+	})
+	want := []any{json.Number("1e400"), json.Number("-1e-400")}
+	if err := buses[0].Emit(t.Context(), event.Event{Type: "numbers", Data: want}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case payload := <-got:
+		encoded, err := json.Marshal(payload)
+		if err != nil || string(encoded) != `[1e400,-1e-400]` {
+			t.Fatalf("remote subscriber received %s (%v), want the original numbers", encoded, err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("remote subscriber did not receive the payload")
+	}
+}
+
 // TestBridgeStopDetaches: after stop(), an Emit on A is no longer mirrored to
 // the fanout, so B never sees it.
 func TestBridgeStopDetaches(t *testing.T) {
@@ -216,6 +242,78 @@ func (s *stallFanout) Publish(_ context.Context, _ string, _ []byte) error {
 }
 func (s *stallFanout) Subscribe(_ string, _ func([]byte)) (func(), error) {
 	return func() {}, nil
+}
+
+func TestBridgeReportsDroppingOldestEvent(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	defer slog.SetDefault(previous)
+	release := make(chan struct{})
+	bus := event.NewEventBus()
+	stop, err := event.AttachFanout(bus, &stallFanout{release: release})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		close(release)
+		stop()
+	}()
+	for range 600 {
+		if err := bus.Emit(t.Context(), event.Event{Type: "ping"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := strings.Count(logs.String(), "publish queue overflowed"); got != 1 {
+		t.Fatalf("logged %d overflows, want one", got)
+	}
+}
+
+type cancelableFanout struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (f *cancelableFanout) Publish(ctx context.Context, _ string, _ []byte) error {
+	close(f.started)
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-f.release:
+		return nil
+	}
+}
+
+func (*cancelableFanout) Subscribe(string, func([]byte)) (func(), error) {
+	return func() {}, nil
+}
+
+func TestBridgeStopCancelsActivePublish(t *testing.T) {
+	backend := &cancelableFanout{started: make(chan struct{}), release: make(chan struct{})}
+	defer close(backend.release)
+	bus := event.NewEventBus()
+	stop, err := event.AttachFanout(bus, backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bus.Emit(t.Context(), event.Event{Type: "ping"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-backend.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("publisher did not start")
+	}
+	done := make(chan struct{})
+	go func() {
+		stop()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("stop waited for the publish timeout instead of canceling the publish")
+	}
 }
 
 // TestBridgeEmitDoesNotBlockOnStalledFanout: a fanout whose Publish blocks

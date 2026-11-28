@@ -132,7 +132,7 @@ func CursorFits(cursor string) bool {
 	if json.Unmarshal(b, &tok) != nil {
 		return true
 	}
-	return len(tok.Fields) <= maxCursorFields
+	return len(tok.Fields) > 0 && len(tok.Fields) <= maxCursorFields
 }
 
 // DecodeCursor returns a cursor's field, control and invisible codepoints
@@ -173,8 +173,9 @@ func EncodeMultiCursor(fields []string, row map[string]any) string {
 	tok := multiCursorToken{Fields: make([]multiCursorField, 0, len(fields))}
 	for _, f := range fields {
 		v, ok := row[f]
-		if !ok {
-			continue
+		if !ok || isNullKey(v) {
+			tok.Fields = tok.Fields[:0]
+			break
 		}
 		tok.Fields = append(tok.Fields, multiCursorField{Name: f, Value: toString(v)})
 	}
@@ -198,6 +199,9 @@ func DecodeMultiCursor(cursor string) ([]multiCursorField, error) {
 	var tok multiCursorToken
 	if err := json.Unmarshal(b, &tok); err != nil {
 		return nil, cursorTokenError(err)
+	}
+	if len(tok.Fields) == 0 {
+		return nil, i18n.NewError(reasonCursorNoFields)
 	}
 	if len(tok.Fields) > maxCursorFields {
 		return nil, i18n.NewError(reasonCursorTooManyFields, map[string]any{"count": len(tok.Fields), "max": maxCursorFields})
@@ -309,8 +313,6 @@ func KeysetString(v any) string { return toString(v) }
 
 func toString(v any) string {
 	switch val := v.(type) {
-	case string:
-		return val
 	case time.Time:
 		return schema.FormatTimestamp(val)
 	case *time.Time:
@@ -326,6 +328,10 @@ func toString(v any) string {
 	case float64:
 		return strconv.FormatFloat(val, 'f', -1, 64)
 	default:
+		rv := reflect.Indirect(reflect.ValueOf(val))
+		if rv.Kind() == reflect.String {
+			return rv.String()
+		}
 		b, err := json.Marshal(val)
 		if err != nil {
 			slog.Warn("pagination: encode keyset value", "error", err)

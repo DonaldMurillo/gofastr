@@ -161,9 +161,7 @@ func (s *Spec) SetSecurityScheme(name string, scheme map[string]any) {
 
 // AddSecurityRequirement adds a global security requirement.
 func (s *Spec) AddSecurityRequirement(name string, scopes []string) {
-	s.security = append(s.security, map[string][]string{
-		name: scopes,
-	})
+	s.security = append(s.security, securityRequirement(name, scopes))
 }
 
 // Build produces the full OpenAPI 3.1 specification as a map.

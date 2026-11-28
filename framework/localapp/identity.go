@@ -61,12 +61,8 @@ func LoadOrMint(dir string) (*User, error) {
 	path := filepath.Join(dir, IdentityFile)
 	if b, err := readIfExists(path); err != nil {
 		return nil, err
-	} else if len(b) > 0 {
-		id := strings.TrimSpace(string(b))
-		if !Valid(id) {
-			return nil, errCorrupt(path)
-		}
-		return &User{id: id}, nil
+	} else if b != nil {
+		return parseIdentity(path, b)
 	}
 	var raw [16]byte
 	if _, err := rand.Read(raw[:]); err != nil {
@@ -75,15 +71,21 @@ func LoadOrMint(dir string) (*User, error) {
 	id := hex.EncodeToString(raw[:])
 	if err := writeExclusive(path, []byte(id)); err != nil {
 		if os.IsExist(err) {
-			if b, rerr := readIfExists(path); rerr == nil && len(b) > 0 {
-				raced := strings.TrimSpace(string(b))
-				if !Valid(raced) {
-					return nil, errCorrupt(path)
-				}
-				return &User{id: raced}, nil
+			// Lost the race: another process minted it first. Its bytes
+			// go through the same grammar check as any other read.
+			if b, rerr := readIfExists(path); rerr == nil && b != nil {
+				return parseIdentity(path, b)
 			}
 		}
 		return nil, fmt.Errorf("write local identity file: %w", err)
+	}
+	return &User{id: id}, nil
+}
+
+func parseIdentity(path string, b []byte) (*User, error) {
+	id := strings.TrimSpace(string(b))
+	if !Valid(id) {
+		return nil, errCorrupt(path)
 	}
 	return &User{id: id}, nil
 }

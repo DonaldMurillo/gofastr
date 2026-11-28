@@ -147,6 +147,9 @@ func TestRunReadinessChecks_InProcess(t *testing.T) {
 	})
 
 	resp := app.RunReadinessChecks(context.Background())
+	if resp.Status != "not_ready" {
+		t.Errorf("readiness status = %q, want not_ready", resp.Status)
+	}
 	if len(resp.Checks) != 2 {
 		t.Fatalf("checks: got %d want 2", len(resp.Checks))
 	}
@@ -179,5 +182,13 @@ func TestRunReadinessChecks_Verbose(t *testing.T) {
 	}
 	if got := resp.Checks[0].Error; got != "dial 10.0.0.5: connection refused" {
 		t.Errorf("verbose error passthrough: got %q", got)
+	}
+}
+
+func TestRunReadinessChecksReportsReady(t *testing.T) {
+	app := NewApp()
+	app.RegisterReadiness("ok", func(context.Context) error { return nil })
+	if got := app.RunReadinessChecks(context.Background()).Status; got != "ready" {
+		t.Errorf("readiness status = %q, want ready", got)
 	}
 }

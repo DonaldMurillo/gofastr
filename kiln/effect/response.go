@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
+	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
@@ -53,41 +55,42 @@ func (r Response) WriteTo(w http.ResponseWriter) error {
 	if !validStatus(r.Status) {
 		return fmt.Errorf("effect: response status %d out of range (100-999)", r.Status)
 	}
+	var body []byte
+	if r.Body != nil && r.Status >= 200 && r.Status != http.StatusNoContent &&
+		r.Status != http.StatusResetContent && r.Status != http.StatusNotModified {
+		data, err := json.Marshal(r.Body)
+		if err != nil {
+			return err
+		}
+		body = append(data, '\n')
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(r.Status)
-	if r.Body == nil {
+	if len(body) == 0 {
 		return nil
 	}
-	return json.NewEncoder(w).Encode(r.Body)
+	n, err := w.Write(body)
+	if err == nil && n < len(body) {
+		return io.ErrShortWrite
+	}
+	return err
 }
 
 func resolveJSON(a world.Action, s Scope) (Response, error) {
 	resp := Response{Status: http.StatusOK}
 	if v, ok := a.Params["status"]; ok && v != nil {
-		switch n := v.(type) {
-		case int:
-			resp.Status = n
-		case int64:
-			resp.Status = int(n)
-		case float64, json.Number:
-			// json.Number: the journal keeps an integer past 2^53 exact,
-			// and it is refused as the float64 it used to arrive as was.
-			i, ok := toInt(n)
-			if !ok {
-				return Response{}, fmt.Errorf("respond_json status: %v is not an integer", n)
-			}
-			resp.Status = i
-		case string:
-			out, err := evalExpr(n, s)
+		if src, ok := v.(string); ok {
+			out, err := evalExpr(src, s)
 			if err != nil {
 				return Response{}, fmt.Errorf("respond_json status: %w", err)
 			}
-			i, ok := toInt(out)
-			if !ok {
-				return Response{}, fmt.Errorf("respond_json status: expected int, got %T", out)
-			}
-			resp.Status = i
+			v = out
 		}
+		status, ok := toInt(v)
+		if !ok {
+			return Response{}, fmt.Errorf("respond_json status: expected int, got %T", v)
+		}
+		resp.Status = status
 		// The status is an expression evaluated per request against the
 		// route scope, so its value is attacker-influenced even for a
 		// benign IR, `len(ctx.path)` against a 3-character path yields 3,
@@ -121,7 +124,10 @@ func toInt(v any) (int, bool) {
 	case int:
 		return n, true
 	case int64:
-		return int(n), true
+		return int(n), int64(int(n)) == n
+	case json.Number:
+		i, err := strconv.Atoi(string(n))
+		return i, err == nil
 	case float64:
 		if n != n || n > math.MaxInt32 || n < math.MinInt32 {
 			return 0, false // NaN, ±Inf, or out of a portable int range
@@ -131,7 +137,5 @@ func toInt(v any) (int, bool) {
 		}
 		return int(n), true
 	}
-	// A json.Number (the journal keeps an integer past 2^53 as one) is
-	// past every int range this accepts, so it falls through to false.
 	return 0, false
 }

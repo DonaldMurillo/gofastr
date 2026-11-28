@@ -66,6 +66,9 @@ func Enable(root string) {
 	if root == "" {
 		root = DefaultDir()
 	}
+	if current != nil && dir != root {
+		dirty = true
+	}
 	dir = root
 	if current == nil {
 		if existing, err := readFrom(root); err == nil {
@@ -294,7 +297,7 @@ func (m *Manifest) CoveredRoute(method, pattern string) bool {
 	if m == nil {
 		return false
 	}
-	return slices.Contains(m.Routes[normalizePattern(pattern)], strings.ToUpper(method))
+	return slices.Contains(m.Routes[normalizePattern(pattern)], strings.ToUpper(strings.TrimSpace(method)))
 }
 
 // CoveredEntity reports whether any operation ran on the entity.
@@ -318,7 +321,7 @@ func (m *Manifest) CoveredEvent(eventType string) bool {
 	if m == nil {
 		return false
 	}
-	return slices.Contains(m.Events, eventType)
+	return slices.Contains(m.Events, strings.TrimSpace(eventType))
 }
 
 // CoveredRole reports whether a caller ever held the role during a check.
@@ -326,7 +329,7 @@ func (m *Manifest) CoveredRole(role string) bool {
 	if m == nil {
 		return false
 	}
-	return slices.Contains(m.Roles, role)
+	return slices.Contains(m.Roles, strings.TrimSpace(role))
 }
 
 // CoveredPermission reports whether a permission was evaluated.
@@ -334,7 +337,7 @@ func (m *Manifest) CoveredPermission(p string) bool {
 	if m == nil {
 		return false
 	}
-	return slices.Contains(m.Permissions, p)
+	return slices.Contains(m.Permissions, strings.TrimSpace(p))
 }
 
 func normalizePattern(p string) string {

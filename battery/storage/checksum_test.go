@@ -193,3 +193,22 @@ func (s *patternStream) Read(p []byte) (int, error) {
 	s.remain -= max
 	return int(max), nil
 }
+
+type canceledChecksumStorage struct {
+	Storage
+	cancel context.CancelFunc
+}
+
+func (s canceledChecksumStorage) Get(context.Context, string) (io.ReadCloser, error) {
+	s.cancel()
+	return io.NopCloser(strings.NewReader("hello")), nil
+}
+
+func TestVerifyChecksumStopsOnCanceledRead(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	s := canceledChecksumStorage{cancel: cancel}
+	want := sha256.Sum256([]byte("hello"))
+	if err := VerifyChecksum(ctx, s, "object", hex.EncodeToString(want[:])); !errors.Is(err, context.Canceled) {
+		t.Fatalf("VerifyChecksum error = %v, want context.Canceled", err)
+	}
+}

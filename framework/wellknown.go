@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -45,7 +46,9 @@ func (a *App) writeWellKnownJSON(w http.ResponseWriter, r *http.Request, doc any
 		return
 	}
 	a.varyWellKnown(w)
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	}
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Write(b)
 	w.Write([]byte("\n"))
@@ -54,6 +57,7 @@ func (a *App) writeWellKnownJSON(w http.ResponseWriter, r *http.Request, doc any
 func (a *App) handleAPICatalog(w http.ResponseWriter, r *http.Request) {
 	base := a.resolveWellKnownBase(r)
 	prefix := a.apiPrefix() // "" or "/api"
+	w.Header().Set("Content-Type", "application/linkset+json")
 	a.writeWellKnownJSON(w, r, map[string]any{
 		"linkset": []map[string]any{{
 			"anchor": base + "/",
@@ -162,6 +166,7 @@ type AgentSkillEntry struct {
 // WithAgentSkills serves /.well-known/agent-skills/index.json listing the
 // host's published Agent Skills; an empty list is a valid index.
 func WithAgentSkills(skills []AgentSkillEntry) AppOption {
+	skills = slices.Clone(skills)
 	return func(a *App) { a.agentSkills = skills }
 }
 
@@ -197,6 +202,10 @@ type OAuthAuthorizationServerConfig struct {
 // WithOAuthAuthorizationServer serves /.well-known/oauth-authorization-server
 // (RFC 8414), for an app that is an OAuth2 or OpenID issuer.
 func WithOAuthAuthorizationServer(cfg OAuthAuthorizationServerConfig) AppOption {
+	cfg.ScopesSupported = slices.Clone(cfg.ScopesSupported)
+	cfg.ResponseTypesSupported = slices.Clone(cfg.ResponseTypesSupported)
+	cfg.GrantTypesSupported = slices.Clone(cfg.GrantTypesSupported)
+	cfg.TokenEndpointAuthMethodsSupported = slices.Clone(cfg.TokenEndpointAuthMethodsSupported)
 	return func(a *App) { a.oauthAuthServer = &cfg }
 }
 

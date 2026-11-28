@@ -50,11 +50,12 @@ func titleSlots(title string) (map[string][2]int, int) {
 	seen := map[string]bool{}
 	for _, word := range sourceWords(title) {
 		terms := indexTerms(word)
-		lower := strings.ToLower(word)
-		if len(terms) == 0 || seen[lower] {
+		key := strings.Join(terms, "\x00")
+		if len(terms) == 0 || seen[key] {
 			continue
 		}
-		seen[lower] = true
+		seen[key] = true
+		lower := strings.ToLower(word)
 		whole := terms[0] == lower
 		parts := terms
 		if whole {
@@ -87,14 +88,17 @@ func Build(pages []Page) *Index {
 		if !sitePath(p.URL) || seenURL[p.URL] {
 			continue
 		}
+		// The title is indexed with the lead section, and search reads
+		// Sections[0]; a page built with none gets an empty lead, as
+		// extraction always gives one.
+		if len(p.Sections) == 0 {
+			p.Sections = []Section{{}}
+		}
 		body := bodyHash(p)
 		if seenBody[body] {
 			continue
 		}
 		seenURL[p.URL], seenBody[body] = true, true
-		if len(p.Sections) == 0 {
-			p.Sections = []Section{{}}
-		}
 		pi := len(idx.pages)
 		seen := map[string]bool{}
 		spans, slots := titleSlots(p.Title)
@@ -145,9 +149,14 @@ func addField(scores map[string]int, text string, w int) {
 		return
 	}
 	tf := map[string]int{}
+	seen := map[string]bool{}
 	for _, word := range sourceWords(text) {
+		clear(seen)
 		for _, t := range indexTerms(word) {
-			tf[t]++
+			if !seen[t] {
+				tf[t]++
+				seen[t] = true
+			}
 		}
 	}
 	for t, c := range tf {

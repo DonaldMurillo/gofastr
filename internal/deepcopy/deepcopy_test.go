@@ -364,3 +364,16 @@ func TestValuePreservesNilMapSliceSlots(t *testing.T) {
 		t.Fatalf("copy writes reached the source: %#v", src)
 	}
 }
+
+func TestValuePreservesDefinedPointerTypes(t *testing.T) {
+	type rowPtr *map[string]string
+	row := map[string]string{"field": "original"}
+	if _, ok := Value(rowPtr(&row)).(rowPtr); !ok {
+		t.Error("copy lost the defined pointer type")
+	}
+	got := Value([]rowPtr{&row}).([]rowPtr)
+	(*got[0])["field"] = "copied"
+	if row["field"] != "original" {
+		t.Fatal("copied pointer shares its map with the source")
+	}
+}

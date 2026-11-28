@@ -39,6 +39,9 @@ const maxSectionHits = 3
 // Search runs q against the index and returns at most limit pages, best
 // first.
 func (idx *Index) Search(q string, limit int) []Result {
+	if limit <= 0 {
+		return nil
+	}
 	out, _ := idx.SearchPage(q, 0, limit)
 	return out
 }
@@ -48,7 +51,7 @@ func (idx *Index) Search(q string, limit int) []Result {
 // results page can count them and page through.
 func (idx *Index) SearchPage(q string, offset, limit int) ([]Result, int) {
 	terms := queryTerms(q)
-	if len(terms) == 0 || limit <= 0 {
+	if len(terms) == 0 {
 		return nil, 0
 	}
 	offset = max(offset, 0)
@@ -130,13 +133,16 @@ func (idx *Index) SearchPage(q string, offset, limit int) ([]Result, int) {
 			pageScore[pg] += titleBonus * pts / (2 * sn)
 		}
 	}
+	total := len(order)
+	if limit <= 0 {
+		return nil, total
+	}
 	slices.SortFunc(order, func(a, b int) int {
 		if c := cmp.Compare(pageScore[b], pageScore[a]); c != 0 {
 			return c
 		}
 		return cmp.Compare(a, b)
 	})
-	total := len(order)
 	start := min(offset, total)
 	order = order[start : start+min(limit, total-start)]
 	secScore := idx.sectionScores(order, terms, matches)

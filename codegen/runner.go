@@ -65,6 +65,9 @@ func (r *Registry) RegisterCommandExtensions(cfg CodegenConfig, stderrWriter io.
 
 // Run executes every configured generator and extension into one FileSet.
 func (r *Registry) Run(ctx context.Context, projectDir string, cfg Config) (*Context, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	cfg, err := normalizeConfig(cfg)
 	if err != nil {
 		return nil, err
@@ -84,6 +87,9 @@ func (r *Registry) Run(ctx context.Context, projectDir string, cfg Config) (*Con
 		exts[ext.Name] = ext
 	}
 	for i, gen := range cfg.Codegen.Generators {
+		if err := ctx.Err(); err != nil {
+			return genCtx, err
+		}
 		runGen := gen
 		if runGen.ID == "" {
 			runGen.ID = generatorInputKey(gen, i)

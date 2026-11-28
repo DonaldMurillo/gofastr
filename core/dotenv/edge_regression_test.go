@@ -48,3 +48,10 @@ func TestInvalidKeyErrorsDoNotEchoSecrets(t *testing.T) {
 		t.Fatalf("parse error discloses secret-bearing malformed key: %v", err)
 	}
 }
+
+func TestParseIgnoresLeadingUTF8BOM(t *testing.T) {
+	got, err := Parse(strings.NewReader("\ufeffKEY=value\n"))
+	if err != nil || got["KEY"] != "value" {
+		t.Fatalf("Parse = %v, %v", got, err)
+	}
+}

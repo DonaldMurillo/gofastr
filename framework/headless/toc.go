@@ -84,7 +84,7 @@ func TableOfContents(p TableOfContentsProps, s Classes) render.HTML {
 			own["class"] = cls
 		}
 		items = append(items, b.El("li", PartTOCItem, own,
-			b.El("a", PartTOCLink, Attrs(map[string]string{"href": "#" + it.ID}),
+			b.El("a", PartTOCLink, Attrs(map[string]string{"href": fragmentHref(it.ID)}),
 				render.Text(scrubControlBytes(it.Label)))))
 	}
 

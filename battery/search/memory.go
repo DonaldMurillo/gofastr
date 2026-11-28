@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/datexport"
+	"github.com/DonaldMurillo/gofastr/internal/deepcopy"
 )
 
 // Memory is an in-memory search backend suitable for tests and small
@@ -72,7 +73,7 @@ func (m *Memory) Index(ctx context.Context, doc Document) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	doc.Fields = maps.Clone(doc.Fields)
+	doc.Fields = deepcopy.Value(doc.Fields).(map[string]any)
 	m.docs[doc.ID] = doc
 	return nil
 }
@@ -143,7 +144,7 @@ func (m *Memory) Search(ctx context.Context, query Query) ([]Result, error) {
 	}
 	page := append([]Result(nil), results[offset:end]...)
 	for i := range page {
-		page[i].Document.Fields = maps.Clone(page[i].Document.Fields)
+		page[i].Document.Fields = deepcopy.Value(page[i].Document.Fields).(map[string]any)
 	}
 	return page, nil
 }

@@ -109,9 +109,14 @@ func TestPackZipPrefixesEntries(t *testing.T) {
 }
 
 func TestPackZipRejectsUnsafePaths(t *testing.T) {
-	for _, p := range []string{"", "/abs", "../escape"} {
+	for _, p := range []string{"", "/abs", "../escape", `types\client.go`, "C:/sdk/client.go", "D:client.go", "client\x00.go"} {
 		if _, err := PackZip("p", []File{{Path: p}}); err == nil {
-			t.Fatalf("path %q was accepted", p)
+			t.Errorf("path %q was accepted", p)
+		}
+	}
+	for _, prefix := range []string{`release\sdk`, "C:/sdk", "./C:/sdk", "D:sdk", "sdk\x00"} {
+		if _, err := PackZip(prefix, []File{{Path: "client.go"}}); err == nil {
+			t.Errorf("prefix %q was accepted", prefix)
 		}
 	}
 }

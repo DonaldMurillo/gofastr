@@ -125,6 +125,33 @@ type mockHealthChecker struct {
 
 func (m *mockHealthChecker) IsHealthy() bool { return m.healthy }
 
+type healthCheckFunc func() bool
+
+func (f healthCheckFunc) IsHealthy() bool { return f() }
+
+func TestReadinessChangesWhileACheckRuns(t *testing.T) {
+	lc := lifecycle.New()
+	started, release := make(chan struct{}), make(chan struct{})
+	if err := lc.RegisterHealthChecker(healthCheckFunc(func() bool {
+		close(started)
+		<-release
+		return true
+	})); err != nil {
+		t.Fatal(err)
+	}
+	healthy := make(chan bool, 1)
+	go func() { healthy <- lc.IsHealthy() }()
+	<-started
+	err := lc.Shutdown(t.Context())
+	close(release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if <-healthy {
+		t.Fatal("reported ready after shutdown started")
+	}
+}
+
 func TestRunWithSignalsTermsOnSIGTERM(t *testing.T) {
 	requireSIGTERMForTest(t)
 	lc := lifecycle.New()

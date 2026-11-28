@@ -87,16 +87,20 @@ func parseUnmountArgs(cmd string, args []string) (pkg, outDir string, dryRun, fo
 			dryRun = true
 		case arg == "--force" && cmd == "remount":
 			force = true
-		case strings.HasPrefix(arg, "--out=") && cmd == "unmount":
-			outDir = strings.TrimPrefix(arg, "--out=")
-		case arg == "--out" && cmd == "unmount":
-			if i+1 >= len(args) || cli.IsFlagToken(args[i+1]) {
+		case cmd == "unmount" && (arg == "--out" || strings.HasPrefix(arg, "--out=")):
+			if _, v, ok := strings.Cut(arg, "="); ok {
+				outDir = v
+			} else if i+1 < len(args) && !cli.IsFlagToken(args[i+1]) {
+				i++
+				outDir = args[i]
+			} else {
+				outDir = ""
+			}
+			if outDir == "" {
 				cli.Fail("%v", cli.NeedsValue("--out"))
 				cli.Info("%s", usage)
 				return "", "", false, false, false
 			}
-			i++
-			outDir = args[i]
 		case strings.HasPrefix(arg, "-"):
 			cli.Fail("Unknown flag %q for `gofastr %s`", arg, cmd)
 			cli.Info("%s", usage)
@@ -321,7 +325,8 @@ func embeddedDir(root *os.Root, dir, name string, embeds map[string][]string) bo
 	}
 	for _, pat := range patterns {
 		pat = strings.TrimPrefix(strings.Trim(pat, "\"`"), "all:")
-		if first, _, _ := strings.Cut(pat, "/"); first == name {
+		first, _, _ := strings.Cut(pat, "/")
+		if match, _ := path.Match(first, name); match {
 			return true
 		}
 	}

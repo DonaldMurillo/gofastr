@@ -75,11 +75,6 @@ func isRedisMiss(err error) bool {
 // Set stores a value in Redis with the given TTL.
 func (rc *RedisCache) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
 	k := rc.prefixedKey(key)
-	data, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-
 	effectiveTTL := ttl
 	if effectiveTTL == 0 {
 		effectiveTTL = rc.cfg.defaultTTL
@@ -87,6 +82,11 @@ func (rc *RedisCache) Set(ctx context.Context, key string, value any, ttl time.D
 
 	if effectiveTTL < 0 {
 		return rc.client.Del(ctx, k)
+	}
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
 	}
 
 	return rc.client.Set(ctx, k, string(data), effectiveTTL)

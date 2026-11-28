@@ -214,3 +214,15 @@ func TestEntityLabelsWithCtxTranslator(t *testing.T) {
 		t.Fatalf("no-translator fallback = %q", got)
 	}
 }
+
+func TestFieldLabelUsesOneSpaceAtMixedCaseBoundary(t *testing.T) {
+	if got := FieldLabel(context.Background(), nil, "orders", "customer_Name", ""); got != "Customer Name" {
+		t.Fatalf("field label = %q, want Customer Name", got)
+	}
+}
+
+func TestRelationLabelDropsEntireUppercaseIDSuffix(t *testing.T) {
+	if got := RelationLabel(context.Background(), nil, "orders", "customer_ID", ""); got != "Customer" {
+		t.Fatalf("relation label = %q, want Customer", got)
+	}
+}

@@ -2,9 +2,37 @@ package event
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 )
+
+type subscribingFanout struct {
+	subscribe func() error
+}
+
+func (f subscribingFanout) Subscribe(string, func([]byte)) (func(), error) {
+	return nil, f.subscribe()
+}
+
+func (subscribingFanout) Publish(context.Context, string, []byte) error { return nil }
+
+func TestFailedFanoutSubscriptionDoesNotInstallTap(t *testing.T) {
+	bus := NewEventBus()
+	failure := errors.New("subscription failed")
+	_, err := AttachFanout(bus, subscribingFanout{subscribe: func() error {
+		bus.mu.RLock()
+		tapped := bus.tap != nil
+		bus.mu.RUnlock()
+		if tapped {
+			t.Error("local emissions can reach the publisher before subscription succeeds")
+		}
+		return failure
+	}})
+	if !errors.Is(err, failure) {
+		t.Fatalf("AttachFanout error = %v, want %v", err, failure)
+	}
+}
 
 func TestObserverSeesEveryEmission(t *testing.T) {
 	t.Cleanup(func() { SetObserver(nil) })

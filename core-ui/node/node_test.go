@@ -90,3 +90,18 @@ func TestNodeJSONRoundTrip(t *testing.T) {
 		t.Errorf("round-trip lost data: %+v", got)
 	}
 }
+
+func TestCloneNodeCopiesNestedContainers(t *testing.T) {
+	props := map[string]any{"items": []any{map[string]any{"name": "original"}}}
+	params := map[string]any{"names": []string{"original"}}
+	source := Node{Props: props, Actions: map[string]Action{"click": {Params: params}}}
+	clone := CloneNode(source)
+	clone.Props["items"].([]any)[0].(map[string]any)["name"] = "changed"
+	clone.Actions["click"].Params["names"].([]string)[0] = "changed"
+	if props["items"].([]any)[0].(map[string]any)["name"] != "original" {
+		t.Error("cloning shared nested properties")
+	}
+	if params["names"].([]string)[0] != "original" {
+		t.Error("cloning shared action parameters")
+	}
+}

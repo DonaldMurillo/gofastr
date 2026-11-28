@@ -2,6 +2,7 @@
 package localdb
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -89,12 +90,12 @@ func AutoKey() StoreOption {
 
 // Index declares an index over one property, or a compound index over several.
 func Index(name string, paths ...string) StoreOption {
-	return addIndex(name, &indexSpec{KeyPath: paths})
+	return addIndex(name, &indexSpec{KeyPath: slices.Clone(paths)})
 }
 
 // UniqueIndex is Index with a uniqueness constraint.
 func UniqueIndex(name string, paths ...string) StoreOption {
-	return addIndex(name, &indexSpec{KeyPath: paths, Unique: true})
+	return addIndex(name, &indexSpec{KeyPath: slices.Clone(paths), Unique: true})
 }
 
 // MultiEntryIndex indexes each element of an array property separately.
@@ -193,7 +194,7 @@ func ManifestJSON() []byte {
 	cached := manifest
 	mu.RUnlock()
 	if cached != nil {
-		return cached
+		return bytes.Clone(cached)
 	}
 	mu.Lock()
 	defer mu.Unlock()
@@ -207,7 +208,7 @@ func ManifestJSON() []byte {
 		}
 		manifest = buf
 	}
-	return manifest
+	return bytes.Clone(manifest)
 }
 
 func validName(name string) bool { return compute.ValidName(name) }

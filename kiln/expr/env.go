@@ -106,6 +106,8 @@ func builtinAbs(args []any) (any, error) {
 		return nil, fmt.Errorf("abs: %w", ErrArity)
 	}
 	switch v := args[0].(type) {
+	case int:
+		return builtinAbs([]any{int64(v)})
 	case int64:
 		if v < 0 {
 			if v == math.MinInt64 {
@@ -143,53 +145,28 @@ func builtinMax(args []any) (any, error) {
 	return foldNumeric(args, false)
 }
 
-// pick returns a when it wins (the smaller for minimum, else the
-// larger), and b otherwise.
-func pick[T int64 | float64](a, b T, minimum bool) T {
-	if (minimum && a < b) || (!minimum && a > b) {
-		return a
-	}
-	return b
-}
-
-// foldNumeric folds min (minimum) or max over args. All-integer
-// arguments compare as int64: past 2^53 two of them can share a
-// float64, and a float comparison keeps the wrong one.
+// foldNumeric compares integer operands without rounding them through float64.
 func foldNumeric(args []any, minimum bool) (any, error) {
-	allInt := true
-	values := make([]float64, len(args))
-	intValues := make([]int64, len(args))
-	for i, a := range args {
-		switch v := a.(type) {
-		case int64:
-			intValues[i] = v
-			values[i] = float64(v)
-		case int:
-			// Must NOT set allInt=true: the flag is monotone-downward, and
-			// re-raising it after a float64 argument sent the fold down the
-			// all-int path with intValues holding an unassigned zero for the
-			// float element, min(1.5, 7) returned 0.
-			intValues[i] = int64(v)
-			values[i] = float64(v)
-		case float64:
-			values[i] = v
-			allInt = false
-		default:
+	bestInt, bestFloat, ok := numerics(args[0])
+	if !ok {
+		return nil, fmt.Errorf("min/max: %w", ErrType)
+	}
+	allInt := bestInt != nil
+	for _, arg := range args[1:] {
+		i, f, ok := numerics(arg)
+		if !ok {
 			return nil, fmt.Errorf("min/max: %w", ErrType)
 		}
-	}
-	if allInt {
-		result := intValues[0]
-		for i := 1; i < len(intValues); i++ {
-			result = pick(result, intValues[i], minimum)
+		allInt = allInt && i != nil
+		order := compareNumbers(i, f, bestInt, bestFloat)
+		if (minimum && order <= 0) || (!minimum && order >= 0) {
+			bestInt, bestFloat = i, f
 		}
-		return result, nil
 	}
-	result := values[0]
-	for i := 1; i < len(values); i++ {
-		result = pick(result, values[i], minimum)
+	if bestInt != nil && (allInt || compareNumbers(bestInt, bestFloat, nil, bestFloat) != 0) {
+		return *bestInt, nil
 	}
-	return result, nil
+	return bestFloat, nil
 }
 
 func builtinNow(args []any) (any, error) {

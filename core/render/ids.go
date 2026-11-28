@@ -2,13 +2,13 @@ package render
 
 import (
 	"context"
-	"html"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"unicode/utf8"
+
+	"golang.org/x/net/html"
 )
 
 type idScopeKey struct{}
@@ -313,221 +313,25 @@ func (b *RegionBatch) ReserveRendered(i int, hs ...HTML) {
 
 func writtenIDs(s string) []string {
 	var out []string
-	for i := 0; i < len(s); {
-		lt := strings.IndexByte(s[i:], '<')
-		if lt < 0 {
+	z := html.NewTokenizer(strings.NewReader(s))
+	for {
+		switch z.Next() {
+		case html.ErrorToken:
 			return out
-		}
-		i += lt
-		switch {
-		case strings.HasPrefix(s[i:], "<!--"):
-			end := strings.Index(s[i+4:], "-->")
-			if end < 0 {
-				return out
-			}
-			i += 4 + end + 3
-		case i+1 < len(s) && isASCIILetter(s[i+1]):
-			j := i + 1
-			for j < len(s) && !isAttrSpace(s[j]) && s[j] != '>' && s[j] != '/' {
-				j++
-			}
-			name := s[i+1 : j]
-			var ids []string
-			i, ids = readAttrs(s, j)
-			out = append(out, ids...)
-			if asciiEqualFold(name, "plaintext") {
-				return out
-			}
-			for _, raw := range []string{"script", "style", "textarea", "title", "iframe", "noembed", "noframes", "xmp"} {
-				if asciiEqualFold(name, raw) {
-					i = skipRawText(s, i, raw)
+		case html.StartTagToken, html.SelfClosingTagToken:
+			_, more := z.TagName()
+			for more {
+				var key, value []byte
+				key, value, more = z.TagAttr()
+				if string(key) == "id" {
+					if id := string(value); id != "" && !containsToken(id) {
+						out = append(out, id)
+					}
 					break
 				}
 			}
-		default:
-			gt := strings.IndexByte(s[i+1:], '>')
-			if gt < 0 {
-				return out
-			}
-			i += 1 + gt + 1
 		}
 	}
-	return out
-}
-
-func readAttrs(s string, k int) (int, []string) {
-	var ids []string
-	for k < len(s) {
-		for k < len(s) && isAttrSpace(s[k]) {
-			k++
-		}
-		if k >= len(s) {
-			break
-		}
-		if s[k] == '>' {
-			return k + 1, ids
-		}
-		if s[k] == '/' {
-			k++
-			continue
-		}
-		start := k
-		for k < len(s) && !isAttrSpace(s[k]) && s[k] != '=' && s[k] != '>' && s[k] != '/' {
-			k++
-		}
-		name := s[start:k]
-		for k < len(s) && isAttrSpace(s[k]) {
-			k++
-		}
-		val, has := "", false
-		if k < len(s) && s[k] == '=' {
-			k++
-			for k < len(s) && isAttrSpace(s[k]) {
-				k++
-			}
-			has = true
-			if k < len(s) && (s[k] == '"' || s[k] == '\'') {
-				q := s[k]
-				end := strings.IndexByte(s[k+1:], q)
-				if end < 0 {
-					return len(s), ids
-				}
-				val, k = s[k+1:k+1+end], k+1+end+1
-			} else {
-				v := k
-				for k < len(s) && !isAttrSpace(s[k]) && s[k] != '>' {
-					k++
-				}
-				val = s[v:k]
-			}
-		}
-		if has && asciiEqualFold(name, "id") && val != "" && !containsToken(val) {
-			ids = append(ids, unescapeAttr(val))
-		}
-	}
-	return len(s), ids
-}
-
-func unescapeAttr(s string) string {
-	if !strings.Contains(s, "&") {
-		return s
-	}
-	var b strings.Builder
-	for i := 0; i < len(s); {
-		if s[i] != '&' {
-			b.WriteByte(s[i])
-			i++
-			continue
-		}
-		k := i + 1
-		if k < len(s) && s[k] == '#' {
-			if r, n := numericRef(s[i:]); n > 0 {
-				b.WriteRune(r)
-				i += n
-			} else {
-				b.WriteByte('&')
-				i++
-			}
-			continue
-		}
-		for k < len(s) && (isDigit(s[k]) || (s[k]|0x20) >= 'a' && (s[k]|0x20) <= 'z') {
-			k++
-		}
-		ref, whole := s[i:k], 1
-		if k < len(s) && s[k] == ';' {
-			ref, whole = s[i:k+1], 2
-		} else if k < len(s) && s[k] == '=' {
-			whole = 0
-		}
-		if u := html.UnescapeString(ref); k > i+1 && u != ref && utf8.RuneCountInString(u) <= whole {
-			b.WriteString(u)
-		} else {
-			b.WriteString(ref)
-		}
-		i += len(ref)
-	}
-	return b.String()
-}
-
-func numericRef(s string) (rune, int) {
-	k := 2
-	hex := k < len(s) && (s[k] == 'x' || s[k] == 'X')
-	if hex {
-		k++
-	}
-	start, x := k, rune(0)
-	for ; k < len(s); k++ {
-		var d rune
-		switch c := s[k]; {
-		case isDigit(c):
-			d = rune(c - '0')
-		case hex && isHexLetter(c):
-			d = rune(c|0x20-'a') + 10
-		default:
-			goto done
-		}
-		if x <= utf8.MaxRune {
-			if hex {
-				x = x*16 + d
-			} else {
-				x = x*10 + d
-			}
-		}
-	}
-done:
-	if k == start {
-		return 0, 0
-	}
-	if k < len(s) && s[k] == ';' {
-		k++
-	}
-	switch {
-	case x == 0 || x >= 0xD800 && x <= 0xDFFF || x > utf8.MaxRune:
-		return utf8.RuneError, k
-	case x >= 0x80 && x <= 0x9F:
-		r, _ := utf8.DecodeRuneInString(html.UnescapeString("&#" + strconv.Itoa(int(x)) + ";"))
-		return r, k
-	}
-	return x, k
-}
-
-func isDigit(c byte) bool     { return c >= '0' && c <= '9' }
-func isHexLetter(c byte) bool { return c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F' }
-
-func skipRawText(s string, i int, name string) int {
-	for {
-		k := strings.Index(s[i:], "</")
-		if k < 0 {
-			return len(s)
-		}
-		at := i + k + 2
-		end := at + len(name)
-		if end <= len(s) && asciiEqualFold(s[at:end], name) && (end == len(s) || isAttrSpace(s[end]) || s[end] == '>' || s[end] == '/') {
-			return i + k
-		}
-		i = at
-	}
-}
-
-func isASCIILetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
-
-func asciiEqualFold(a, b string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := 0; i < len(a); i++ {
-		x, y := a[i], b[i]
-		if x >= 'A' && x <= 'Z' {
-			x += 'a' - 'A'
-		}
-		if y >= 'A' && y <= 'Z' {
-			y += 'a' - 'A'
-		}
-		if x != y {
-			return false
-		}
-	}
-	return true
 }
 
 func containsToken(s string) bool {
@@ -572,11 +376,13 @@ func containsToken(s string) bool {
 	}
 }
 
-func isAttrSpace(c byte) bool {
-	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'
-}
-
-// SettleIDs replaces in s the placeholders of every region settled so far under ctx's scope, for a value that leaves the render other than as settled HTML.
+// SettleIDs replaces the placeholders in s that the regions settled so
+// far under ctx's scope stand for. A value a component built during a
+// region's render (HTML seeded into a signal slice, say) holds the
+// region's placeholders, and the region's Settle only rewrote the HTML
+// it was handed: the host runs a value that leaves the render some
+// other way through SettleIDs once the render is done. With no scope s
+// is returned as is.
 func SettleIDs(ctx context.Context, s string) string {
 	sc := scopeOf(ctx)
 	if sc == nil || !strings.Contains(s, tokenPrefix) {

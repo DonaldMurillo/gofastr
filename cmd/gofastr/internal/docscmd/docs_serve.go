@@ -209,7 +209,8 @@ func ensureDocsSite(ctx context.Context, cacheRoot, tag string, refresh bool) (s
 	}
 	defer func() { _ = root.Close() }()
 	dest := filepath.Join(cacheRoot, tag)
-	if st, err := root.Stat(tag); !refresh && err == nil && st.IsDir() {
+	index := path.Join(tag, "index.html")
+	if !refresh && hasSiteIndex(root.FS(), index) {
 		return dest, nil
 	}
 
@@ -246,7 +247,12 @@ func ensureDocsSite(ctx context.Context, cacheRoot, tag string, refresh bool) (s
 		_ = root.RemoveAll(tmp)
 		return "", fmt.Errorf("extract %s: %w", asset, err)
 	}
-	if err := swapIntoPlace(root, tmp, tag, refresh); err != nil {
+	_, statErr := root.Stat(tag)
+	if !refresh && hasSiteIndex(root.FS(), index) {
+		_ = root.RemoveAll(tmp)
+		return dest, nil
+	}
+	if err := swapIntoPlace(root, tmp, tag, refresh || statErr == nil); err != nil {
 		return "", fmt.Errorf("install docs site: %w", err)
 	}
 	return dest, nil
@@ -435,10 +441,15 @@ func extractDocsSite(archive []byte, cache *os.Root, dir string) error {
 			return fmt.Errorf("entry %q: type %q is not a regular file or directory", hdr.Name, hdr.Typeflag)
 		}
 	}
-	if _, err := root.Stat("index.html"); err != nil {
+	if !hasSiteIndex(root.FS(), "index.html") {
 		return errors.New("archive has no index.html at its root")
 	}
 	return nil
+}
+
+func hasSiteIndex(site fs.FS, name string) bool {
+	info, err := fs.Stat(site, name)
+	return err == nil && info.Mode().IsRegular()
 }
 
 // docsSiteEntryName cleans a tar entry name to a root-relative slash path,
@@ -486,11 +497,12 @@ func newDocsSiteApp(dir string) (*framework.App, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := os.Stat(filepath.Join(abs, "index.html")); err != nil {
+	site := os.DirFS(abs)
+	if !hasSiteIndex(site, "index.html") {
 		return nil, fmt.Errorf("%s has no index.html; is it a static export?", abs)
 	}
 	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "gofastr-docs"}))
-	static.Mount(app.Router(), static.Config{FS: os.DirFS(abs), NotFoundFile: "404.html"})
+	static.Mount(app.Router(), static.Config{FS: site, NotFoundFile: "404.html"})
 	return app, nil
 }
 
@@ -619,6 +631,14 @@ func waitForListener(ctx context.Context, addr string, exited chan error) bool {
 	tick := time.NewTicker(200 * time.Millisecond)
 	defer tick.Stop()
 	for {
+		select {
+		case err := <-exited:
+			exited <- err
+			return false
+		case <-ctx.Done():
+			return false
+		default:
+		}
 		if conn, err := net.DialTimeout("tcp", addr, time.Second); err == nil {
 			_ = conn.Close()
 			return true

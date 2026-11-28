@@ -113,6 +113,16 @@ func runFlight(ctx context.Context, key string, f *flight, fill func(context.Con
 
 // GetOrSet returns the cached value for key, deserialized into dest.
 func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest any, loader Loader) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	target := reflect.ValueOf(dest)
+	if !target.IsValid() || target.Kind() != reflect.Pointer || target.IsNil() {
+		return &json.InvalidUnmarshalError{Type: reflect.TypeOf(dest)}
+	}
+	targetType := target.Type().Elem()
+
+	// Fast path: already cached.
 	if err := c.Get(ctx, key, dest); err == nil {
 		return nil
 	} else if !errors.Is(err, ErrCacheMiss) {
@@ -120,13 +130,19 @@ func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest 
 	}
 
 	fill := func(flightCtx context.Context) (fillResult, error) {
-		probe := dest
-		if t := reflect.TypeOf(dest); t != nil && t.Kind() == reflect.Pointer {
-			if t.Elem().Kind() == reflect.Interface {
-				probe = new(json.RawMessage)
-			} else {
-				probe = reflect.New(t.Elem()).Interface()
-			}
+		// Re-check: another writer may have populated the cache while we
+		// queued for the flight. It decodes into a fresh value of dest's
+		// type, never dest itself: the fill can outlive the caller whose
+		// dest it would write, and every caller reads its own dest back
+		// below. Not into an any either: that decodes a number as float64
+		// and refuses 1e400, which dest's own type may hold. A dest that
+		// points at an interface may hold its decoding target there, which
+		// a zero value of the interface loses; any JSON fits a RawMessage.
+		var probe any
+		if targetType.Kind() == reflect.Interface {
+			probe = new(json.RawMessage)
+		} else {
+			probe = reflect.New(targetType).Interface()
 		}
 		if err := c.Get(flightCtx, key, probe); err == nil {
 			return fillResult{}, nil
@@ -156,6 +172,11 @@ func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest 
 		return err
 	}
 
+	// Read back so every waiter (including the leader) fills dest from the
+	// canonical cached representation.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	err = c.Get(ctx, key, dest)
 	if errors.Is(err, ErrCacheMiss) && res.loaded && ttl >= 0 {
 		data, merr := json.Marshal(res.val)

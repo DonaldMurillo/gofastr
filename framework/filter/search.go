@@ -35,9 +35,6 @@ func SearchConditions(fields []string, term string) ([]Condition, error) {
 	if len(tokens) == 0 {
 		return nil, nil
 	}
-	if len(tokens) > MaxSearchTerms {
-		tokens = tokens[:MaxSearchTerms]
-	}
 	conditions := make([]Condition, 0, len(tokens))
 	for _, tok := range tokens {
 		parts := make([]string, len(fields))
@@ -56,12 +53,15 @@ func tokenizeSearch(term string) []string {
 	seen := make(map[string]bool)
 	var out []string
 	for raw := range strings.FieldsSeq(term) {
-		t := strings.TrimSpace(raw)
-		if t == "" || seen[t] {
+		t := strings.ToLower(raw)
+		if seen[t] {
 			continue
 		}
 		seen[t] = true
 		out = append(out, t)
+		if len(out) == MaxSearchTerms {
+			break
+		}
 	}
 	return out
 }

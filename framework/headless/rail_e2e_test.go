@@ -382,3 +382,27 @@ func TestE2E_RailFollowsASwappedRegion(t *testing.T) {
 		t.Fatal("after the region was swapped, scrolling to section two did not mark its anchor")
 	}
 }
+
+func TestE2E_RailScrollsToAndMarksAnEncodedFragment(t *testing.T) {
+	nav := Rail(RailProps{
+		Label: "Contents", ObserveSelector: "#region",
+		Items: []RailItem{
+			{Anchor: "start", Text: "Start"},
+			{Anchor: "chapter%20one", Text: "Chapter one"},
+		},
+	}, nil)
+	b := startBehaviorServer(t, string(nav)+`<div id="region">
+		<section id="start" style="min-height:120vh">Start</section>
+		<section id="chapter%20one" style="min-height:120vh">Chapter one</section>
+	</div>`)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, railActiveExpr("[data-hui-rail]", "start")) {
+		t.Fatal("the observer did not mark the start")
+	}
+	if err := chromedp.Run(ctx, chromedp.Click(`[data-hui-rail] a[href="#chapter%2520one"]`, chromedp.ByQuery)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, railActiveExpr("[data-hui-rail]", "chapter%2520one")) {
+		t.Fatal("the link did not navigate to the literal ID or the observer did not mark it")
+	}
+}

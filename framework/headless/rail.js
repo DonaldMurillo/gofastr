@@ -162,7 +162,8 @@
     const targets = [];
     const linked = [];
     for (const a of anchors) {
-      const id = a.getAttribute('href').slice(1);
+      let id = a.getAttribute('href').slice(1);
+      try { id = decodeURIComponent(id); } catch (_) { /* Keep a literal fragment. */ }
       if (!id || id === '__proto__' || id === 'constructor' || id === 'prototype') continue;
       let t = null;
       try { t = root.querySelector('#' + cssEscape(id)); } catch (_) { t = null; }

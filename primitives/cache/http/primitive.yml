@@ -23,12 +23,13 @@ invariants:
       - test: battery/cache.TestCacheCredentialCanon
       - test: battery/cache.TestCredentialedAndAnonymousNeverShareAnEntry
   - id: bypasses
-    rule: Non-GET methods and runtime navigation fetches pass through with X-Cache BYPASS, and a request no-cache or no-store is never served a stored response.
+    rule: Non-GET methods, runtime navigation fetches and GET requests with If-Match, If-None-Match, If-Modified-Since or If-Unmodified-Since pass through with X-Cache BYPASS. Requests with no-cache or no-store bypass stored responses.
     enforced_by:
       - test: battery/cache.TestNavigationFetchesBypassCache
       - test: battery/cache.TestBypassesAdvertiseCacheStatus
       - test: battery/cache.TestCacheMiddleware_RequestNoCacheBypassesStoredVariant
       - test: battery/cache.TestCacheMiddleware_RequestNoStoreBypassesStoredVariant
+      - test: battery/cache.TestConditionalGETReachesOrigin
   - id: unsafe-request-evicts
     rule: After an unsafe method runs, the stored GET of its target is deleted under every locale key and every variant.
     enforced_by:
@@ -60,10 +61,11 @@ invariants:
     enforced_by:
       - test: battery/cache.TestCacheKeysAcceptLanguage
       - test: battery/cache.TestCacheMiddleware_VaryAllHeaderValues
-  - id: informational-status-dropped
-    rule: A 1xx other than 101 that the handler writes is dropped, so the stored and served status is the final one.
+  - id: informational-status-forwarded
+    rule: A 1xx other than 101 reaches the client on a cache miss. The cache stores the final response status.
     enforced_by:
       - test: battery/cache.TestCacheKeepsStatusAfterHints
+      - test: battery/cache.TestCacheMissForwardsEarlyHints
   - id: negative-limit-panics
     rule: CacheMiddlewareWithLimit panics on a negative maxBodyBytes.
     enforced_by:

@@ -582,10 +582,13 @@ func (r *testReadSet) parse(src []byte) error {
 }
 
 func readPattern(pat string) (*regexp.Regexp, error) {
-	for _, bad := range []string{"./", "../"} {
-		if strings.HasPrefix(pat, bad) || strings.Contains(pat, "/"+bad) {
-			return nil, fmt.Errorf("pattern %q: paths are repo-relative, without %q", pat, bad)
+	for segment := range strings.SplitSeq(strings.Trim(pat, "/"), "/") {
+		if segment == "." || segment == ".." {
+			return nil, fmt.Errorf("pattern %q: paths are repo-relative, without %q", pat, segment)
 		}
+	}
+	if strings.Contains(pat, "//") {
+		return nil, fmt.Errorf("pattern %q contains an empty path segment", pat)
 	}
 	switch {
 	case strings.HasPrefix(pat, "/"):

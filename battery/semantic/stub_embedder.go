@@ -23,10 +23,16 @@ func NewStubEmbedder(dim int) *StubEmbedder {
 }
 
 // Embed implements [Embedder].
-func (s *StubEmbedder) Embed(_ context.Context, texts []string) ([][]float32, error) {
+func (s *StubEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	out := make([][]float32, len(texts))
 	for i, t := range texts {
 		out[i] = s.encode(t)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }

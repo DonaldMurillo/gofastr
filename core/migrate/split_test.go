@@ -60,3 +60,19 @@ func TestSplitStatementsKeepsRuleBody(t *testing.T) {
 		t.Errorf("splitStatements(%q) = %q, want %q", body, got, want)
 	}
 }
+
+func TestSplitStatementsSeparatesBeginAndAtomicIdentifiers(t *testing.T) {
+	body := "SELECT begin, atomic FROM flags; SELECT 2"
+	want := []string{"SELECT begin, atomic FROM flags", "SELECT 2"}
+	if got := splitStatements(body); !slices.Equal(got, want) {
+		t.Errorf("splitStatements(%q) = %q, want %q", body, got, want)
+	}
+}
+
+func TestSplitStatementsEndsLineCommentAtCR(t *testing.T) {
+	body := "-- comment\rSELECT 1; SELECT 2"
+	want := []string{"-- comment\rSELECT 1", "SELECT 2"}
+	if got := splitStatements(body); !slices.Equal(got, want) {
+		t.Errorf("splitStatements(%q) = %q, want %q", body, got, want)
+	}
+}

@@ -39,7 +39,10 @@ func (e *Encoder) Write(w io.Writer) error {
 	if err := e.ensureEncoded(); err != nil {
 		return err
 	}
-	_, err := w.Write(e.cached)
+	n, err := w.Write(e.cached)
+	if err == nil && n != len(e.cached) {
+		return io.ErrShortWrite
+	}
 	return err
 }
 

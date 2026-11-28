@@ -110,13 +110,19 @@ func readReceipt(dir string) (run string, pages int, ok bool, err error) {
 		Run   string `json:"run"`
 		Pages int    `json:"pages"`
 	}
-	decodeErr := json.NewDecoder(io.LimitReader(f, maxReceiptBytes)).Decode(&rec)
+	body, readErr := io.ReadAll(io.LimitReader(f, maxReceiptBytes+1))
 	closeErr := f.Close()
-	if decodeErr != nil {
-		return "", 0, false, fmt.Errorf("read %s: %w", framework.ExportReceiptFile, decodeErr)
+	if readErr != nil {
+		return "", 0, false, fmt.Errorf("read %s: %w", framework.ExportReceiptFile, readErr)
 	}
 	if closeErr != nil {
 		return "", 0, false, closeErr
+	}
+	if len(body) > maxReceiptBytes {
+		return "", 0, false, fmt.Errorf("read %s: receipt exceeds %d bytes", framework.ExportReceiptFile, maxReceiptBytes)
+	}
+	if err := json.Unmarshal(body, &rec); err != nil {
+		return "", 0, false, fmt.Errorf("read %s: %w", framework.ExportReceiptFile, err)
 	}
 	if err := os.Remove(path); err != nil {
 		return "", 0, false, err

@@ -87,7 +87,7 @@ func lintChromiumShard(root string) ([]finding, error) {
 			out = append(out, finding{File: ciPath, Line: line, Rule: "chromium-shard",
 				Message: dir + " has chromium-tagged tests the chromium-ui run does not name (add ./" + dir + "/)"})
 		}
-		if !pkgRE.MatchString(module + "/" + dir) {
+		if !pkgRE.MatchString(path.Join(module, dir)) {
 			out = append(out, finding{File: ciPath, Line: line, Rule: "chromium-shard",
 				Message: dir + " has chromium-tagged tests the chromium-ui pkg pattern does not match, so a change to it skips the shard"})
 		}
@@ -98,6 +98,9 @@ func lintChromiumShard(root string) ([]finding, error) {
 // shardNames reports whether the run names dir as ./dir, ./dir/ or under ./prefix/....
 func shardNames(fields []string, dir string) bool {
 	for _, f := range fields {
+		if f == "./..." || dir == "." && (f == "." || f == "./") {
+			return true
+		}
 		if !strings.HasPrefix(f, "./") {
 			continue
 		}

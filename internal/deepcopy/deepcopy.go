@@ -119,7 +119,7 @@ func reflectCopy(v any) any {
 		}
 		out := reflect.New(rv.Type().Elem())
 		out.Elem().Set(cp)
-		return out.Interface()
+		return out.Convert(rv.Type()).Interface()
 	case reflect.Map:
 		if rv.IsNil() {
 			return v

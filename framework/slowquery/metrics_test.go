@@ -5,12 +5,30 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
 
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib" // registers the "sqlite3" driver
 )
+
+func TestSlowQueryRowLogsItsExecutionError(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	wrapped := NewSlowQueryLogger(db, time.Nanosecond, logger)
+	if err := wrapped.QueryRowContext(t.Context(), "SELECT * FROM missing_table").Err(); err == nil {
+		t.Fatal("query against missing table succeeded")
+	}
+	if got := logs.String(); !strings.Contains(got, `err=database_error`) || !strings.Contains(got, `driver_code=`) {
+		t.Fatalf("slow query log omits execution error metadata: %s", got)
+	}
+}
 
 // TestSlowQueryMetricsCollector emits slow_queries_total with the logger's
 // running hit count. A real in-memory SQLite backs the wrapper so Hits is

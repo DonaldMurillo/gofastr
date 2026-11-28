@@ -78,3 +78,22 @@ func TestSQLiteDecimalRefusalReason(t *testing.T) {
 		}
 	}
 }
+
+func TestDecimalExactOnSQLiteRealAffinity(t *testing.T) {
+	for _, col := range []string{"REAL", "DOUBLE PRECISION", "FLOAT"} {
+		if DecimalExactOnSQLite(col, "123456789012345678") {
+			t.Errorf("%s accepted a large integer that loses precision", col)
+		}
+	}
+}
+
+func TestDecimalExactOnSQLiteFloatRange(t *testing.T) {
+	for _, value := range []string{"1e400", "1e-400"} {
+		if DecimalExactOnSQLite("NUMERIC", value) {
+			t.Errorf("NUMERIC accepted %s outside the float range", value)
+		}
+	}
+	if !DecimalExactOnSQLite("NUMERIC", "0e-400") {
+		t.Error("NUMERIC rejected zero")
+	}
+}

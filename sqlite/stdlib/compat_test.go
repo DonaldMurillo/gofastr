@@ -3,6 +3,7 @@ package stdlib
 import (
 	"database/sql"
 	"database/sql/driver"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -384,5 +385,85 @@ func TestDriverOfAnOpenHandleKeepsTheDefaults(t *testing.T) {
 	}
 	if strings.Contains(stored, "UTC") || !strings.HasPrefix(stored, "2026-11-13 01:51:04") {
 		t.Fatalf("time stored as %q: the time format default was lost", stored)
+	}
+}
+
+func TestTimeFormatDefaultIgnoresOtherParameters(t *testing.T) {
+	for _, query := range []string{"other_time_format=x", "_time_format=", "other_time_integer_format=x"} {
+		dsn := ":memory:?" + query
+		db, err := sql.Open("sqlite3", dsn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		var stored string
+		if err := db.QueryRow("SELECT CAST(? AS TEXT)", time.Unix(1, 2).UTC()).Scan(&stored); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := time.Parse(canonicalLayout, stored); err != nil {
+			t.Errorf("%s stored an incompatible time: %q", dsn, stored)
+		}
+	}
+}
+
+func TestTxLockDefaultIgnoresOtherParameters(t *testing.T) {
+	for _, query := range []string{"other_txlock=exclusive", "_txlock="} {
+		normalized := withCompatDefaults(":memory:?" + query)
+		_, params, _ := strings.Cut(normalized, "?")
+		values, err := url.ParseQuery(params)
+		if err != nil || values.Get("_txlock") != "immediate" {
+			t.Errorf("missing immediate transaction default in %q", normalized)
+		}
+	}
+}
+
+func TestBusyTimeoutSelectsActualSetting(t *testing.T) {
+	for query, want := range map[string]int{
+		"_timeout=250": 250, "_pragma=BUSY_TIMEOUT(250)": 250,
+		"other=busy_timeout": 5000, "_pragma=busy_timeout": 5000,
+	} {
+		db, err := sql.Open("sqlite3", ":memory:?"+query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		var got int
+		if err := db.QueryRow("PRAGMA busy_timeout").Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Errorf("%s: busy_timeout = %d, want %d", query, got, want)
+		}
+	}
+}
+
+func TestForeignKeysRespectsQuotedPragma(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:?_pragma=%22foreign_keys%22(0)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var got int
+	if err := db.QueryRow("PRAGMA foreign_keys").Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != 0 {
+		t.Fatalf("foreign_keys = %d, want the explicit opt-out", got)
+	}
+}
+
+func TestSingleQuotedPragmaSuppressesDefault(t *testing.T) {
+	for _, pragma := range []string{"foreign_keys", "busy_timeout"} {
+		t.Run(pragma, func(t *testing.T) {
+			db, err := sql.Open("sqlite3", "file::memory:?_pragma=%27"+pragma+"%27(0)")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			var got int
+			if err := db.QueryRow("PRAGMA " + pragma).Scan(&got); err != nil || got != 0 {
+				t.Fatalf("PRAGMA %s = %d, %v; want zero", pragma, got, err)
+			}
+		})
 	}
 }

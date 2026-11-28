@@ -156,13 +156,13 @@ func LoadFromFS(fsys fs.FS) (map[string]Template, error) {
 func templateFromFiles(files map[string]string) Template {
 	var tmpl Template
 	if subject, ok := files[".subject"]; ok {
-		tmpl.Subject = strings.TrimSpace(subject)
+		tmpl.Subject = strings.TrimSpace(strings.TrimPrefix(subject, "\ufeff"))
 	}
 	if text, ok := files[".txt"]; ok {
-		tmpl.Subject, tmpl.TextBody = stripSubjectLine(tmpl.Subject, text)
+		tmpl.Subject, tmpl.TextBody = stripSubjectLine(tmpl.Subject, strings.TrimPrefix(text, "\ufeff"))
 	}
 	if html, ok := files[".html"]; ok {
-		tmpl.Subject, tmpl.HTMLBody = stripSubjectLine(tmpl.Subject, html)
+		tmpl.Subject, tmpl.HTMLBody = stripSubjectLine(tmpl.Subject, strings.TrimPrefix(html, "\ufeff"))
 	}
 	return tmpl
 }

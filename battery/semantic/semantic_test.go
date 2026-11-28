@@ -183,3 +183,11 @@ func TestEmptyQueryReturnsNoHits(t *testing.T) {
 		t.Fatalf("empty query returned %d hits, want 0", len(hits))
 	}
 }
+
+func TestStubEmbedderRejectsCanceledBatch(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := NewStubEmbedder(16).Embed(ctx, []string{"hello"}); err != context.Canceled {
+		t.Fatalf("Embed error = %v, want context.Canceled", err)
+	}
+}

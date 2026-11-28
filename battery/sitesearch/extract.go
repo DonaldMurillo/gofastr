@@ -179,8 +179,14 @@ func visibleText(n *html.Node) string {
 			b.WriteString(n.Data)
 			return
 		}
-		if n.Type == html.ElementNode && skipped(n) {
-			return
+		if n.Type == html.ElementNode {
+			if skipped(n) {
+				return
+			}
+			if blockTags[n.DataAtom] {
+				b.WriteByte(' ')
+				defer b.WriteByte(' ')
+			}
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			walk(c)
@@ -219,6 +225,9 @@ func robotsNoindex(content string) bool {
 
 func inIgnored(n *html.Node) bool {
 	for p := n.Parent; p != nil; p = p.Parent {
+		if p.DataAtom == atom.Template {
+			return true
+		}
 		for _, a := range p.Attr {
 			if a.Namespace == "" && a.Key == IgnoreAttr {
 				return true

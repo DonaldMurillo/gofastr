@@ -2,6 +2,8 @@
 
 UIHost chooses between the HTML and Markdown representations before rendering
 the document; see [Markdown content negotiation](../framework/docs/content/agent-ready.md#markdown-content-negotiation).
+Markdown conversion selects the `href`, `src`, and `alt` attributes by
+name from the parsed HTML for links and images.
 
 Strict sitemap origin validation lives in `uihost.InvalidSitemapBaseURL`.
 App-spec validation calls the same check before generation; an omitted

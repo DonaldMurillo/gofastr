@@ -138,3 +138,14 @@ func TestSearchConditionsRefusesUnstorableText(t *testing.T) {
 		t.Fatalf("valid Unicode term refused or mis-tokenized: %v %v", conds, err)
 	}
 }
+
+func TestSearchDeduplicatesCaseVariantsBeforeLimit(t *testing.T) {
+	terms := "abc Abc aBc abC ABc aBC AbC ABC zebra"
+	conditions, err := SearchConditions([]string{"name"}, terms)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conditions) != 2 || conditions[1].Args[0] != "%zebra%" {
+		t.Fatalf("conditions = %#v, want abc and zebra", conditions)
+	}
+}

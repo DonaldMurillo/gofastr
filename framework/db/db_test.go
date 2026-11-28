@@ -2,9 +2,12 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/DATA-DOG/go-sqlmock"
 )
 
 func TestCommitQueueDrainsInAddOrder(t *testing.T) {
@@ -113,7 +116,8 @@ func TestWithoutTxMasksTxAndQueue(t *testing.T) {
 }
 
 func TestWithTxQueueRoundTrip(t *testing.T) {
-	ctx, q := WithTxQueue(context.Background(), nil)
+	tx := new(sql.Tx)
+	ctx, q := WithTxQueue(context.Background(), tx)
 	got, ok := CommitQueueFromContext(ctx)
 	if !ok || got != q {
 		t.Fatalf("CommitQueueFromContext = %v, %v; want the queue WithTxQueue attached", got, ok)
@@ -121,7 +125,63 @@ func TestWithTxQueueRoundTrip(t *testing.T) {
 	if _, ok := CommitQueueFromContext(context.Background()); ok {
 		t.Fatal("bare context reported a commit queue")
 	}
-	if _, ok := TxFromContext(ctx); !ok {
+	if got, ok := TxFromContext(ctx); !ok || got != tx {
 		t.Fatal("WithTxQueue did not also attach the tx")
+	}
+}
+
+func TestWithTxDoesNotReuseQueueForAnotherTransaction(t *testing.T) {
+	outer := new(sql.Tx)
+	ctx, queue := WithTxQueue(context.Background(), outer)
+	if inherited, ok := CommitQueueFromContext(WithTx(ctx, outer)); !ok || inherited != queue {
+		t.Fatal("the same transaction lost its queue")
+	}
+
+	inner := new(sql.Tx)
+	ctx = WithTx(ctx, inner)
+	if got, ok := TxFromContext(ctx); !ok || got != inner {
+		t.Fatal("the replacement transaction was not attached")
+	}
+	if _, ok := CommitQueueFromContext(ctx); ok {
+		t.Fatal("the replacement transaction inherited the outer commit queue")
+	}
+}
+
+func TestInSavepointAttachesExplicitTransaction(t *testing.T) {
+	conn, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	mock.ExpectBegin()
+	tx, err := conn.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mock.ExpectExec(`^SAVEPOINT gofastr_sp_[0-9]+$`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`^RELEASE SAVEPOINT gofastr_sp_[0-9]+$`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectRollback()
+	err = InSavepoint(context.Background(), tx, func(ctx context.Context, arg *sql.Tx) error {
+		if got, ok := TxFromContext(ctx); !ok || got != arg {
+			t.Error("the savepoint callback context does not carry its transaction")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWithNilTxMasksAmbientTransaction(t *testing.T) {
+	ctx, _ := WithTxQueue(t.Context(), new(sql.Tx))
+	ctx = WithTx(ctx, nil)
+	if tx, ok := TxFromContext(ctx); ok || tx != nil {
+		t.Fatalf("nil transaction reported present: %v, %v", tx, ok)
 	}
 }

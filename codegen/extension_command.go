@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 )
@@ -41,7 +42,7 @@ type commandExtension struct {
 
 // NewCommandExtension creates an Extension backed by an external command.
 func NewCommandExtension(name string, command []string, stderrWriter io.Writer) Extension {
-	return &commandExtension{name: name, command: command, stderr: stderrWriter}
+	return &commandExtension{name: name, command: slices.Clone(command), stderr: stderrWriter}
 }
 
 func (e *commandExtension) Name() string { return e.name }

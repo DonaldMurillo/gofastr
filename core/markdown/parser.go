@@ -102,7 +102,7 @@ func (p *parser) atHeading() bool {
 
 func (p *parser) atBlockquote() bool {
 	trimmed := strings.TrimLeft(p.line(), " ")
-	return strings.HasPrefix(trimmed, "> ") || trimmed == ">"
+	return strings.HasPrefix(trimmed, ">")
 }
 
 func (p *parser) atUnorderedList() bool {
@@ -141,7 +141,7 @@ func (p *parser) atTable() bool {
 			return false
 		}
 	}
-	return true
+	return len(splitTableRow(p.line())) == len(splitTableRow(sep))
 }
 
 func isAllChar(s string, ch rune) bool {
@@ -161,7 +161,7 @@ func parseHeading(line string) (level int, text string) {
 		level++
 	}
 	text = strings.TrimSpace(line[level:])
-	if t := strings.TrimRight(text, "#"); t != text && (t == "" || strings.HasSuffix(t, " ")) {
+	if t := strings.TrimRight(text, "#"); t != text && (t == "" || strings.HasSuffix(t, " ") || strings.HasSuffix(t, "\t")) {
 		text = strings.TrimSpace(t)
 	}
 	return level, text
@@ -206,7 +206,8 @@ func renderFence(p *parser, sb *strings.Builder) {
 			p.advance()
 			break
 		}
-		body.WriteString(line)
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+		body.WriteString(line[min(indent, d.indent):])
 		body.WriteByte('\n')
 		p.advance()
 	}

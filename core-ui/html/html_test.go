@@ -1083,3 +1083,10 @@ func TestHeadingAutoIDDeterministic(t *testing.T) {
 		t.Errorf("expected id=heading-overview, got:\n%s", a)
 	}
 }
+
+func TestTHRowGroupHasRowHeaderRole(t *testing.T) {
+	got := string(TH(THConfig{Scope: "rowgroup"}, render.Text("Total")))
+	if !strings.Contains(got, `role="rowheader"`) {
+		t.Fatalf("rowgroup header has wrong role: %s", got)
+	}
+}

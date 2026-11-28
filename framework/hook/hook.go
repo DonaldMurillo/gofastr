@@ -46,6 +46,9 @@ func NewHookRegistry() *HookRegistry {
 func (hr *HookRegistry) RegisterHook(hookType HookType, fn HookFunc) {
 	hr.mu.Lock()
 	defer hr.mu.Unlock()
+	if hr.hooks == nil {
+		hr.hooks = make(map[HookType][]HookFunc)
+	}
 	hr.hooks[hookType] = append(hr.hooks[hookType], fn)
 }
 

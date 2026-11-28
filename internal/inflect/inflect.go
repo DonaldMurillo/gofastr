@@ -35,7 +35,9 @@ func Singular(s string) string {
 	case strings.HasSuffix(s, "ies") && len(s) > 3:
 		return s[:len(s)-3] + "y"
 	case strings.HasSuffix(s, "sses"),
-		strings.HasSuffix(s, "uses") && !strings.HasSuffix(s, "ouses") && !strings.HasSuffix(s, "auses"),
+		strings.HasSuffix(s, "statuses"),
+		strings.HasSuffix(s, "viruses"),
+		s == "buses" || s == "Buses",
 		strings.HasSuffix(s, "xes"),
 		strings.HasSuffix(s, "ches"),
 		strings.HasSuffix(s, "shes"):

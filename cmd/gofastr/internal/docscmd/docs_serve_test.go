@@ -487,3 +487,50 @@ func TestDocsServeUsageErrorsWriteOnlyToStderr(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractDocsSiteRejectsDirectoryIndex(t *testing.T) {
+	cache, err := os.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cache.Close()
+	if err := cache.Mkdir("site", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data := buildSiteTarball(t, []tarEntry{{name: "index.html", typeflag: tar.TypeDir}})
+	if err := extractDocsSite(data, cache, "site"); err == nil {
+		t.Fatal("accepted an index directory")
+	}
+}
+
+func TestWaitForListenerDoesNotReportReadyAfterExit(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	exited := make(chan error, 1)
+	exited <- io.EOF
+	if waitForListener(t.Context(), ln.Addr().String(), exited) {
+		t.Fatal("reported ready after child exited")
+	}
+	if err := <-exited; err != io.EOF {
+		t.Fatalf("lost exit result: %v", err)
+	}
+}
+
+func TestEnsureDocsSiteRepairsMissingCachedIndex(t *testing.T) {
+	const tag = "v0.96.0"
+	cache := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cache, tag, "assets"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stubRelease(t, tag, buildSiteTarball(t, siteEntries), "")
+	dir, err := ensureDocsSite(t.Context(), cache, tag, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "index.html")); err != nil {
+		t.Fatal(err)
+	}
+}

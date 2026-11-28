@@ -1,5 +1,7 @@
 package openapi
 
+import "slices"
+
 // Operation represents a single OpenAPI operation (e.g. GET /users).
 type Operation struct {
 	Summary     string
@@ -31,7 +33,7 @@ func (o *Operation) AddParameter(name, location, description string, required bo
 		"name":        name,
 		"in":          location,
 		"description": description,
-		"required":    required,
+		"required":    location == "path" || required,
 	}
 	if schema != nil {
 		param["schema"] = schema
@@ -64,15 +66,22 @@ func (o *Operation) AddResponse(status int, description string, schema map[strin
 			},
 		}
 	}
+	if o.Responses == nil {
+		o.Responses = make(map[int]map[string]any)
+	}
 	o.Responses[status] = resp
 }
 
 // AddSecurity appends a security requirement; nil scopes encode as [].
 func (o *Operation) AddSecurity(name string, scopes []string) {
+	o.Security = append(o.Security, securityRequirement(name, scopes))
+}
+
+func securityRequirement(name string, scopes []string) map[string][]string {
 	if scopes == nil {
 		scopes = []string{}
 	}
-	o.Security = append(o.Security, map[string][]string{name: scopes})
+	return map[string][]string{name: slices.Clone(scopes)}
 }
 
 // ToMap returns the operation as an OpenAPI paths entry.

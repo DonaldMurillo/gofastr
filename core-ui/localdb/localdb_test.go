@@ -111,3 +111,26 @@ func TestManifestCacheFollowsDeclarations(t *testing.T) {
 		t.Fatal("a new database is missing from the manifest")
 	}
 }
+
+func TestIndexOwnsKeyPaths(t *testing.T) {
+	reset()
+	t.Cleanup(reset)
+	paths := []string{"first", "last"}
+	option := Index("by_name", paths...)
+	paths[0] = "changed"
+	New("people").Store("records", option)
+	if !strings.Contains(string(ManifestJSON()), `"keyPath":["first","last"]`) {
+		t.Fatalf("index paths changed: %s", ManifestJSON())
+	}
+}
+
+func TestManifestJSONReturnsIndependentBytes(t *testing.T) {
+	reset()
+	t.Cleanup(reset)
+	New("people").Store("records")
+	first := ManifestJSON()
+	first[0] = 'x'
+	if !json.Valid(ManifestJSON()) {
+		t.Fatal("mutating returned bytes corrupted the cached manifest")
+	}
+}

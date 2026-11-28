@@ -62,11 +62,11 @@ func Scan(html []byte, visit func(tag []byte, attrs [][]byte, classes [][]byte))
 					i += 1 + 3 + bytes.IndexByte(body, '>') + 1
 					continue
 				}
-				end := bytes.Index(rest[3:], []byte("-->"))
+				end := commentEnd(rest[3:])
 				if end < 0 {
 					return
 				}
-				i += 1 + 3 + end + 3
+				i += 1 + 3 + end
 				continue
 			}
 			gt := bytes.IndexByte(rest, '>')
@@ -104,6 +104,24 @@ func Scan(html []byte, visit func(tag []byte, attrs [][]byte, classes [][]byte))
 			i++
 		}
 	}
+}
+
+func commentEnd(body []byte) int {
+	for i := 0; i < len(body); {
+		next := bytes.Index(body[i:], []byte("--"))
+		if next < 0 {
+			break
+		}
+		i += next
+		switch {
+		case bytes.HasPrefix(body[i:], []byte("-->")):
+			return i + 3
+		case bytes.HasPrefix(body[i:], []byte("--!>")):
+			return i + 4
+		}
+		i++
+	}
+	return -1
 }
 
 // scanAttrs parses the attribute list of one start tag starting at b

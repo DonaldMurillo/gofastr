@@ -108,6 +108,9 @@ func decodeBlurHashComponents(hash string, punch float64) (blurHashComponents, e
 	}
 
 	sizeFlag := digits[0]
+	if sizeFlag >= 9*9 {
+		return zero, fmt.Errorf("image: BlurHash component header %d is out of range", sizeFlag)
+	}
 	numX := sizeFlag%9 + 1
 	numY := sizeFlag/9 + 1
 	want := 4 + 2*numX*numY
@@ -124,13 +127,20 @@ func decodeBlurHashComponents(hash string, punch float64) (blurHashComponents, e
 
 	factors := make([][3]float64, numX*numY)
 	dc := base83Value(digits[2:6])
+	if dc >= 1<<24 {
+		return zero, fmt.Errorf("image: BlurHash DC component is out of range")
+	}
 	factors[0] = [3]float64{
 		srgbToLinear(uint8(dc >> 16)),
 		srgbToLinear(uint8((dc >> 8) & 255)),
 		srgbToLinear(uint8(dc & 255)),
 	}
 	for k := 1; k < len(factors); k++ {
-		factors[k] = decodeBlurHashAC(base83Value(digits[4+k*2:6+k*2]), maxValue*punch)
+		ac := base83Value(digits[4+k*2 : 6+k*2])
+		if ac >= 19*19*19 {
+			return zero, fmt.Errorf("image: BlurHash AC component %d is out of range", k)
+		}
+		factors[k] = decodeBlurHashAC(ac, maxValue*punch)
 	}
 	return blurHashComponents{numX: numX, numY: numY, factors: factors}, nil
 }

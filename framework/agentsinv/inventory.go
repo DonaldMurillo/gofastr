@@ -3,6 +3,7 @@ package agentsinv
 
 import (
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -38,7 +39,7 @@ var (
 func Register(e Entry) {
 	mu.Lock()
 	defer mu.Unlock()
-	if e.Markdown == "" {
+	if strings.TrimSpace(e.Markdown) == "" {
 		missing = append(missing, e)
 		return
 	}

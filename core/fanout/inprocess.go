@@ -83,6 +83,9 @@ func (ip *InProcess) Subscribe(topic string, fn func(payload []byte)) (cancel fu
 		once.Do(func() {
 			ip.mu.Lock()
 			delete(ip.topics[topic], s.id)
+			if len(ip.topics[topic]) == 0 {
+				delete(ip.topics, topic)
+			}
 			ip.mu.Unlock()
 			stop()
 		})

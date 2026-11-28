@@ -36,6 +36,24 @@ func AttachFanout(bus *EventBus, f fanout.Fanout) (stop func(), err error) {
 	bus.mu.Unlock()
 
 	nodeID := fanout.NewNodeID()
+	cancel, err := f.Subscribe(fanoutTopic, func(raw []byte) {
+		_, body, ok := fanout.UnwrapForeign(nodeID, raw)
+		if !ok {
+			return
+		}
+		var ev Event
+		if err := jsonexact.UnmarshalFullRange(body, &ev); err != nil {
+			return
+		}
+		// Re-emit locally with the tap suppressed so this is not rebroadcast.
+		bus.EmitAsync(withRemoteReemit(context.Background()), ev)
+	})
+	if err != nil {
+		bus.mu.Lock()
+		bus.fanoutAttached = false
+		bus.mu.Unlock()
+		return nil, fmt.Errorf("event: AttachFanout: subscribe %q: %w", fanoutTopic, err)
+	}
 
 	var (
 		mu               sync.Mutex
@@ -55,22 +73,22 @@ func AttachFanout(bus *EventBus, f fanout.Fanout) (stop func(), err error) {
 	}
 
 	queue := make(chan []byte, bridgeQueueDepth)
-	stopped := make(chan struct{})
+	publisherCtx, stopPublisher := context.WithCancel(context.Background())
 	publisherDone := make(chan struct{})
 	var overflowOnce sync.Once
 	logOverflowOnce := func() {
 		overflowOnce.Do(func() {
-			slog.Default().Warn("event: fanout bridge publish queue overflowed; dropping oldest envelopes (lossy real-time lane)", "topic", fanoutTopic)
+			slog.Default().Warn("event: fanout bridge publish queue overflowed; dropping envelopes (lossy real-time lane)", "topic", fanoutTopic)
 		})
 	}
 	go func() {
 		defer close(publisherDone)
-		for {
+		for publisherCtx.Err() == nil {
 			select {
-			case <-stopped:
+			case <-publisherCtx.Done():
 				return
 			case data := <-queue:
-				ctx, cancel := context.WithTimeout(context.Background(), bridgePublishTimeout)
+				ctx, cancel := context.WithTimeout(publisherCtx, bridgePublishTimeout)
 				publishSafely(ctx, f, data)
 				cancel()
 			}
@@ -92,6 +110,7 @@ func AttachFanout(bus *EventBus, f fanout.Fanout) (stop func(), err error) {
 		default:
 			select {
 			case <-queue:
+				logOverflowOnce()
 			default:
 			}
 			select {
@@ -103,33 +122,12 @@ func AttachFanout(bus *EventBus, f fanout.Fanout) (stop func(), err error) {
 	}
 	clearTap := bus.setTap(tap)
 
-	cancel, subErr := f.Subscribe(fanoutTopic, func(raw []byte) {
-		_, body, ok := fanout.UnwrapForeign(nodeID, raw)
-		if !ok {
-			return
-		}
-		var ev Event
-		if umerr := jsonexact.Unmarshal(body, &ev); umerr != nil {
-			return
-		}
-		bus.EmitAsync(withRemoteReemit(context.Background()), ev)
-	})
-	if subErr != nil {
-		clearTap()
-		close(stopped)
-		<-publisherDone
-		bus.mu.Lock()
-		bus.fanoutAttached = false
-		bus.mu.Unlock()
-		return nil, fmt.Errorf("event: AttachFanout: subscribe %q: %w", fanoutTopic, subErr)
-	}
-
 	var once sync.Once
 	return func() {
 		once.Do(func() {
-			cancel()
 			clearTap()
-			close(stopped)
+			stopPublisher()
+			cancel()
 			<-publisherDone
 			bus.mu.Lock()
 			bus.fanoutAttached = false

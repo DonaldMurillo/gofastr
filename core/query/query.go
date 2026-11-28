@@ -167,18 +167,11 @@ func (qb *QueryBuilder) Build() (string, []any) {
 	args := make([]any, len(qb.wheres.args))
 	copy(args, qb.wheres.args)
 
-	cols := "*"
-	if len(qb.columns) > 0 {
-		sanitized := make([]string, len(qb.columns))
-		for i, c := range qb.columns {
-			sanitized[i] = identSlot(sanitizeColumn(c))
-		}
-		cols = strings.Join(sanitized, ", ")
-	}
-	sb.WriteString("SELECT ")
-	sb.WriteString(cols)
-
-	sb.WriteString(" FROM ")
+	// SELECT columns: each variadic column is sanitized to drop
+	// SQL meta-sequences. Column slots only ever hold dotted idents
+	// or "*" in practice; sanitizeColumn also collapses whitespace so
+	// a payload that smuggles a sub-SELECT can't survive verbatim.
+	sb.WriteString(selectVerb(qb.columns))
 	sb.WriteString(identSlot(sanitizeFragment(qb.table)))
 
 	for _, j := range qb.joins {

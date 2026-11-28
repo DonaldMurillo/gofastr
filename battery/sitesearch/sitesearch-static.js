@@ -45,7 +45,7 @@
   function shardsFor(m, q) {
     const from = stem(q) || q, ger = gerund(q);
     const out = [];
-    for (const k of m.keys) {
+    for (const k of m.keys ?? []) {
       if (from.startsWith(k) || (prefixes(q) && k.startsWith(from)) ||
           (ger && ger.startsWith(k))) out.push('t-' + hex(k) + '-' + m.h + '.json');
     }

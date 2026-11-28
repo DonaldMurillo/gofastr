@@ -1101,9 +1101,13 @@ func decodeNDJSON(data []byte) ([]map[string]any, error) {
 	var out []map[string]any
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
-	for dec.More() {
+	for {
 		var m map[string]any
-		if err := dec.Decode(&m); err != nil {
+		err := dec.Decode(&m)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
 			return nil, err
 		}
 		for _, k := range slices.Sorted(maps.Keys(m)) {

@@ -138,8 +138,9 @@ func (s *Set) Check(html []byte) []Finding {
 				continue
 			}
 			f := Finding{Kind: "attr", Name: string(a), Note: note}
-			if !seen[f] {
-				seen[f] = true
+			key := findingKey(f)
+			if !seen[key] {
+				seen[key] = true
 				out = append(out, f)
 			}
 		}
@@ -147,8 +148,20 @@ func (s *Set) Check(html []byte) []Finding {
 	return out
 }
 
-// checkBody scans markup whole and JSON string values individually.
-// It also recognizes valid JSON objects and arrays sniffed as text.
+func findingKey(f Finding) Finding {
+	if f.Kind == "attr" {
+		f.Name = strings.ToLower(f.Name)
+	}
+	return f
+}
+
+// checkBody reads a recorded response body by its kind. Markup is
+// scanned whole. JSON is walked string by string, and only strings
+// holding a tag are scanned: a record whose text reads "ui-button" is
+// data, while an html-mode signal value is markup. A body sniffed as
+// text that is in fact JSON (an RPC that set no Content-Type) is walked
+// the same way, since its markup sits behind escaped quotes the tag
+// scanner cannot read.
 func (s *Set) checkBody(kind bodyKind, body []byte) []Finding {
 	if kind == kindMarkup && !looksLikeJSON(body) {
 		return s.Check(body)
@@ -181,8 +194,9 @@ func (s *Set) checkBody(kind bodyKind, body []byte) []Finding {
 			continue
 		}
 		for _, f := range s.Check([]byte(str)) {
-			if !seen[f] {
-				seen[f] = true
+			key := findingKey(f)
+			if !seen[key] {
+				seen[key] = true
 				out = append(out, f)
 			}
 		}

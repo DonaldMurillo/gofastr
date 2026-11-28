@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"sort"
@@ -76,7 +77,7 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 
 			isRange := r.Header.Get("Range") != ""
 			isNavigate := r.Header.Get("X-Gofastr-Navigate") == "1"
-			if isRange || isNavigate {
+			if isRange || isNavigate || hasPrecondition(r.Header) {
 				w.Header().Set("X-Cache", "BYPASS")
 				next.ServeHTTP(w, r)
 				return
@@ -134,6 +135,23 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 	}
 }
 
+// The origin evaluates preconditions against the current representation.
+func hasPrecondition(header http.Header) bool {
+	for _, name := range []string{"If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since"} {
+		if len(header.Values(name)) != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// getKey is the key r's GET is stored under. It includes the request
+// authority (Host) so distinct virtual hosts / tenants sharing one Cache
+// do not collide on the same path+query. The path is the escaped one:
+// /a%2Fb (one segment) and /a/b (two) are different pages. Under locale
+// prefixes the router strips /es before any middleware runs, so
+// /es/pricing and /pricing arrive as the same URL: the locale the path
+// named keeps them apart.
 func getKey(r *http.Request) string {
 	k := keyPrefix(r)
 	if _, tag, ok := i18n.PathLocale(r.Context()); ok {
@@ -444,17 +462,32 @@ type responseRecorder struct {
 }
 
 func (r *responseRecorder) Header() http.Header {
+	if r.overflow {
+		return r.w.Header()
+	}
 	return r.header
 }
 
 func (r *responseRecorder) WriteHeader(code int) {
-	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
+	if r.wrote || r.overflow {
 		return
 	}
-	if !r.wrote {
-		r.statusCode = code
-		r.wrote = true
+	// An informational response carries its own header snapshot.
+	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
+		dst := r.w.Header()
+		original := dst.Clone()
+		for k, vals := range r.header {
+			for _, v := range vals {
+				dst.Add(k, v)
+			}
+		}
+		r.w.WriteHeader(code)
+		clear(dst)
+		maps.Copy(dst, original)
+		return
 	}
+	r.statusCode = code
+	r.wrote = true
 }
 
 func (r *responseRecorder) Write(b []byte) (int, error) {

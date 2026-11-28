@@ -160,7 +160,7 @@ func (lc *Lifecycle) IsHealthy() bool {
 			return false
 		}
 	}
-	return true
+	return !lc.shuttingDown.Load()
 }
 
 // SetShutdownTimeout sets the drain timeout; d <= 0 leaves it unchanged.

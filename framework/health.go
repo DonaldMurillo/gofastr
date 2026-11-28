@@ -205,15 +205,8 @@ func (a *App) healthHandlers() (liveness, readiness http.HandlerFunc) {
 		results := runReadinessChecks(ctx, a.readinessChecks(), a.readinessVerbose())
 
 		status := http.StatusOK
-		for _, c := range results.Checks {
-			if c.Status != "ok" {
-				status = http.StatusServiceUnavailable
-				break
-			}
-		}
-		results.Status = "ready"
-		if status != http.StatusOK {
-			results.Status = "not_ready"
+		if results.Status != "ready" {
+			status = http.StatusServiceUnavailable
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -285,11 +278,17 @@ func runReadinessChecks(ctx context.Context, checks []ReadinessCheck, verbose bo
 			}
 		}(i, c)
 	}
+	status := "ready"
+	// Race the wait against the deadline so a check that ignores ctx
+	// can't keep /readyz waiting longer than the request timeout.
 	for completed := 0; completed < len(checks); completed++ {
 		select {
 		case r := <-resultCh:
 			out[r.i] = r.res
 			done[r.i] = true
+			if r.res.Status != "ok" {
+				status = "not_ready"
+			}
 		case <-ctx.Done():
 			for i, c := range checks {
 				if !done[i] {
@@ -300,10 +299,10 @@ func runReadinessChecks(ctx context.Context, checks []ReadinessCheck, verbose bo
 					}
 				}
 			}
-			return ReadinessResponse{Checks: out}
+			return ReadinessResponse{Status: "not_ready", Checks: out}
 		}
 	}
-	return ReadinessResponse{Checks: out}
+	return ReadinessResponse{Status: status, Checks: out}
 }
 
 // RunReadinessChecks runs the checks /readyz runs and returns its body.

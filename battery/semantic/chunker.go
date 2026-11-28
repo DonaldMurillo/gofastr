@@ -45,10 +45,7 @@ func (f *FixedWindow) Chunk(doc Document) ([]Chunk, error) {
 	if len(runes) <= f.Size {
 		return []Chunk{newChunk(doc, 0, len(text), text)}, nil
 	}
-	step := f.Size - f.Overlap
-	if step <= 0 {
-		step = 1
-	}
+	step := f.Size - min(max(f.Overlap, 0), f.Size-1)
 	var chunks []Chunk
 	prevStart := 0
 	byteStart := 0

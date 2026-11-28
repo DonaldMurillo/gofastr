@@ -200,3 +200,11 @@ func TestContainsUsesCanonicalLikeEscape(t *testing.T) {
 		t.Errorf("contains arg = %#v, want %%50\\%%\\_off\\\\x%% (wildcards + escape char escaped, wrapped)", args[0])
 	}
 }
+
+func TestParseDSLRequiresCompleteCallSeparators(t *testing.T) {
+	for _, input := range []string{"Post.", "Post.limit(2).", "Post.limit(2)order(id)"} {
+		if _, err := ParseDSL(input); err == nil {
+			t.Errorf("ParseDSL(%q) accepted an incomplete call chain", input)
+		}
+	}
+}
