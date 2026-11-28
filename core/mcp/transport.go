@@ -146,6 +146,9 @@ var nameHeaderMethods = map[string]bool{"tools/call": true, "resources/read": tr
 
 func refuseHTTPHeaders(w http.ResponseWriter, r *http.Request, req Request, notification bool) bool {
 	if notification {
+		if v := r.Header.Values(ProtocolVersionHeader); len(v) == 1 && slices.Contains(modernProtocolVersions, strings.TrimSpace(v[0])) {
+			return false
+		}
 		return refuseVersionHeader(w, r, req)
 	}
 	facts, rpcErr := readRequestFacts(req)
@@ -476,6 +479,12 @@ func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 
 	if mediatype.Fold(r.Header.Get("Accept")) == "text/event-stream" {
 		resp := s.HandleRequest(ctx, req)
+		if status := httpStatusFor(resp); status != http.StatusOK {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			_, _ = w.Write(encodeResponse(resp))
+			return
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("X-Accel-Buffering", "no")
