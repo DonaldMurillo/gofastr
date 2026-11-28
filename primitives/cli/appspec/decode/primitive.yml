@@ -159,6 +159,6 @@ decisions:
   - id: json-empty-map-reads-as-blank
     date: 2026-11-28
     status: accepted
-    decision: "Kept for now as an open security finding awaiting the maintainers' decision: requireScalarString reads an empty map as blank, the shape a YAML null takes, so in a .json spec \"read\": {}, \"role\": {}, \"driver\": {} and \"unrestricted\": {} load as blank, the weakest setting, instead of being refused as a shape, and a blank unrestricted lets every signed-in caller past the read scope."
-    revisit_if: The maintainers decide whether yamlNodeFromJSON should mark an empty JSON object so requireScalarString refuses it while a YAML bare key still reads as blank.
+    decision: "Kept for now as an open security finding, tracked in issue 937: requireScalarString reads an empty map as blank, the shape a YAML null takes, so in a .json spec \"read\": {}, \"role\": {}, \"driver\": {} and \"unrestricted\": {} load as blank, the weakest setting, instead of being refused as a shape, and a blank unrestricted lets every signed-in caller past the read scope."
+    revisit_if: Issue 937 is decided, on whether yamlNodeFromJSON should mark an empty JSON object so requireScalarString refuses it while a YAML bare key still reads as blank.
     upholds: [posture-strings-are-single-values]

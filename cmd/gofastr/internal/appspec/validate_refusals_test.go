@@ -61,6 +61,7 @@ func TestValidateRefusals(t *testing.T) {
 		{"nav icon has no closing angle bracket", refusalSpec("", "", "nav:\n  - label: Home\n    href: /\n    icon: \"a>b\"\n"), "contains markup"},
 		{"nav icon has no entity", refusalSpec("", "", "nav:\n  - label: Home\n    href: /\n    icon: \"&amp;\"\n"), "contains markup"},
 		{"nav icon has no control byte", refusalSpec("", "", "nav:\n  - label: Home\n    href: /\n    icon: \"a\\u0001b\"\n"), "contains markup"},
+		{"nav icon has no unit separator", refusalSpec("", "", "nav:\n  - label: Home\n    href: /\n    icon: \"a\\u001fb\"\n"), "contains markup"},
 		{"nav icon has no delete byte", refusalSpec("", "", "nav:\n  - label: Home\n    href: /\n    icon: \"a\\u007fb\"\n"), "contains markup"},
 		{"nav icon has no double quote", refusalSpec("", "", "nav:\n  - label: Home\n    href: /\n    icon: \"a\\\"b\"\n"), "contains markup"},
 		{"nav icon has no single quote", refusalSpec("", "", "nav:\n  - label: Home\n    href: /\n    icon: \"a'b\"\n"), "contains markup"},
