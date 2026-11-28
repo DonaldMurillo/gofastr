@@ -1,6 +1,7 @@
 package harnesscmd
 
 import (
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -127,12 +128,19 @@ func TestDeriveListenerSecret(t *testing.T) {
 	if len(a) != 32 {
 		t.Fatalf("random secret len = %d", len(a))
 	}
+	if string(a) == string(DeriveListenerSecret()) {
+		t.Fatal("two secrets without a machine key are equal")
+	}
 	// Deterministic branch (machine key set).
 	t.Setenv("GOFASTR_HARNESS_MACHINE_KEY", "0123456789abcdef0123456789abcdef")
 	b := DeriveListenerSecret()
 	c := DeriveListenerSecret()
 	if len(b) != 32 || string(b) != string(c) {
 		t.Fatal("machine-key secret must be deterministic 32 bytes")
+	}
+	// SHA-256 of "harness-http:" and the key; a new prefix would void every token a restart should keep.
+	if got, want := hex.EncodeToString(b), "18387a27904c6e6e76e7ff0d4c43479d3b87a7ce9f526534cbabacd44e3ebd28"; got != want {
+		t.Fatalf("machine-key secret = %s, want %s", got, want)
 	}
 }
 

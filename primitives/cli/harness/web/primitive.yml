@@ -29,7 +29,7 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/harnesscmd.TestChatPageCarriesTheTokenInAMetaTag
   - id: model-output-stays-inert
-    rule: The chat script escapes &, <, > and " before any markdown formatting and links only bare http(s) URLs, so model or tool text never becomes markup in the token-bearing page.
+    rule: The chat script escapes &, <, > and " before any markdown formatting and links only bare http(s) URLs, so model or tool text never becomes markup in the token-bearing page and a tag the renderer makes carries no attribute but href, target and rel.
     enforced_by:
       - test: cmd/gofastr/internal/harnesscmd.TestChatMarkdownKeepsModelOutputInert
   - id: escape-denies
@@ -57,3 +57,19 @@ decisions:
       - option: Pin Host and allow any bind address.
         why: The Host pin stops a DNS-rebound page, not a peer on the network that reaches the port directly and sends Host localhost, and the page hands a 24 hour human-class token to whoever loads it.
     upholds: [loopback-bind-only, guards-pinned-to-the-bound-authority]
+  - id: csp-sets-only-frame-ancestors
+    date: 2026-11-28
+    status: accepted
+    decision: The chat page's Content-Security-Policy sets frame-ancestors 'none' and no other directive.
+    rejected:
+      - option: Add script-src or default-src to the policy.
+        why: The page's bootstrap script and style are inline (inline-chat-page), so either directive would block them and the page would not run.
+    revisit_if: The page's script and style move to external assets.
+    upholds: [chat-page-is-never-cached-or-framed]
+  - id: tool-cards-start-collapsed
+    date: 2026-11-28
+    status: accepted
+    decision: A tool card starts collapsed, showing a few preview lines, and opens when its header is clicked.
+    rejected:
+      - option: Open every tool card as it arrives.
+        why: Every card popped open and a few tool calls filled the viewport, pushing the conversation out of sight.
