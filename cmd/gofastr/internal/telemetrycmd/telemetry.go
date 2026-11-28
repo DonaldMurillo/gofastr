@@ -20,6 +20,7 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/battery/telemetry"
@@ -203,46 +204,44 @@ func (o options) directory() (string, error) {
 	return telemetry.DefaultDir(o.app)
 }
 
-// clean makes text from a file safe to print: a log message is whatever
-// a caller sent, and a terminal obeys the control bytes in it.
-// A line break goes too: one entry is one line, and a message must not
-// be able to start a second that looks like another entry.
 func clean(s string) string {
 	return strings.NewReplacer("\n", " ", "\r", " ", "\t", " ").Replace(textsafe.ScrubTerminal(s))
 }
 
-// jsonLine makes a stored line safe to print as --json. The table
-// output is scrubbed; this one is the line as stored, and a terminal
-// acts on what it is shown. A line that is not JSON (torn by a crash,
-// or not written by this package) is printed as a JSON string, which
-// escapes every control character. In one that is, the characters JSON
-// leaves as they are and a terminal obeys are written as escapes: the
-// C1 controls (U+009B starts a control sequence without an ESC) and the
-// ones that reorder text. They can only stand inside a string, where an
-// escape means the same character.
 func jsonLine(line []byte) []byte {
 	if !json.Valid(line) {
-		quoted, err := json.Marshal(string(line)) // which also replaces bytes that are not UTF-8
+		quoted, err := json.Marshal(string(line))
 		if err != nil {
 			return []byte(`""`)
 		}
 		return quoted
 	}
-	risky := func(r rune) bool {
-		return (r >= 0x80 && r <= 0x9f) || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) || r == 0x200e || r == 0x200f || r == 0x061c
-	}
+	risky := func(r rune) bool { return r >= 0x20 && textsafe.IsUnsafe(r) }
 	if !bytes.ContainsFunc(line, risky) {
 		return line
 	}
 	out := make([]byte, 0, len(line)+16)
 	for _, r := range string(line) {
-		if risky(r) {
-			out = fmt.Appendf(out, "\\u%04x", r)
+		if !risky(r) {
+			out = utf8.AppendRune(out, r)
 			continue
 		}
-		out = utf8.AppendRune(out, r)
+		if r1, r2 := utf16.EncodeRune(r); r1 != utf8.RuneError {
+			out = fmt.Appendf(out, "\\u%04x\\u%04x", r1, r2)
+			continue
+		}
+		out = fmt.Appendf(out, "\\u%04x", r)
 	}
 	return out
+}
+
+type jsonWriter struct{ w io.Writer }
+
+func (j jsonWriter) Write(p []byte) (int, error) {
+	if _, err := j.w.Write(jsonLine(p)); err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }
 
 func stamp(t time.Time) string { return t.UTC().Format("2006-01-02 15:04:05.000Z") }
@@ -321,7 +320,7 @@ func (o options) requests(w io.Writer, store *itel.Store, from time.Time) error 
 		return err
 	}
 	if o.asJSON {
-		enc := json.NewEncoder(w)
+		enc := json.NewEncoder(jsonWriter{w})
 		for _, s := range sums {
 			if err := enc.Encode(itel.RequestRow(s)); err != nil {
 				return err
@@ -354,7 +353,7 @@ func (o options) issues(w io.Writer, store *itel.Store, from time.Time) error {
 		return err
 	}
 	if o.asJSON {
-		enc := json.NewEncoder(w)
+		enc := json.NewEncoder(jsonWriter{w})
 		for _, is := range issues {
 			if err := enc.Encode(itel.IssueRow(is)); err != nil {
 				return err
@@ -406,7 +405,7 @@ func (o options) stats(w io.Writer, store *itel.Store, now time.Time) error {
 		latest = host.Latest
 	}
 	if o.asJSON {
-		enc := json.NewEncoder(w)
+		enc := json.NewEncoder(jsonWriter{w})
 		job := false
 		line := func(route string, total bool, c itel.StatsCount) error {
 			return enc.Encode(map[string]any{

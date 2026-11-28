@@ -9,7 +9,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	itel "github.com/DonaldMurillo/gofastr/internal/telemetry"
+	"github.com/DonaldMurillo/gofastr/internal/telemetry/telemetrytest"
 )
 
 // --json prints a stored line, and a terminal acts on what it is shown:
@@ -46,6 +48,52 @@ func TestJSONLineIsSafeToPrint(t *testing.T) {
 	var text string
 	if err := json.Unmarshal([]byte(got), &text); err != nil || !strings.Contains(text, "torn \x1b[2J") {
 		t.Errorf("a line that is not JSON should print as a JSON string of itself: %q (err %v)", got, err)
+	}
+}
+
+// Every --json command escapes each rune textsafe.IsUnsafe names, not only C1
+// and bidi controls: zero-width, tag and line-separator runes hide or move text.
+func TestEveryJSONCommandEscapesUnsafeRunes(t *testing.T) {
+	dir := t.TempDir()
+	at := now.Add(-time.Minute)
+	id := strings.Repeat("e", 32)
+	route := "GET /a\u009b\u2028\u200b\U000E0041"
+	trace := itel.AppendTrace(nil, itel.Trace{Time: at, TraceID: id, Route: route, Path: "/a\u202e", Status: 500, Dur: time.Millisecond,
+		Error: true, Err: "boom\u2066\ufeff"})
+	telemetrytest.Append(t, dir, itel.KindTraces, at, trace)
+	telemetrytest.Append(t, dir, itel.KindLogs, at, []byte(`{"time":"`+at.Format(time.RFC3339Nano)+`","level":"INFO","msg":"m`+"\u2029\u200d"+`","trace_id":"`+id+`"}`+"\n"))
+	r := itel.NewRollup()
+	r.Observe(at, route, time.Millisecond, true, false)
+	telemetrytest.Append(t, dir, itel.KindStats, at.Add(time.Minute), r.Take(at.Add(time.Minute), true))
+	var astral map[string]string
+	if err := json.Unmarshal(jsonLine([]byte(`{"m":"a`+"\U000E0041"+`b"}`)), &astral); err != nil || astral["m"] != "a\U000E0041b" {
+		t.Errorf("a rune past U+FFFF is not escaped as a surrogate pair: %q, %v", astral["m"], err)
+	}
+	for _, args := range [][]string{
+		{"logs", "--dir", dir, "--json"},
+		{"requests", "--dir", dir, "--json"},
+		{"issues", "--dir", dir, "--json"},
+		{"stats", "--dir", dir, "--json"},
+		{"request", id, "--dir", dir, "--json"},
+	} {
+		out, err := run(t, args...)
+		if err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		if strings.TrimSpace(out) == "" {
+			t.Fatalf("%v printed nothing", args)
+		}
+		for _, r := range out {
+			if r != '\n' && textsafe.IsUnsafe(r) {
+				t.Errorf("%v printed %U raw: %q", args, r, out)
+				break
+			}
+		}
+		for line := range strings.Lines(out) {
+			if !json.Valid([]byte(line)) {
+				t.Errorf("%v printed a line that is not JSON: %q", args, line)
+			}
+		}
 	}
 }
 
