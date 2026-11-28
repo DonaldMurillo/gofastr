@@ -35,12 +35,18 @@ few lines, and link the PR or the docs page for the rest.
 ### Changed
 
 - **BREAKING: `gofastr harness` and `gofastr harness mcp` read their
-  approvals, permissions and credential salt from
+  config directory (repository-key approvals, `permissions.json`, user
+  `skills/`, the credential salt and `creds.enc`) from
   `$XDG_CONFIG_HOME/gofastr/harness`**, where `gofastr harness creds`
-  already wrote them. Before, they always read `~/.config/gofastr/harness`,
+  already wrote it. Before, they always read `~/.config/gofastr/harness`,
   so with `XDG_CONFIG_HOME` set a stored credential was never seen. If you
   set `XDG_CONFIG_HOME` and kept files under `~/.config/gofastr/harness`,
-  move them to the new directory.
+  move them to the new directory. A relative `XDG_CONFIG_HOME` is now
+  ignored by all three commands, as the XDG spec says, and they use
+  `~/.config/gofastr/harness`: run inside a cloned repository, a relative
+  path named files the repository's author wrote. If `gofastr harness creds`
+  stored files under a relative `XDG_CONFIG_HOME`, move them to
+  `~/.config/gofastr/harness` or set an absolute path.
 - **BREAKING: a bare list control key no longer filters a same-named
   column.** `?direction=desc`, `?page=2`, `?sort=...` and the other
   control keys (`q` too, when the entity has `SearchFields`) are read only
