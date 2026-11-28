@@ -116,6 +116,28 @@ func TestURLRefusesUnquotableText(t *testing.T) {
 	}
 }
 
+func TestURLRefusalHidesCredentials(t *testing.T) {
+	for _, u := range []string{
+		"https://user:s3cret@example.com/x",
+		"https://s3cret@example.com/x",
+		"https://user:s3cret@example.com/it's",
+		"http://user:s3cret@example.com/x",
+		"https://user:s3cret@/x",
+		"https://user:s3cret@example.com:port/x",
+		"https://user:s3cret@example.com/x?y=1",
+		"https://user:s3/cret@example.com/x",
+	} {
+		_, err := checkBaseURL(u)
+		if err == nil {
+			t.Errorf("%q: accepted", u)
+			continue
+		}
+		if msg := err.Error(); strings.Contains(msg, "s3") || strings.Contains(msg, "cret") || strings.Contains(u, "example.com") && !strings.Contains(msg, "example.com") {
+			t.Errorf("%q: refusal %q shows the credentials or hides the host", u, msg)
+		}
+	}
+}
+
 func TestEmitterRefusesQuoteInURL(t *testing.T) {
 	sum := strings.Repeat("0", 64)
 	valid := func() scriptValues {

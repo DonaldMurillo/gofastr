@@ -113,23 +113,40 @@ func parseOptions(args []string) (options, error) {
 }
 
 func checkBaseURL(raw string) (string, error) {
+	shown := redactUserinfo(raw)
 	if !urlCharsRe.MatchString(raw) {
-		return "", fmt.Errorf("release: --url %q holds a character the install scripts cannot quote (quotes, $, `, spaces and non-ASCII are refused; percent-encode them)", raw)
+		return "", fmt.Errorf("release: --url %q holds a character the install scripts cannot quote (quotes, $, `, spaces and non-ASCII are refused; percent-encode them)", shown)
 	}
 	if !strings.HasPrefix(raw, "https://") {
-		return "", fmt.Errorf("release: --url %q must be an https:// URL", raw)
+		return "", fmt.Errorf("release: --url %q must be an https:// URL", shown)
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", fmt.Errorf("release: --url: %v", err)
+		var ue *url.Error
+		if shown != raw || !errors.As(err, &ue) {
+			return "", fmt.Errorf("release: --url %q is not a valid URL", shown)
+		}
+		return "", fmt.Errorf("release: --url %q: %v", shown, ue.Err)
 	}
 	if u.Host == "" {
-		return "", fmt.Errorf("release: --url %q must be an https:// URL", raw)
+		return "", fmt.Errorf("release: --url %q must be an https:// URL", shown)
 	}
 	if u.User != nil || strings.ContainsAny(raw, "?#") {
-		return "", fmt.Errorf("release: --url %q must be a plain directory URL, with no credentials, query or fragment", raw)
+		return "", fmt.Errorf("release: --url %q must be a plain directory URL, with no credentials, query or fragment", shown)
 	}
 	return strings.TrimRight(raw, "/"), nil
+}
+
+func redactUserinfo(raw string) string {
+	start := strings.Index(raw, "://") + len("://")
+	if start < len("://") {
+		start = 0
+	}
+	at := strings.LastIndex(raw, "@")
+	if at < start {
+		return raw
+	}
+	return raw[:start] + "REDACTED" + raw[at:]
 }
 
 func parseTargets(s string) ([]target, error) {

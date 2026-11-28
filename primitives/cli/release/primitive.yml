@@ -19,6 +19,10 @@ invariants:
       - test: cmd/gofastr/internal/releasecmd.TestOptionsRefuseBadValues
       - test: cmd/gofastr/internal/releasecmd.TestOptionsAcceptSemverPrerelease
       - test: cmd/gofastr/internal/releasecmd.TestURLRefusesUnquotableText
+  - id: url-refusal-hides-credentials
+    rule: A refused --url is shown with everything between :// and its last @ replaced by REDACTED, and without url.Parse's own error when it holds an @, so a credential in it reaches neither the terminal nor a CI log.
+    enforced_by:
+      - test: cmd/gofastr/internal/releasecmd.TestURLRefusalHidesCredentials
   - id: one-main-package-per-target
     rule: The package is inspected with go list under each target's GOOS, GOARCH and CGO_ENABLED=0, so a package whose files build only for its targets releases from any host, and anything but one main package is refused.
     enforced_by:
