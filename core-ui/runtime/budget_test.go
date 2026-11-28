@@ -1770,7 +1770,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// Not carvable: showModal() must run in the mount, or the modal
 		// shows outside the top layer until a module loads.
 		// 4065 measured + 2 (2026-11-21): a fetched widget body is written through the Trusted Types policy (TestRuntimeSwapsUnderTrustedTypes).
-		"widgets": 4067,
+		// 4117 measured + 2 (2026-11-28, #706): NS._raiseWidget, the one way a
+		// widget root (an anchored popover, a toast stack) enters the top layer
+		// and drops its popover attribute when the browser refuses
+		// (TestPopoverTheBrowserWillNotRaiseStillDraws,
+		// TestToastStackTheBrowserWillNotRaiseStillDraws).
+		"widgets": 4119,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
