@@ -21,9 +21,10 @@ invariants:
       - test: cmd/gofastr/internal/telemetrycmd.TestJSONLineIsSafeToPrint
       - test: cmd/gofastr/internal/telemetrycmd.TestJSONOutputIsScrubbed
   - id: torn-line-prints-as-a-string
-    rule: A stored line that is not valid JSON is printed under --json as a JSON string of itself, with bytes that are not UTF-8 replaced.
+    rule: A stored line that is not valid JSON is printed under --json as a JSON string of itself, with bytes that are not UTF-8 replaced and the same unsafe-rune escapes a valid line gets.
     enforced_by:
       - test: cmd/gofastr/internal/telemetrycmd.TestJSONLineIsSafeToPrint
+      - test: cmd/gofastr/internal/telemetrycmd.TestTornJSONLineEscapesUnsafeRunes
   - id: usage-errors-exit-two
     rule: A command-line mistake (no or unknown subcommand, a bad flag or value, a stray or missing argument, --dir with --app, an --app that is a path, --limit outside 1 to 100000, stats with --since under a minute) is errUsage, which RunTelemetry reports with the usage on stderr and exit 2; any other failure exits 1.
     enforced_by:
