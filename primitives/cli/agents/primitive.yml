@@ -1,0 +1,123 @@
+primitive: cli.agents
+summary: gofastr agents init and sync - write a project's AGENTS.md, a table of every agentsinv entry between two markers, and one generated detail file per entry under .agents/, every write confined to the project directory.
+code:
+  - cmd/gofastr/internal/agentscmd/agents.go
+  - cmd/gofastr/internal/agentscmd/confined.go
+  - cmd/gofastr/internal/agentscmd/doc.go
+  - cmd/gofastr/internal/agentscmd/init.go
+  - cmd/gofastr/internal/agentscmd/subcommand_usage.go
+docs:
+  - framework/docs/content/cli.md
+on_change:
+  - A battery that ships an agents.md is blank-imported at the top of agents.go, or its row and detail file never reach a host's AGENTS.md.
+invariants:
+  - id: one-directory-argument
+    rule: Each agents verb takes at most one positional directory, "." when none is given, and a flag it does not know or a second argument exits 2 before anything is written.
+    enforced_by:
+      - test: cmd/gofastr/internal/agentscmd.TestAgentsVerbsRefuseFlagsAndExtraArgs
+      - test: cmd/gofastr/internal/agentscmd.TestAgentsInitTakesADirectory
+  - id: init-never-replaces-agents-md
+    rule: agents init creates AGENTS.md exclusively and exits 1 when anything, a dangling symlink included, already holds the name.
+    enforced_by:
+      - test: cmd/gofastr/internal/agentscmd.TestRunAgentsInitExistingExits
+      - test: cmd/gofastr/internal/agentscmd.TestAgentsInitRefusesAnAGENTSmdLinkedOutside
+  - id: sync-rewrites-only-between-markers
+    rule: RefreshAgentsMD keeps every byte before the start marker and after the end marker, and replaces only the table between them.
+    enforced_by:
+      - test: cmd/gofastr/internal/agentscmd.TestRefreshAgentsMDPreservesTailAndPreamble
+      - test: cmd/gofastr/internal/agentscmd.TestRefreshAgentsMDIsIdempotent
+  - id: markers-once-and-in-order
+    rule: RefreshAgentsMD refuses an AGENTS.md in which either marker is missing or occurs more than once, or the end marker comes before the start marker.
+    enforced_by:
+      - test: cmd/gofastr/internal/agentscmd.TestRefreshAgentsMDFailsWithoutMarkers
+      - test: cmd/gofastr/internal/agentscmd.TestRefreshAgentsMDRefusesDuplicateMarkers
+      - test: cmd/gofastr/internal/agentscmd.TestRefreshAgentsMDRefusesEndBeforeStart
+  - id: crlf-is-not-a-change
+    rule: RefreshAgentsMD reports no change for an AGENTS.md that differs from the fresh output only in CRLF line endings or trailing blanks.
+    enforced_by:
+      - test: cmd/gofastr/internal/agentscmd.TestRefreshAgentsMDHandlesCRLFWithoutFlapping
+  - id: legacy-refs-move-to-dot-agents
+    rule: RefreshAgentsMD rewrites the code spans and link targets an older generator wrote under agents/ to .agents/, outside the markers too, and leaves prose that merely says agents alone.
+    enforced_by:
+      - test: cmd/gofastr/internal/agentscmd.TestRefreshAgentsMDMigratesLegacyPreambleRefs
+  - id: sync-always-rewrites-details
+    rule: agents sync rewrites every detail file even when the table in AGENTS.md is already up to date.
+    enforced_by:
+      - test: cmd/gofastr/internal/agentscmd.TestRunAgentsSyncRewritesDetailsWhenTOCUnchanged
+  - id: use-when-cell
+    rule: A table row's Use this when cell is the entry's **Use this when** paragraph up to a blank line or the next **Heading:** line, joined on one line with pipes escaped, or a dash when the entry has none.
+    enforced_by:
+      - test: cmd/gofastr/internal/agentscmd.TestExtractUseWhenStripsBoilerplate
+      - test: cmd/gofastr/internal/agentscmd.TestBuildAgentsMDIsThinTOC
+  - id: detail-file-header
+    rule: Every detail file starts with one HTML comment line carrying the generated header and the import path of the package whose agents.md it copies.
+    enforced_by:
+      - test: cmd/gofastr/internal/agentscmd.TestWriteAgentDetailFilesIncludeAutoGenHeader
+  - id: hand-written-detail-is-refused
+    rule: WriteAgentDetailFiles and CheckOnboardingFiles refuse a detail-file path that holds a file without the generated header, and leave other files in .agents/ alone.
+    enforced_by:
+      - test: cmd/gofastr/internal/agentscmd.TestWriteAgentDetailFilesRefusesToClobberUserFile
+      - test: cmd/gofastr/internal/agentscmd.TestWriteAgentDetailFilesLeavesUnrelatedUserFiles
+      - test: cmd/gofastr/internal/initcmd.TestInitChecksAgentPathsBeforeWrites
+  - id: legacy-folder-cleanup
+    rule: After writing .agents/, the writer deletes only the generated .md files in a legacy agents/ directory, removes the directory only when nothing else is left in it, and leaves an agents/ that is a symlink untouched.
+    enforced_by:
+      - test: cmd/gofastr/internal/agentscmd.TestWriteAgentDetailFilesRemovesLegacyGeneratedFolder
+      - test: cmd/gofastr/internal/agentscmd.TestWriteAgentDetailFilesLeavesSymlinkedLegacyDir
+  - id: writes-stay-in-the-project
+    rule: Every read and write of AGENTS.md, CLAUDE.md, DESIGN.md, .agents/ and the host skill goes through an os.Root on the project directory, so a link is followed only while it stays inside the project.
+    enforced_by:
+      - test: cmd/gofastr/internal/agentscmd.TestAgentFilesStayInsideTheProject
+      - test: cmd/gofastr/internal/agentscmd.TestProjectFileRefusesClimbOutThroughParentLink
+      - test: cmd/gofastr/internal/agentscmd.TestProjectFileResolvesThroughInRootParentLinks
+      - test: cmd/gofastr/internal/agentscmd.TestAgentsSyncRefusesAnAGENTSmdLinkedOutside
+  - id: every-battery-has-a-row
+    rule: Every battery directory with an agents.md appears in the generated table and has a detail file.
+    enforced_by:
+      - test: cmd/gofastr/internal/agentscmd.TestEveryBatteryDirHasAgentsSection
+      - test: cmd/gofastr/internal/agentscmd.TestBatteryAgentsMDContentReachesDetailFile
+  - id: dev-loop-leads
+    rule: The generated CLAUDE.md, AGENTS.md and host skill name gofastr dev before any go run and before their first framework section, and say that only gofastr dev sets GOFASTR_DEV=1.
+    enforced_by:
+      - test: cmd/gofastr/internal/initcmd.TestScaffoldLeadsWithDevLoop
+decisions:
+  - id: thin-table-with-detail-files
+    date: 2026-11-28
+    status: accepted
+    decision: AGENTS.md is a one-row-per-entry table that links a detail file under .agents/ holding the entry's agents.md.
+    rejected:
+      - option: Inline every entry's agents.md in AGENTS.md.
+        why: An agent reads AGENTS.md whole before any task, so it has to fit one pass; the detail is loaded only when a row matches.
+    upholds: [use-when-cell]
+  - id: hidden-detail-folder
+    date: 2026-11-28
+    status: accepted
+    decision: The detail files live in a hidden .agents/ at the project root.
+    rejected:
+      - option: A visible agents/ folder, which earlier releases wrote.
+        why: It sat beside the app's own packages and read as part of the app.
+    upholds: [legacy-refs-move-to-dot-agents, legacy-folder-cleanup]
+  - id: rewrite-details-unconditionally
+    date: 2026-11-28
+    status: accepted
+    decision: Sync rewrites every detail file on each run.
+    rejected:
+      - option: Track which detail files changed and rewrite only those.
+        why: The files are framework-owned and cheap to write, and tracking them repeats the marker logic for each file.
+    upholds: [sync-always-rewrites-details]
+  - id: exactly-one-marker
+    date: 2026-11-28
+    status: accepted
+    decision: Refresh requires each marker exactly once.
+    rejected:
+      - option: Take the first occurrence of each marker.
+        why: A preamble that quotes the markers would be read as the table, and the refresh would overwrite the project's own text.
+    upholds: [markers-once-and-in-order]
+  - id: symlinked-legacy-folder-kept
+    date: 2026-11-28
+    status: accepted
+    decision: An agents/ that is a symlink is left as it is.
+    rejected:
+      - option: Clean through it like a real directory.
+        why: os.Root follows a link that stays in the project, so with agents -> .agents the cleanup would delete the files just written.
+    upholds: [legacy-folder-cleanup]

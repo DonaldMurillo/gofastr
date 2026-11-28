@@ -44,6 +44,22 @@ func TestRunAgentsInitAndSync(t *testing.T) {
 	}
 }
 
+func TestRunAgentsSyncRewritesDetailsWhenTOCUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	clitest.CovT_capStdout(t, func() { RunAgents([]string{"init", dir}) })
+	detail := filepath.Join(dir, agentDetailRelPath(agentsinv.All()[0]))
+	if err := os.WriteFile(detail, []byte(autoGenSentinel+" STALE\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := clitest.CovT_capStdout(t, func() { RunAgents([]string{"sync", dir}) })
+	if !strings.Contains(out, "already up to date") {
+		t.Fatalf("sync of an unchanged TOC should say so: %s", out)
+	}
+	if body, _ := os.ReadFile(detail); strings.Contains(string(body), "STALE") {
+		t.Fatalf("sync left a stale detail file behind an unchanged TOC:\n%s", body)
+	}
+}
+
 func TestRunAgentsInitExistingExits(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("x"), 0o644); err != nil {
