@@ -113,6 +113,15 @@ few lines, and link the PR or the docs page for the rest.
   widget opened with `data-cui-popover-anchor` is a manual popover, so
   a menu, toast or tooltip already open no longer covers it. The
   runtime still places it and its arrow beside the trigger.
+- **Menu and dropdown panels show on the top layer** (#706). Where the
+  browser has CSS anchor positioning, an open `ui.Menu` or
+  `ui.Dropdown` panel is a manual popover anchored to its trigger, so a
+  box that clips or scrolls its content no longer cuts it off. It sits
+  4px from the trigger: a menu on the side and edge its `Position`
+  names, a dropdown under the trigger lined up with the edge its `Align`
+  names. It flips when that side or edge has no room. Elsewhere the panel is placed as
+  before. A `headless.Disclosure` the kit does not style stays in its
+  flow.
 - **Tooltip meets WCAG 1.4.13** (#706). With the `headless-tooltip`
   module, `ui.Tooltip` opens in the top layer, so a scrolling or
   clipping container no longer cuts it off. It stays open while the
