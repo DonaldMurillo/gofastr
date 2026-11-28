@@ -145,7 +145,7 @@ func TestCallGateGenericRefusalMessage(t *testing.T) {
 	if !ok {
 		t.Fatalf("want *RPCError, got %T", err)
 	}
-	if rpcErr.Code != ErrMethodNotFound || rpcErr.Message != `tool "blocked" not found` {
+	if rpcErr.Code != ErrInvalidParams || rpcErr.Message != `tool "blocked" not found` {
 		t.Fatalf("want the unknown-tool answer, got %q", err.Error())
 	}
 	msg := err.Error()

@@ -27,9 +27,12 @@ Call `SetServerName(name)` to override only the name, `SetInstructions(text)` (o
 
 `Server.HandleRequest` handles `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list`, `resources/read`, `resources/templates/list`, `resources/subscribe`, `resources/unsubscribe`, `prompts/list`, and `prompts/get`.
 
-- **Protocol negotiation:** Supports `2025-06-18` (`mcp.LatestProtocolVersion`) and `2025-03-26` (`mcp.SupportedProtocolVersions()`). Unknown or omitted client versions receive `2025-06-18`. JSON-RPC batches return `-32600` (`ErrInvalidRequest`).
+- **Protocol negotiation:** Supports `2025-11-25` (`mcp.LatestProtocolVersion`), `2025-06-18` and `2025-03-26` (`mcp.SupportedProtocolVersions()`). Unknown or omitted client versions receive `2025-11-25`. JSON-RPC batches return `-32600` (`ErrInvalidRequest`).
 - **`MCP-Protocol-Version` header:** On the HTTP transports (`ServeHTTP` and both `ServeSSE` methods), a request whose `MCP-Protocol-Version` header (`mcp.ProtocolVersionHeader`) names a revision the server does not speak, or that repeats the header, is answered `400` with `-32600` and `error.data` of `{"supported": [...], "requested": "..."}`. An absent header is served, as the spec allows for clients older than `2025-06-18`, and `initialize` is never refused for its header because it negotiates the version itself.
-- **Exported error codes:** `ErrParse` (-32700), `ErrInvalidRequest` (-32600), `ErrMethodNotFound` (-32601), `ErrInvalidParams` (-32602), `ErrInternalError` (-32603), carried on `*RPCError`.
+- **Exported error codes:** `ErrParse` (-32700), `ErrInvalidRequest` (-32600), `ErrMethodNotFound` (-32601), `ErrInvalidParams` (-32602), `ErrInternalError` (-32603) and `ErrResourceNotFound` (-32002), carried on `*RPCError`.
+- **Not-found answers:** an unknown tool, or one a gate hides, answers `-32602` (`ErrInvalidParams`) with `tool "<name>" not found`; an unknown or hidden resource answers `-32002` (`ErrResourceNotFound`); an unknown or hidden prompt answers `-32602`. Only an unknown method answers `-32601`.
+- **Server details:** `SetServerDetails(mcp.ServerDetails{Title, Description, WebsiteURL, Icons})` fills the optional `serverInfo` fields. It returns an error and changes nothing when `WebsiteURL` is not `https` or an icon is invalid.
+- **Icons:** `WithToolIcons`, `WithResourceIcons`, `WithResourceTemplateIcons` and `WithPromptIcons` take `mcp.Icon{Src, MimeType, Sizes, Theme}` values and list them as `icons`. `Src` must be an `https` URL or a `data:` URI and `Theme` must be empty, `light` or `dark`; any other value panics at registration.
 - **Capabilities:** `initialize` advertises `tools` always, `resources` (with `subscribe: true`) once any resource or template is registered, and `prompts` once any prompt is registered—all with `listChanged: true`.
 
 ## Tools
@@ -71,7 +74,7 @@ srv.RegisterTool(
 )
 ```
 
-- **Schema enforcement:** `tools/call` and `CallTool` validate `arguments` against `inputSchema` (`type`, `required`, `enum`, `items`, `additionalProperties`) before calling your handler; opt out with `WithLaxArgs()`. Omitted `arguments` reach the handler as a nil map; `"arguments": null`, or any value that is not an object, answers `-32602` before the tool is looked up. Integers past ±2^53 arrive as `json.Number` so IDs aren't rounded.
+- **Schema enforcement:** `tools/call` and `CallTool` validate `arguments` against `inputSchema` (`type`, `required`, `enum`, `items`, `additionalProperties`) before calling your handler; opt out with `WithLaxArgs()`. On the wire, arguments that fail the schema are answered as a tool execution error (`isError: true` with the reason as text), so the model can correct them and retry; `CallTool` and `CallToolFor` still return an `*RPCError` with `-32602`. Omitted `arguments` reach the handler as a nil map; `"arguments": null`, or any value that is not an object, answers `-32602` before the tool is looked up. Integers past ±2^53 arrive as `json.Number` so IDs aren't rounded.
 - **Return values:** `mcp.ToolResult` (explicit content blocks and/or `Structured`, plus `IsError: true` for model-visible tool errors), `mcp.ImageResult`, `mcp.Content` / `[]mcp.Content` (`TextContent`, `ImageContent`, `AudioContent`, `ResourceContent`), `string`, or any JSON-marshalable value.
 - **Errors:** `*RPCError` passes through verbatim; 4xx `*handler.Error` becomes `-32602` with `code`, `reason`, and `fields` in `data`; plain errors, 5xx errors, and panics are logged server-side and answered with a generic `"internal tool error"`.
 - **Options:** `WithOutputSchema(schema)`, `WithToolMeta(meta)`, `WithToolGate(gate)`, `WithLaxArgs()`, `WithAnnotations(a)`.

@@ -5,13 +5,13 @@ code:
 docs:
   - framework/docs/content/mcp.md
 twins:
-  - job: Negotiate the MCP revision on initialize and check the MCP-Protocol-Version header on later HTTP requests.
+  - job: Negotiate the MCP revision on initialize, check the MCP-Protocol-Version header on later HTTP requests, and answer an unknown tool with -32602.
     why: Work not yet done; the harness control-plane server answers initialize with a fixed 2024-11-05, a revision older than the header, and its HTTP transport never reads MCP-Protocol-Version, so the two servers disagree on which revisions a client may speak.
     sites:
       - path: core/mcp/protocol.go
         note: negotiateProtocolVersion, and refuseVersionHeader in core/mcp/transport.go.
       - path: framework/experimental/harness/control/mcpserver/server.go
-        note: handleInitialize, which always answers 2024-11-05; its http.go reads no MCP-Protocol-Version.
+        note: handleInitialize, which always answers 2024-11-05; its http.go reads no MCP-Protocol-Version; an unknown tool still answers -32601.
   - job: Run an app-supplied gate or callback under a recover guard that logs the scrubbed panic and fails closed.
     why: Work not yet done; each site answers a different shape (a bool for listings and notifications, an RPCError for tools and prompts, a masked sentinel for Gated and resource gates), so one helper would need to return the error and let each caller map it.
     sites:
@@ -57,6 +57,24 @@ invariants:
     enforced_by:
       - test: core/mcp.TestNonScalarIDRefused
       - test: core/mcp.TestInvalidJSONRPCVersion
+  - id: args-refusal-is-a-tool-error
+    rule: On the wire, tools/call answers arguments that fail the tool's inputSchema with a result carrying isError true and the reason as its one text block, without running the handler, while CallTool and CallToolFor return an *RPCError with -32602 for the same arguments; a handler that returns such an RPCError from a nested CallTool answers it as a JSON-RPC error, not as the caller's isError.
+    enforced_by:
+      - test: core/mcp.TestArgsRefusalIsToolExecutionError
+      - test: core/mcp.TestNestedArgsRefusalIsNotTheCallersToolError
+      - test: core/mcp.TestToolCallArgsMatchInputSchema
+  - id: not-found-codes
+    rule: tools/call answers an unknown or hidden tool with -32602 and resources/read answers an unknown or hidden resource with -32002 (ErrResourceNotFound); -32601 is kept for an unknown method.
+    enforced_by:
+      - test: core/mcp.TestNotFoundCodes
+      - test: core/mcp.TestCallTool_UnknownTool
+      - test: core/mcp.TestResourcesRead_Unknown
+  - id: icons-are-safe-urls
+    rule: WithToolIcons, WithResourceIcons, WithResourceTemplateIcons and WithPromptIcons panic, and SetServerDetails errors without changing serverInfo, on an icon whose src is not an https URL with a host or a data URI with a payload, or whose theme is not empty, light or dark; SetServerDetails also refuses a websiteUrl that is not https.
+    enforced_by:
+      - test: core/mcp.TestIconOptionsRefuseUnsafeSrc
+      - test: core/mcp.TestServerDetailsInInitialize
+      - test: core/mcp.TestIconsAppearInListings
   - id: tool-arguments-are-an-object
     rule: tools/call answers -32602 before the tool is looked up when arguments is present and is not a JSON object, null included; omitted arguments reach the tool as a nil map.
     enforced_by:
@@ -72,7 +90,7 @@ invariants:
       - test: core/mcp.TestServerGateClosesResourceSubscribe
       - test: core/mcp.TestInitializeAndPingStayOpenUnderServerGate
   - id: version-negotiation
-    rule: initialize answers the client's protocolVersion when it is one of SupportedProtocolVersions (2025-06-18, 2025-03-26), and LatestProtocolVersion for any other, missing or non-string value.
+    rule: initialize answers the client's protocolVersion when it is one of SupportedProtocolVersions (2025-11-25, 2025-06-18, 2025-03-26), and LatestProtocolVersion for any other, missing or non-string value.
     enforced_by:
       - test: core/mcp.TestInitializeNegotiatesVersion
       - test: core/mcp.TestSupportedProtocolVersionsList
@@ -119,6 +137,25 @@ invariants:
     enforced_by:
       - test: core/mcp.TestInitializeServesInstructions
 decisions:
+  - id: spec-error-codes
+    date: 2026-11-28
+    status: accepted
+    decision: An unknown or gate-hidden tool answers -32602 and an unknown or gate-hidden resource answers -32002, as the 2025-11-25 tools and resources pages specify, instead of the -32601 both answered before.
+    rejected:
+      - option: Keep -32601 for both.
+        why: -32601 means the JSON-RPC method does not exist, so a client cannot tell an unknown tool from a server without tools/call; the spec examples name -32602 and -32002.
+    revisit_if: A modern (2026-07-28) request is served, whose resources page names -32602 for an unknown resource.
+    upholds: [not-found-codes]
+  - id: args-refusal-as-tool-error
+    date: 2026-11-28
+    status: accepted
+    decision: Arguments that fail the inputSchema answer tools/call as an isError tool result for every negotiated version, while the Go API keeps returning an RPCError.
+    rejected:
+      - option: Only for clients that negotiated 2025-11-25.
+        why: The spec change is a clarification (SEP-1303) of what an input validation error is, the server keeps no per-session version on HTTP, and the result shape is valid in every revision it speaks.
+      - option: Return the isError result from CallTool too.
+        why: Go callers branch on the RPCError code; a result value would hide the refusal from them.
+    upholds: [args-refusal-is-a-tool-error]
   - id: callback-errors-share-one-function
     date: 2026-11-16
     status: accepted
@@ -148,7 +185,7 @@ decisions:
   - id: protocol-versions
     date: 2026-11-18
     status: accepted
-    decision: The server negotiates 2025-06-18 and 2025-03-26 and leaves 2024-11-05 off.
+    decision: The server negotiates 2025-11-25, 2025-06-18 and 2025-03-26 and leaves 2024-11-05 off.
     rejected:
       - option: Also accept 2024-11-05.
         why: Its HTTP+SSE transport answers each POST with 202 and delivers the response on the stream, while this server answers in the POST body, so such a client would wait forever.

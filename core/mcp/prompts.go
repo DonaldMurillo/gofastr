@@ -35,6 +35,7 @@ type Prompt struct {
 	Name        string           `json:"name"`
 	Description string           `json:"description,omitempty"`
 	Arguments   []PromptArgument `json:"arguments,omitempty"`
+	Icons       []Icon           `json:"icons,omitempty"`
 
 	handler PromptHandler
 	gate    func(ctx context.Context) error

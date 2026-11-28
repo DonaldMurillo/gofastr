@@ -14,6 +14,9 @@ const (
 	ErrMethodNotFound = -32601
 	ErrInvalidParams  = -32602
 	ErrInternalError  = -32603
+
+	// ErrResourceNotFound answers resources/read for a URI that is not registered or that the caller's gates hide.
+	ErrResourceNotFound = -32002
 )
 
 // Request is a JSON-RPC 2.0 request.
@@ -37,6 +40,8 @@ type RPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    any    `json:"data,omitempty"`
+
+	argsInvalid bool
 }
 
 // Error formats the code and message.
@@ -133,9 +138,9 @@ func newErrorResponse(id any, code int, message string) Response {
 }
 
 // LatestProtocolVersion is the newest MCP revision the server speaks, answered when the client asks for an unsupported one.
-const LatestProtocolVersion = "2025-06-18"
+const LatestProtocolVersion = "2025-11-25"
 
-var supportedProtocolVersions = []string{LatestProtocolVersion, "2025-03-26"}
+var supportedProtocolVersions = []string{LatestProtocolVersion, "2025-06-18", "2025-03-26"}
 
 // SupportedProtocolVersions returns a copy of the MCP revisions initialize negotiates, newest first.
 func SupportedProtocolVersions() []string {
@@ -163,7 +168,7 @@ func negotiateProtocolVersion(params json.RawMessage) string {
 
 func (s *Server) handleInitialize(req Request) Response {
 	s.mu.RLock()
-	name, version, instructions := s.name, s.version, s.instructions
+	serverInfo, instructions := s.serverInfoLocked(), s.instructions
 	s.mu.RUnlock()
 	capabilities := map[string]any{
 		"tools": map[string]any{"listChanged": true},
@@ -177,7 +182,7 @@ func (s *Server) handleInitialize(req Request) Response {
 	result := map[string]any{
 		"protocolVersion": negotiateProtocolVersion(req.Params),
 		"capabilities":    capabilities,
-		"serverInfo":      map[string]any{"name": name, "version": version},
+		"serverInfo":      serverInfo,
 	}
 	if instructions != "" {
 		result["instructions"] = instructions

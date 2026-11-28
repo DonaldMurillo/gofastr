@@ -41,7 +41,7 @@ func TestResourcesReadURINeverNormalizes(t *testing.T) {
 		resp := s.HandleRequest(context.Background(), Request{
 			JSONRPC: "2.0", ID: 1, Method: "resources/read", Params: p,
 		})
-		if resp.Error == nil || resp.Error.Code != ErrMethodNotFound {
+		if resp.Error == nil || resp.Error.Code != ErrResourceNotFound {
 			t.Errorf("SECURITY: [traversal] uri %q resolved to a read (resp=%+v); resources/read must be an exact map-key lookup with no path, percent-decoding or case normalization",
 				uri, resp)
 		}

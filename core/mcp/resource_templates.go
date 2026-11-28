@@ -12,6 +12,7 @@ type ResourceTemplate struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description,omitempty"`
 	MimeType    string         `json:"mimeType,omitempty"`
+	Icons       []Icon         `json:"icons,omitempty"`
 	Meta        map[string]any `json:"_meta,omitempty"`
 
 	gate func(ctx context.Context) error

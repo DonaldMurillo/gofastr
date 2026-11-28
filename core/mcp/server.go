@@ -27,6 +27,8 @@ type Tool struct {
 	OutputSchema map[string]any `json:"outputSchema,omitempty"`
 	// Annotations are the tool's behaviour hints in tools/list; see WithAnnotations.
 	Annotations *Annotations `json:"annotations,omitempty"`
+	// Icons are the tool's icons in tools/list; see WithToolIcons.
+	Icons []Icon `json:"icons,omitempty"`
 	// Meta is the tool's `_meta` in tools/list.
 	Meta    map[string]any `json:"_meta,omitempty"`
 	Handler ToolHandler    `json:"-"`
@@ -84,6 +86,7 @@ type Server struct {
 	name         string
 	version      string
 	instructions string
+	details      ServerDetails
 
 	prompts map[string]Prompt
 
@@ -495,7 +498,7 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 	t, ok := s.getTool(name)
 	if !ok {
 		return nil, &RPCError{
-			Code:    ErrMethodNotFound,
+			Code:    ErrInvalidParams,
 			Message: fmt.Sprintf("tool %q not found", name),
 		}
 	}
@@ -506,7 +509,7 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 	if gate != nil {
 		if err := runCallGate(gate, name); err != nil {
 			return nil, &RPCError{
-				Code:    ErrMethodNotFound,
+				Code:    ErrInvalidParams,
 				Message: fmt.Sprintf("tool %q not found", name),
 			}
 		}
@@ -514,7 +517,7 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 
 	if gErr := s.checkToolGate(ctx, t); gErr != nil {
 		return nil, maskedRefusalRPC(gErr, &RPCError{
-			Code:    ErrMethodNotFound,
+			Code:    ErrInvalidParams,
 			Message: fmt.Sprintf("tool %q not found", name),
 		})
 	}
@@ -522,7 +525,7 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 	for _, gate := range t.handlerGates {
 		if gErr := gatedCall(gate, ctx); gErr != nil {
 			return nil, maskedRefusalRPC(gErr, &RPCError{
-				Code:    ErrMethodNotFound,
+				Code:    ErrInvalidParams,
 				Message: fmt.Sprintf("tool %q not found", name),
 			})
 		}
@@ -531,8 +534,9 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 	if !t.LaxArgs {
 		if err := validateToolArgs(t.InputSchema, params); err != nil {
 			return nil, &RPCError{
-				Code:    ErrInvalidParams,
-				Message: err.Error(),
+				Code:        ErrInvalidParams,
+				Message:     err.Error(),
+				argsInvalid: true,
 			}
 		}
 	}
@@ -541,7 +545,7 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 	if err != nil {
 		if errors.Is(err, errGatedHidden) {
 			return nil, &RPCError{
-				Code:    ErrMethodNotFound,
+				Code:    ErrInvalidParams,
 				Message: fmt.Sprintf("tool %q not found", name),
 			}
 		}
@@ -561,6 +565,11 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 
 func callerFacingError(ctx context.Context, err error) (*RPCError, bool) {
 	if rpcErr, ok := errors.AsType[*RPCError](err); ok {
+		if rpcErr.argsInvalid {
+			out := *rpcErr
+			out.argsInvalid = false
+			return &out, true
+		}
 		return rpcErr, true
 	}
 	refusal, ok := errors.AsType[*handler.Error](err)

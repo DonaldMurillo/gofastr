@@ -84,8 +84,8 @@ func TestToolCallArgsMatchInputSchema(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := NewServer()
 			resp, ran, got := dispatchViaJSONRPC(t, s, tc.args)
-			if resp.Error == nil || resp.Error.Code != ErrInvalidParams {
-				t.Errorf("SECURITY: [tool-args] arguments %s were not validated against the declared inputSchema (resp=%+v); the call must be refused with invalid-params before the handler runs",
+			if _, refused := argsRefusal(resp); !refused {
+				t.Errorf("SECURITY: [tool-args] arguments %s were not validated against the declared inputSchema (resp=%+v); the call must be answered as a tool execution error before the handler runs",
 					tc.args, resp)
 			}
 			if ran {
@@ -121,10 +121,10 @@ func TestToolCallArgsSchemaKeywords(t *testing.T) {
 			JSONRPC: "2.0", ID: 1, Method: "tools/call", Params: params,
 		})
 		if resp.Error != nil {
-			if resp.Error.Code != ErrInvalidParams {
-				t.Fatalf("refusal code = %d, want invalid-params (%s)", resp.Error.Code, resp.Error.Message)
-			}
-			return resp.Error, ran
+			t.Fatalf("argument refusal answered as a protocol error %d (%s), want a tool execution error", resp.Error.Code, resp.Error.Message)
+		}
+		if msg, refused := argsRefusal(resp); refused {
+			return &RPCError{Code: ErrInvalidParams, Message: msg}, ran
 		}
 		return nil, ran
 	}
@@ -376,10 +376,23 @@ func TestToolArgsEnumExactText(t *testing.T) {
 func TestToolCallArgsRefusalNamesProperty(t *testing.T) {
 	s := NewServer()
 	resp, _, _ := dispatchViaJSONRPC(t, s, `{"count":"7"}`)
-	if resp.Error == nil {
+	msg, refused := argsRefusal(resp)
+	if !refused {
 		t.Fatal("expected refusal")
 	}
-	if !strings.Contains(resp.Error.Message, "arguments.count") {
-		t.Fatalf("refusal message does not name the offending argument: %q", resp.Error.Message)
+	if !strings.Contains(msg, "arguments.count") {
+		t.Fatalf("refusal message does not name the offending argument: %q", msg)
 	}
+}
+
+// argsRefusal reports whether resp is the isError tool result that answers arguments failing the inputSchema, and its text.
+func argsRefusal(resp Response) (string, bool) {
+	if resp.Error != nil {
+		return "", false
+	}
+	r, ok := resp.Result.(toolsCallResult)
+	if !ok || !r.IsError || len(r.Content) != 1 {
+		return "", false
+	}
+	return r.Content[0].Text, true
 }

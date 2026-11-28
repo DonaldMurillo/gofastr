@@ -312,7 +312,7 @@ func TestResourcesRead_Unknown(t *testing.T) {
 	s := NewServer()
 	p, _ := json.Marshal(map[string]any{"uri": "ui://nope"})
 	resp := s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "resources/read", Params: p})
-	if resp.Error == nil || resp.Error.Code != ErrMethodNotFound {
+	if resp.Error == nil || resp.Error.Code != ErrResourceNotFound {
 		t.Fatalf("unknown uri should be not-found, got %v", resp.Error)
 	}
 }
@@ -605,7 +605,7 @@ func TestWithResourceGate_PanicRecovers(t *testing.T) {
 	}, WithResourceGate(func(context.Context) error { panic("gate boom") }))
 	p, _ := json.Marshal(map[string]any{"uri": "boom://g"})
 	resp := s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "resources/read", Params: p})
-	if resp.Error == nil || resp.Error.Code != ErrMethodNotFound || resp.Error.Message != `resource "boom://g" not found` {
+	if resp.Error == nil || resp.Error.Code != ErrResourceNotFound || resp.Error.Message != `resource "boom://g" not found` {
 		t.Fatalf("panicking gate should answer as an unknown uri, got %v", resp.Error)
 	}
 }

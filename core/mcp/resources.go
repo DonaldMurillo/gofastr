@@ -30,6 +30,7 @@ type Resource struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description,omitempty"`
 	MimeType    string         `json:"mimeType,omitempty"`
+	Icons       []Icon         `json:"icons,omitempty"`
 	Meta        map[string]any `json:"_meta,omitempty"`
 
 	contents ResourceContentsFunc
@@ -143,7 +144,7 @@ func (s *Server) handleResourcesRead(ctx context.Context, req Request) Response 
 	res, ok := s.resources[params.URI]
 	s.mu.RUnlock()
 	if !ok {
-		return newErrorResponse(req.ID, ErrMethodNotFound, fmt.Sprintf("resource %q not found", params.URI))
+		return newErrorResponse(req.ID, ErrResourceNotFound, fmt.Sprintf("resource %q not found", params.URI))
 	}
 
 	contents, err := s.readResourceContents(ctx, res)
@@ -151,7 +152,7 @@ func (s *Server) handleResourcesRead(ctx context.Context, req Request) Response 
 		var gated *gateRefusalError
 		if errors.As(err, &gated) {
 			return Response{JSONRPC: "2.0", ID: req.ID, Error: maskedRefusalRPC(gated.err, &RPCError{
-				Code: ErrMethodNotFound, Message: fmt.Sprintf("resource %q not found", params.URI),
+				Code: ErrResourceNotFound, Message: fmt.Sprintf("resource %q not found", params.URI),
 			})}
 		}
 		return handlerErrorResponse(ctx, req, err, "mcp: resource contents func failed", "internal resource error",
