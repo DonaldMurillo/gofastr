@@ -45,6 +45,7 @@ func sharedOnce(key string, create func() (dir, importPath string, err error)) *
 
 // SharedTree returns the directory prepare filled once per key for this
 // test binary; callers read it and write only into a CopyTree copy.
+// prepare outlives the test that first calls it, so it must not capture a *testing.T.
 func SharedTree(t testing.TB, key string, prepare func(dir string) error) string {
 	t.Helper()
 	e := sharedOnce("tree "+key, func() (string, string, error) {
