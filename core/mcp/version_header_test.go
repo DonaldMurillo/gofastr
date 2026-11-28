@@ -103,3 +103,18 @@ func TestVersionHeaderRefusesStream(t *testing.T) {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}
 }
+
+// A refusal for the header answers under a null id when the request's id is not a valid scalar, as JSON-RPC requires.
+func TestVersionHeaderRefusalNullsInvalidID(t *testing.T) {
+	s := NewServer()
+	for name, h := range map[string]http.Handler{"ServeHTTP": s, "ServeSSE": s.ServeSSE("/mcp")} {
+		w := postWithVersionHeader(t, h, `{"jsonrpc":"2.0","id":{"x":1},"method":"tools/list"}`, "2099-01-01")
+		var resp map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("%s: %v: %s", name, err, w.Body)
+		}
+		if id, ok := resp["id"]; w.Code != http.StatusBadRequest || !ok || id != nil {
+			t.Fatalf("%s = %d %s, want 400 under a null id", name, w.Code, w.Body)
+		}
+	}
+}
