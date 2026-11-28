@@ -26,6 +26,13 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Added
 
+- **MCP `2025-11-25`.** `initialize` now negotiates `2025-11-25` beside
+  `2025-06-18` and `2025-03-26`. New: `WithToolIcons`,
+  `WithResourceIcons`, `WithResourceTemplateIcons`, `WithPromptIcons`
+  (an `https` or `data:` src, else they panic), `SetServerDetails` for
+  serverInfo's title, description, websiteUrl and icons, and
+  `ErrResourceNotFound` (-32002). See [MCP server](framework/docs/content/mcp.md)
+  ([#944](https://github.com/DonaldMurillo/gofastr/pull/944)).
 - **`mcp.ProtocolVersionHeader`** names the `MCP-Protocol-Version` HTTP
   header. See [MCP server](framework/docs/content/mcp.md)
   ([#943](https://github.com/DonaldMurillo/gofastr/pull/943)).
@@ -37,6 +44,15 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Changed
 
+- **BREAKING: MCP not-found codes and argument refusals follow the spec.**
+  An unknown or gate-hidden tool now answers `-32602` and an unknown or
+  hidden resource `-32002`; both answered `-32601` before. Arguments that
+  fail a tool's `inputSchema` now answer `tools/call` with an `isError`
+  result naming the argument, not a JSON-RPC error, so a model can retry;
+  `CallTool` still returns the `-32602` `*RPCError`. A client that branched
+  on those codes must read the new ones. See
+  [MCP server](framework/docs/content/mcp.md)
+  ([#944](https://github.com/DonaldMurillo/gofastr/pull/944)).
 - **BREAKING: `core/mcp` refuses an unsupported `MCP-Protocol-Version`
   header.** `ServeHTTP` and `ServeSSE` answer `400` with `-32600` and
   `{supported, requested}` when the header names a revision `initialize`
