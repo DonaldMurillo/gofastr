@@ -3,7 +3,6 @@ summary: gofastr theme edit - a loopback-only theme configurator that serves tok
 code:
   - cmd/gofastr/internal/themecmd/theme_edit.go
   - cmd/gofastr/internal/themecmd/theme_edit_page.go
-  - cmd/gofastr/internal/themecmd/theme_edit_page.js
 docs:
   - framework/docs/content/theming.md
   - framework/docs/content/cli.md

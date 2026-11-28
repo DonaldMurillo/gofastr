@@ -191,7 +191,7 @@ func TestExtractUseWhenStripsBoilerplate(t *testing.T) {
 		"**Use this when** the prompt mentions: foo, bar, baz.\n\nnext para": "foo, bar, baz",
 		"**Use this when** the prompt mentions: just one\n\n":                "just one",
 		"**Use this when** anything goes here\n\n":                           "anything goes here",
-		"no use-when line": "—",
+		"no use-when line":            "—",
 		"**Use this when** a | b\n\n": `a \| b`,
 		// Multi-line paragraph. Markdown wraps the trigger list across
 		// lines; the TOC must show all of them, rather than only the first wrap.
