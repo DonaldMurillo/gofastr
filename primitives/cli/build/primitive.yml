@@ -36,6 +36,10 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/buildcmd.TestBuildExtRefusalOffersRealRemedy
       - test: cmd/gofastr/internal/buildcmd.TestBuildExtRefusalQuotesPath
+  - id: help-is-the-commands-own
+    rule: 'gofastr build --help prints printBuildUsage, which begins with "Usage: gofastr build", never the global help page.'
+    enforced_by:
+      - test: cmd/gofastr.TestSubcommandHelpIsCommandSpecific
   - id: strict-flags
     rule: build refuses an unknown flag, a positional argument, an empty --pkg or --output, and a --pkg value that starts with a dash.
     enforced_by:
@@ -74,7 +78,7 @@ decisions:
     decision: The sandbox gate has no skip flag and is not bound to --no-a11y.
     rejected:
       - option: Skip it with --no-a11y, like the accessibility gate.
-        why: A goroutine, channel or forbidden import in a client-hydrated .ui.go file breaks hydration at runtime, and no valid .ui.go file violates the rule, so there is nothing to wait out.
+        why: What check.LintFile refuses in a client-hydrated .ui.go file, a goroutine, a channel send, receive, make or close, a type switch, recover, an import outside its allow list, or an html element config missing a required field, either breaks hydration at runtime or is a field every valid file sets, so there is nothing to wait out.
     upholds: [sandbox-gate-has-no-skip]
   - id: build-does-not-generate-the-app
     date: 2026-11-28

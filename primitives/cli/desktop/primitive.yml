@@ -63,3 +63,17 @@ decisions:
     rejected:
       - option: Take the signal only once the app is running.
         why: A signal during the first build waited for the build and the app it started before anything shut down.
+  - id: scan-before-the-first-build
+    date: 2026-11-28
+    status: accepted
+    decision: desktop run --watch takes the source mod times before the first build, and the watcher compares against them, so a save made during the build or the dependency read rebuilds.
+    rejected:
+      - option: Take the mod times once the first build has finished.
+        why: A file saved while the build ran would already be in the baseline, and the running app would miss that change until the next save.
+  - id: watch-context-ends-on-the-signal
+    date: 2026-11-28
+    status: accepted
+    decision: The watcher runs under a context that ends with SIGINT or SIGTERM, so shutdown does not wait for it.
+    rejected:
+      - option: Let shutdown wait for the watcher to stop by itself.
+        why: The watcher's go list can stall on a module proxy, and a signal would then hang the command until the proxy answered.

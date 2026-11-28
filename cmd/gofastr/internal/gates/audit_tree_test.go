@@ -1,10 +1,13 @@
 package gates
 
 import (
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
+	"github.com/DonaldMurillo/gofastr/core-ui/check"
 )
 
 const goroutineUI = "package app\n\nfunc view() { go func() {}() }\n"
@@ -52,5 +55,23 @@ func TestAuditSkipsUnparsableFilesAndSortsFindings(t *testing.T) {
 	}
 	if len(findings) != 4 || got[0] != "a.go" || got[1] != "a/screen.go" || got[2] != "a/screen.go" || got[3] != "b/screen.go" || findings[1].Line >= findings[2].Line {
 		t.Fatalf("findings are not in file and line order: %+v", findings)
+	}
+}
+
+func TestAuditTreeSortsALintsFindingsByLine(t *testing.T) {
+	root := clitest.WriteA11yTree(t, map[string]string{"b.go": "package app\n", "a.go": "package app\n"})
+	unordered := func(string) (*check.Result, error) {
+		return &check.Result{Violations: []check.Violation{{Line: 9}, {Line: 3}}}, nil
+	}
+	findings, err := auditTree(root, ".go", unordered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, f := range findings {
+		got = append(got, fmt.Sprintf("%s:%d", filepath.ToSlash(f.File), f.Line))
+	}
+	if want := "a.go:3 a.go:9 b.go:3 b.go:9"; strings.Join(got, " ") != want {
+		t.Fatalf("findings = %s, want %s", strings.Join(got, " "), want)
 	}
 }
