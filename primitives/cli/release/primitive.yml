@@ -75,3 +75,21 @@ decisions:
       - option: Compare names as written.
         why: The archives unpack onto case-insensitive file systems on macOS and Windows, where an include named HELLO overwrites the binary hello.
     upholds: [includes-cannot-collide]
+  - id: url-checked-as-written
+    date: 2026-11-28
+    status: accepted
+    decision: --url is held to printable ASCII without a quote, $, backtick or space, and its scheme, query and fragment are checked on the text as given.
+    rejected:
+      - option: Allow non-ASCII URLs.
+        why: PowerShell treats the curly quotes U+2018, U+2019, U+201C and U+201D as quote characters, so one in the URL would end the single-quoted string install.ps1 embeds it in.
+      - option: Check the parsed URL.
+        why: 'url.Parse lower-cases HTTPS:// and drops a bare trailing ? or #, while the scripts embed the raw text, so a check of the parsed form passes text the scripts carry unchecked.'
+    upholds: [values-the-scripts-can-quote]
+  - id: refuse-a-used-output-directory
+    date: 2026-11-28
+    status: accepted
+    decision: prepareOut accepts a new or empty output directory and refuses one with files in it.
+    rejected:
+      - option: Write into an existing directory, replacing files of the same name.
+        why: An old build's archives would sit beside a new checksums.txt that does not list them.
+    upholds: [output-is-new-or-empty]
