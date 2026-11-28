@@ -27,6 +27,10 @@ invariants:
       - test: core-ui/widget.TestArchContract_MatchFnPageScoping
       - test: core-ui/widget.TestArchContract_AvailableOnHelper
       - test: core-ui/widget.TestArchContract_GlobalWidgetAvailableEverywhere
+  - id: raised-widget-keeps-its-position
+    rule: A widget the runtime raises as a popover keeps its mount position, the browser's popover insets, margin, border, padding and canvas background reset under :where(.cui-widget[popover]) so every position class still wins.
+    enforced_by:
+      - test: framework/ui.TestToastStackRisesIntoTheTopLayer
   - id: chrome-renders-safely
     rule: The chrome endpoint refuses a ctx over MaxChromeContext bytes, not valid UTF-8 or holding a C0 or C1 control or DEL; a panicking slot, Skeleton or ExtraCSS renders empty instead of failing the request; RenderChromeCtx threads its context into every slot, and RenderChrome matches the endpoint.
     enforced_by:

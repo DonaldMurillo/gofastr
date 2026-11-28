@@ -7,10 +7,6 @@ import (
 	"strings"
 )
 
-// kilnSkillPath returns the absolute path to the kiln skill installed
-// by installSkill(). Used by adapters that don't auto-discover skills
-// from ~/.claude/skills/ (pi, codex). They need an explicit flag
-// pointing at the skill file.
 func kilnSkillPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -23,13 +19,6 @@ func kilnSkillPath() string {
 	return p
 }
 
-// kilnContractPreamble is the system-level "you are inside kiln" framing
-// every adapter ships with the user's prompt. The world IR is the app.
-// editing files on disk is meaningless and explicitly forbidden. Without
-// this, claude/codex spawned in the user's cwd see a real Go repo and
-// fall back to Read/Edit/Write on those files instead of dispatching
-// kiln tool calls. The kiln SKILL.md describes *how* to call tools; this
-// preamble establishes *that* tool calls are the only legal action.
 const kilnContractPreamble = `You are running inside the Kiln runtime.
 
 Kiln's world IR is the only source of truth for the app being built.
@@ -52,12 +41,6 @@ tool, you are off-script: go back to curl.
 The available tools are documented in the kiln skill. Read it before
 acting.`
 
-// kilnSystemPrompt returns the full per-turn system context for an
-// agent: the contract preamble plus the SKILL.md tool surface (when
-// installed). Adapters inject this via whatever system-prompt mechanism
-// the underlying CLI provides (claude --append-system-prompt, codex
-// prompt-prepend, pi --skill + prompt-prepend). Returning a single
-// string keeps the contract identical across adapters.
 func kilnSystemPrompt() string {
 	out := kilnContractPreamble
 	if p := kilnSkillPath(); p != "" {
@@ -68,35 +51,17 @@ func kilnSystemPrompt() string {
 	return out
 }
 
-// Adapter describes how to spawn a third-party CLI coding agent for one
-// turn of conversation. Every adapter shares the same contract:
-//
-//   - Detect() returns true if the agent's binary is on PATH.
-//   - BuildArgs(text) returns the argv to exec for one turn. The user's
-//     prompt is the last argument; KILN_URL is injected via env upstream.
-//     An adapter that passes the prompt as its own argument puts "--"
-//     (endOfOptions) in front of it, so a message that starts with "-"
-//     ("--fix the header", "--tools=...") stays text and never parses as
-//     a flag. omp and claude both end option parsing at "--".
-//
-// Auth is the user's responsibility: each CLI manages its own login
-// (e.g. `claude` reads ~/.claude/.credentials.json). Kiln does not
-// touch credentials. It just spawns the binary.
+// Adapter spawns a third-party coding-agent CLI for one turn: BuildArgs
+// returns the argv, the prompt last; Dir, when set, is the parent of the
+// turn's working directory. Each CLI handles its own login.
 type Adapter struct {
 	Name      string
-	Display   string // human-readable description for the startup banner
+	Display   string
 	Detect    func() bool
 	BuildArgs func(text string) []string
-	// Dir overrides the working directory for the spawned process.
-	// Empty means inherit kiln's cwd. Set this for adapters whose
-	// model is prone to reading the cwd (pi will cat any Go file
-	// it sees and report on it as if it were the kiln world);
-	// pointing them at a clean temp dir blocks that confusion.
-	Dir string
+	Dir       string
 }
 
-// adapters is the built-in registry. Adding a new agent is a one-entry
-// change here.
 var adapters = map[string]Adapter{
 	"omp": {
 		Name:    "omp",
@@ -104,11 +69,6 @@ var adapters = map[string]Adapter{
 		Dir:     filepath.Join(os.TempDir(), "kiln-omp"),
 		Detect:  func() bool { _, err := exec.LookPath("omp"); return err == nil },
 		BuildArgs: func(text string) []string {
-			// OMP is Kiln's primary live-build driver. --no-session keeps
-			// each panel turn bounded to the journal/world context Kiln
-			// injects, instead of letting OMP's own session state become a
-			// second source of truth. Bash is the only tool it needs: every
-			// mutation crosses the audited $KILN_URL HTTP boundary.
 			return []string{
 				"omp", "-p",
 				"--model", "glm-5.2",
@@ -126,23 +86,6 @@ var adapters = map[string]Adapter{
 		Dir:     filepath.Join(os.TempDir(), "kiln-claude"),
 		Detect:  func() bool { _, err := exec.LookPath("claude"); return err == nil },
 		BuildArgs: func(text string) []string {
-			// --dangerously-skip-permissions is required for non-interactive
-			// runs. Without it claude --print hangs at the first Bash
-			// tool-use waiting for a permission prompt that nobody can answer.
-			//
-			// --tools Bash leaves Bash as the only tool claude has, so
-			// Read/Write/Edit/Glob/Grep are not there to reach for. curl
-			// goes through Bash, which is all kiln needs. (--allowedTools
-			// only skips the prompt for the tools it names; with the flag
-			// above every tool stayed available.) Bash itself still reaches
-			// the disk: this narrows the model's easy fallbacks, it is not
-			// a sandbox.
-			//
-			// --append-system-prompt installs the kiln contract + skill at
-			// the system level, so it outranks claude's default tool autonomy.
-			// Without this, claude in --print mode auto-discovers the skill
-			// at best advisorily. The model is still free to ignore it. As
-			// a system prompt the contract is non-negotiable.
 			return []string{
 				"claude", "--print", "--dangerously-skip-permissions",
 				"--tools", "Bash",
@@ -158,17 +101,7 @@ var adapters = map[string]Adapter{
 		Detect:  func() bool { _, err := exec.LookPath("pi"); return err == nil },
 		BuildArgs: func(text string) []string {
 			argv := []string{"pi", "-p", "--provider", "zai", "--model", "glm-5.1",
-				// Restrict pi to bash only: it dispatches kiln tools
-				// via curl. The kiln world is the only source of truth
-				// and is reachable solely via $KILN_URL HTTP, so bash is
-				// sufficient. Without this, pi's Read tool reaches for
-				// cwd files instead of the world IR.
 				"--tools", "bash"}
-			// --skill loads SKILL.md (the tool surface). The contract
-			// preamble ("you are inside kiln, no files exist") rides at
-			// the head of the user prompt because pi has no separate
-			// system-prompt flag. Together: skill = how to call tools,
-			// contract = that calling tools is the only legal action.
 			if p := kilnSkillPath(); p != "" {
 				argv = append(argv, "--skill", p)
 			}
@@ -182,25 +115,14 @@ var adapters = map[string]Adapter{
 		Dir:     filepath.Join(os.TempDir(), "kiln-codex"),
 		Detect:  func() bool { _, err := exec.LookPath("codex"); return err == nil },
 		BuildArgs: func(text string) []string {
-			// Codex exposes no --skill or --system-prompt flag, so the
-			// kiln contract + skill ride at the head of the user prompt.
-			// Same content as claude's --append-system-prompt; the
-			// effective system prompt just lives in user-message position.
 			prompt := "<kiln-system>\n" + kilnSystemPrompt() + "\n</kiln-system>\n\n" + text
 			return []string{"codex", "exec", prompt}
 		},
 	},
 }
 
-// endOfOptions is the POSIX end-of-options marker an adapter puts in
-// front of the prompt argument. pi and codex start the prompt argument
-// with a <kiln-system> block, so it can never look like a flag.
 const endOfOptions = "--"
 
-// spawnPrefix is argv without its prompt: the trailing argument and, in
-// front of it, the end-of-options marker when there is one. resolveAdapter
-// compares it with a free-form --agent command to find the preset that
-// command names.
 func spawnPrefix(argv []string) []string {
 	if len(argv) == 0 {
 		return argv
@@ -208,7 +130,6 @@ func spawnPrefix(argv []string) []string {
 	return trimEndOfOptions(argv[:len(argv)-1])
 }
 
-// trimEndOfOptions drops a trailing end-of-options marker.
 func trimEndOfOptions(argv []string) []string {
 	if n := len(argv); n > 0 && argv[n-1] == endOfOptions {
 		return argv[:n-1]
@@ -216,22 +137,12 @@ func trimEndOfOptions(argv []string) []string {
 	return argv
 }
 
-// adapterAutoOrder is the priority list for `--agent auto` detection.
-// OMP/GLM-5.2 is the canonical Kiln driver; the others remain available
-// for users who already have those CLIs authenticated.
 var adapterAutoOrder = []string{"omp", "claude-code", "pi", "codex"}
 
-// resolveAdapter maps a --agent flag value to a concrete Adapter.
-//
-//	""        → none (no agent runs)
-//	"none"    → none (explicit)
-//	"auto"    → first installed adapter from adapterAutoOrder, or none
-//	"<name>"  → registry lookup; returns ok=false if not installed
-//	"cmd …"   → custom freeform command; the string is split on whitespace
-//	            and "--" plus the user's prompt are appended, so a prompt
-//	            that starts with "-" is not read as a flag
-//
-// Returns (Adapter, ok). ok=false means "no agent will run."
+// resolveAdapter maps an --agent value to an adapter: "" and "none" to
+// none, "auto" to the first installed in adapterAutoOrder, a registered name
+// to that adapter when installed, and anything else to a custom command.
+// ok is false when no agent will run.
 func resolveAdapter(value string) (Adapter, bool) {
 	switch value {
 	case "", "none":
@@ -250,17 +161,10 @@ func resolveAdapter(value string) (Adapter, bool) {
 		}
 		return a, true
 	}
-	// A command that already ends in "--" gets no second one.
 	parts := trimEndOfOptions(strings.Fields(value))
 	if len(parts) == 0 {
 		return Adapter{}, false
 	}
-	// If the freeform spawn matches a built-in adapter's exact argv
-	// prefix, return that named adapter, not a "custom" one. The gear
-	// modal keys its "current" radio off the adapter name; classifying
-	// "pi -p --provider zai --model glm-5.1" as custom would leave the
-	// user staring at an all-unselected list even though their --agent
-	// is the pi preset.
 	for _, name := range adapterAutoOrder {
 		a := adapters[name]
 		if argvEqual(spawnPrefix(a.BuildArgs("")), parts) {

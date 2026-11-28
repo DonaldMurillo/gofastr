@@ -1,0 +1,21 @@
+primitive: tools.repolint.vettoolvcs
+summary: The vettool-buildvcs rule, which holds every build of cmd/vettool to -buildvcs=false.
+code:
+  - cmd/repolint/vettoolbuildvcs.go
+docs:
+  - docs/contributing.md
+invariants:
+  - id: vettool-builds-unstamped
+    rule: A line that is not a comment (one starting with // or with a hash) in a .go, .sh, .yml, .yaml, Makefile or .githooks file outside testdata that builds cmd/vettool or cmd/vettool/ (go build, or an exec "build" argument) without -buildvcs=false is a finding; a path that only starts with cmd/vettool is not.
+    enforced_by:
+      - test: cmd/repolint.TestVettoolBuildNeedsBuildVCSFalse
+      - test: cmd/repolint.TestVettoolBuildCommentsAndTrailingSlash
+decisions:
+  - id: no-vcs-stamp-in-vettool
+    date: 2026-11-26
+    status: accepted
+    decision: cmd/vettool is built with -buildvcs=false.
+    rejected:
+      - option: Keep Go's default VCS stamping.
+        why: go vet caches each result under the vettool binary's hash, so the stamped commit re-vetted every package on every commit, about 75 s per GOOS in CI and on each local pre-commit.
+    upholds: [vettool-builds-unstamped]

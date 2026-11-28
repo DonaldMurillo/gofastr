@@ -834,7 +834,11 @@ var kitComponents = []kitComponent{
 	{name: "Timeline", fn: Timeline, prep: prepInstead("Lead", "Title")},
 	{name: "ToggleAction", fn: ToggleAction},
 	{name: "Toolbar", fn: Toolbar},
-	{name: "Tooltip", fn: Tooltip},
+	{name: "Tooltip", fn: Tooltip, prep: func(args []reflect.Value) {
+		if args[1].String() == "" {
+			args[1] = reflect.ValueOf(render.HTML(`<i ` + sentinelAttr + `="required"></i>`))
+		}
+	}},
 	{name: "Tree", fn: Tree},
 	{name: "ValidationSummary", fn: ValidationSummary},
 	{name: "Video", fn: Video, prep: prepSet("Width", 100, "Height", 100, "Kind", "captions")},
@@ -922,6 +926,10 @@ var kitComponents = []kitComponent{
 	{name: "headless.ToolbarGroup", fn: headless.ToolbarGroup},
 	{name: "headless.ToolbarSearch", fn: headless.ToolbarSearch},
 	{name: "headless.ToolbarSpacer", fn: headless.ToolbarSpacer},
+	{name: "headless.Tooltip", fn: headless.Tooltip, required: []string{"Trigger"}, prep: func(args []reflect.Value) {
+		setAll(args, "ID", "tip-kit")
+		setAll(args, "Placement", "")
+	}},
 	{name: "headless.Tree", fn: headless.Tree},
 	{name: "headless.ValidationSummary", fn: headless.ValidationSummary},
 }

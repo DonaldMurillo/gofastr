@@ -1,0 +1,6 @@
+primitive: tools
+summary: The repository's own development tools under cmd/, which build, check and measure this repository and ship in no app; this entry owns cmd/vettool, which runs the analyzer suite under go vet, and each child owns one other tool.
+code:
+  - cmd/vettool/
+docs:
+  - docs/contributing.md

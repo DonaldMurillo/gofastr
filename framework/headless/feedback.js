@@ -80,7 +80,71 @@
     clearTimeout(NS._toastTimers.get(id)?.timer);
     NS._toastTimers.delete(id);
     restoreToastFocus(item);
+    const stack = item.parentElement;
     item.remove();
+    if (stack) syncLayer(stack);
+  }
+
+  // ─── the top layer and the modal hold ─────────────────────────────
+
+  // A stack mounted in a widget (uihost's default, preset.ToastStack)
+  // rises with it: the widget root is a manual popover while the stack
+  // holds a row, so a toast shows above whatever is already in the top
+  // layer, and re-raised when a new row joins, so a popover opened since
+  // does not cover it. A stack a layout places itself stays put.
+  const seen = new WeakSet();
+  function syncLayer(stack) {
+    const h = stack.closest('[data-cui-widget]');
+    if (!h || !h.showPopover) return;
+    let fresh = false;
+    const rows = stack.querySelectorAll(':is([data-hui-toast-id],[data-hui-toast]):not([data-hui-toast-leaving])');
+    for (const r of rows) if (!seen.has(r)) { seen.add(r); fresh = true; }
+    const open = h.matches(':popover-open');
+    if (rows.length ? open && !fresh : !open) return;
+    try {
+      if (open) h.hidePopover();
+      if (rows.length) { h.setAttribute('popover', 'manual'); h.showPopover(); }
+    } catch (_) {}
+  }
+
+  // Behind a modal, or in an inert subtree, a toast is neither seen nor
+  // announced: it is held, and joins its stack once the page is live.
+  const pending = [];
+  let watch = null;
+  function held(stack) {
+    try { if (document.querySelector(':modal')) return true; } catch (_) {}
+    return !!(NS._modalStack?.length || stack.closest('[inert]'));
+  }
+  function release() {
+    for (const p of pending.splice(0)) {
+      if (!p.s.isConnected) continue;
+      if (held(p.s)) pending.push(p);
+      else showRow(p.s, p.i);
+    }
+    if (!pending.length && watch) { watch.disconnect(); watch = null; }
+  }
+  function hold(s, i) {
+    pending.push({ s, i });
+    if (!watch) (watch = new MutationObserver(release)).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['open', 'inert'] });
+  }
+  // A dialog's close; a widget modal's close is announced before its
+  // teardown pops _modalStack, so it is read a microtask later.
+  document.addEventListener('close', release, true);
+  document.addEventListener('fui:widget-close', () => queueMicrotask(release));
+
+  // showRow puts a built row on its stack: past the capacity the oldest
+  // rows go, so a burst of toasts cannot pile a column over the page.
+  // The list is static, so the surplus is counted once and removed
+  // oldest-first.
+  function showRow(container, item) {
+    container.appendChild(item);
+    const max = parseInt(container.getAttribute('data-hui-toast-max') || '0', 10);
+    if (max > 0) {
+      const rows = container.querySelectorAll('[data-hui-toast-id]');
+      for (let i = 0; i < rows.length - max; i++) removeToast(rows[i]);
+    }
+    if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(item);
+    NS._initToasts(container);
   }
 
   NS._initToasts = (root) => {
@@ -149,6 +213,7 @@
         if (e.target.closest('[data-hui-toast-action]')) NS._dismissToast(item, id);
       });
     });
+    for (const stack of within(root, '[data-hui-toast-stack],[data-cui-toast-stack]')) syncLayer(stack);
   };
 
   NS._dismissToast = (item, id) => {
@@ -339,19 +404,8 @@
       const fmt = readWord(container, tpl, 'data-hui-toast-dismiss-label') || '{{title}}';
       dismiss.setAttribute('aria-label', fmt.replaceAll('{{title}}', () => cfg.title));
     }
-    container.appendChild(item);
-
-    // The stack's capacity: past it the oldest rows go, so a burst of
-    // toasts cannot pile a column over the page. The list is static,
-    // so the surplus is counted once and removed oldest-first.
-    const max = parseInt(container.getAttribute('data-hui-toast-max') || '0', 10);
-    if (max > 0) {
-      const rows = container.querySelectorAll('[data-hui-toast-id]');
-      for (let i = 0; i < rows.length - max; i++) removeToast(rows[i]);
-    }
-
-    if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(item);
-    NS._initToasts(container);
+    if (held(container)) hold(container, item);
+    else showRow(container, item);
     return id;
   };
 
@@ -399,9 +453,12 @@
 
   // ─── the arrival pass ────────────────────────────────────────────
 
+  // A row inserted inside a stack (a signal swap) arms its stack too.
   function scan(root) {
+    const sel = '[data-hui-toast-stack],[data-cui-toast-stack]';
     const scope = root && root.querySelectorAll ? root : document;
-    for (const c of within(scope, '[data-hui-toast-stack],[data-cui-toast-stack]')) NS._initToasts(c);
+    const up = scope.parentElement?.closest(sel);
+    for (const c of up ? [up] : within(scope, sel)) NS._initToasts(c);
   }
 
   scan(document);

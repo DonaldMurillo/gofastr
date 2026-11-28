@@ -1,0 +1,42 @@
+primitive: tools.repolint.chromiumshard
+summary: The chromium-shard rule, which checks that CI's chromium-ui matrix row runs every package with chromium-tagged tests.
+code:
+  - cmd/repolint/chromiumshard.go
+invariants:
+  - id: every-tagged-package-is-run
+    rule: Each root-module package with a _test.go file whose //go:build line before the package clause names chromium positively, anywhere in the expression, must be named by the chromium-ui run (as ./dir, ./dir/ or under ./prefix/...) and matched by its pkg regexp.
+    enforced_by:
+      - test: cmd/repolint.TestChromiumShardFlagsUnnamedPackage
+      - test: cmd/repolint.TestChromiumShardAcceptsCoveredTree
+      - test: cmd/repolint.TestChromiumTagAfterThePackageClauseIsNoConstraint
+  - id: negated-nested-and-fixture-tests-are-out
+    rule: A file whose constraint names chromium only under a negation, a package in a nested module, and a file under testdata are not packages the shard must run.
+    enforced_by:
+      - test: cmd/repolint.TestChromiumShardAcceptsCoveredTree
+      - test: cmd/repolint.TestChromiumShardSkipsTestdata
+  - id: shard-runs-only-tagged-tests
+    rule: The chromium-ui run takes its -run pattern from scripts/tagged-tests.sh chromium.
+    enforced_by:
+      - test: cmd/repolint.TestChromiumShardFlagsUntaggedRun
+      - test: cmd/repolint.TestTaggedTestsScriptListsTagOnly
+  - id: missing-row-fails
+    rule: Chromium-tagged tests with no chromium-ui matrix row are a finding.
+    enforced_by:
+      - test: cmd/repolint.TestChromiumShardFlagsMissingRow
+decisions:
+  - id: walk-the-constraint
+    date: 2026-11-26
+    status: accepted
+    decision: exprNames walks the whole build constraint for a positive mention of the tag.
+    rejected:
+      - option: Evaluate the constraint with Expr.Eval.
+        why: "&& and || short-circuit, so `linux && chromium` never visits chromium."
+    upholds: [every-tagged-package-is-run]
+  - id: shard-adds-only-tagged-tests
+    date: 2026-11-26
+    status: accepted
+    decision: The shard runs only the tests the tag adds, and the main test job runs the rest of each package.
+    rejected:
+      - option: Run each tagged package whole in the shard.
+        why: It re-runs every untagged test the main job already ran.
+    upholds: [shard-runs-only-tagged-tests]

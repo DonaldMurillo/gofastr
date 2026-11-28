@@ -1,26 +1,8 @@
 // Package guardmut finds the conditional guards in a Go source file and
-// rewrites them so they can never fire, or always fire.
-//
-// It exists because of a failure this repository kept repeating: a test that
-// names a guard, passes, and proves nothing, because the fixture it uses
-// satisfies TWO refusal conditions at once, so removing either one alone
-// leaves the test green. Seven such tests were found by hand across one
-// review cycle. No static check can see it: whether a fixture reaches a
-// particular branch is a runtime property. Breaking the guard and re-running
-// the tests is the only detector, so this package makes that mechanical.
-//
-// The rewrite is deliberately an ANNOTATION of the original expression rather
-// than a replacement of it:
+// rewrites each one so it never fires, or always fires:
 //
 //	if cond {          →  if (cond) && false {     // guard never fires
 //	if cond {          →  if (cond) || true {      // guard always fires
-//
-// Every identifier in the condition is still referenced, so no local goes
-// unused and no import is orphaned; the mutated file compiles whenever the
-// original did. Hand-written mutations failed this way twice during the review
-// that motivated this tool, and a mutation that fails to compile (or fails to
-// apply) is indistinguishable from one the tests did not catch: both end the
-// run without a test failure.
 package guardmut
 
 import (
@@ -35,12 +17,9 @@ import (
 type Kind string
 
 const (
-	// Never makes the condition false: the guard stops refusing. A surviving
-	// Never mutant means no test proves the guard refuses anything.
+	// Never makes the condition false: the guard stops refusing.
 	Never Kind = "never"
-	// Always makes the condition true: the guard refuses everything. A
-	// surviving Always mutant means no test proves the guard PERMITS
-	// anything, the missing allow-arm that lets a too-tight gate ship.
+	// Always makes the condition true: the guard refuses everything.
 	Always Kind = "always"
 )
 
@@ -61,10 +40,7 @@ func (g Guard) String() string {
 
 // Options tunes which guards are collected.
 type Options struct {
-	// SkipErrNil drops `if err != nil` conditions. Error plumbing is guarded
-	// almost everywhere and tested almost nowhere, so including it buries the
-	// interesting survivors under hundreds of expected ones. Off by default
-	// in the CLI; set false to audit error paths deliberately.
+	// SkipErrNil drops conditions that are exactly `err != nil` or `err == nil`.
 	SkipErrNil bool
 }
 
@@ -81,11 +57,6 @@ func Find(file string, src []byte, opts Options) ([]Guard, error) {
 		if !ok || ifs.Cond == nil {
 			return true
 		}
-		// The offsets come from parsing THIS src, so they are always inside it
-		// and always non-empty: a valid IfStmt cannot have an empty
-		// condition. A bounds check here would be unreachable, which this tool
-		// pointed out when run on itself. Apply() does check, because it can be
-		// handed a Guard measured against different source.
 		start := fset.Position(ifs.Cond.Pos()).Offset
 		end := fset.Position(ifs.Cond.End()).Offset
 		cond := string(src[start:end])
@@ -107,7 +78,6 @@ func Find(file string, src []byte, opts Options) ([]Guard, error) {
 	return out, nil
 }
 
-// isErrNil reports whether cond is exactly `err != nil` or `err == nil`.
 func isErrNil(cond ast.Expr) bool {
 	bin, ok := cond.(*ast.BinaryExpr)
 	if !ok || (bin.Op != token.NEQ && bin.Op != token.EQL) {
@@ -121,9 +91,8 @@ func isErrNil(cond ast.Expr) bool {
 	return ok && nilIdent.Name == "nil"
 }
 
-// Apply returns src with g's condition rewritten. The result is guaranteed to
-// differ from src; callers should verify that, because a mutation that did
-// not land looks exactly like one the tests failed to catch.
+// Apply returns src with g's condition rewritten, or an error when g's
+// offsets do not fit src or its kind is unknown.
 func Apply(src []byte, g Guard) ([]byte, error) {
 	if g.end > len(src) || g.start >= g.end {
 		return nil, fmt.Errorf("guard offsets out of range for %s", g)

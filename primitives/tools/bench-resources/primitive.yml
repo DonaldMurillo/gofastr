@@ -1,0 +1,33 @@
+primitive: tools.bench-resources
+summary: cmd/bench-resources, which builds the bench apps and the two shipped binaries and prints their binary size, build peak RAM and idle and loaded RAM as a Markdown table.
+code:
+  - cmd/bench-resources/
+docs:
+  - framework/docs/content/benchmarks.md
+invariants:
+  - id: apps-names-checked-first
+    rule: Unknown or empty names in -apps are refused, by name, before any app is built.
+    enforced_by:
+      - test: cmd/bench-resources.TestBenchRejectsUnknownApps
+  - id: binary-size-stays-in-out-dir
+    rule: The binary-size stat goes through an os.Root on the output directory, so a symlinked name or directory leading out of it is not measured.
+    enforced_by:
+      - test: cmd/bench-resources.TestOutDirSymlinkStatRefused
+  - id: probes-are-bounded
+    rule: Every readiness and load request runs through a client with a one-second timeout, so a request to an app that accepts a connection and never answers ends within a second; waitReady checks its deadline between requests, so it can overrun it by one request and its pause.
+    enforced_by:
+      - test: cmd/bench-resources.TestWaitReadyDeadlineBounded
+  - id: rss-in-bytes
+    rule: Build peak RAM and runtime RAM are reported in bytes; ps's rss and every Unix Maxrss but Darwin's are kilobytes and are scaled, Darwin's Maxrss is already bytes, and a reading at or below zero is 0.
+    enforced_by:
+      - test: cmd/bench-resources.TestNormaliseRSSIsBytes
+      - test: cmd/bench-resources.TestReadRSSIsBytes
+      - test: cmd/bench-resources.TestPeakRSSFromStateIsBytes
+decisions:
+  - id: cold-build-cache
+    date: 2026-11-26
+    status: accepted
+    decision: Each app builds with a private GOCACHE under -out that is emptied first.
+    rejected:
+      - option: Build with the shared, warm cache.
+        why: The first app would pay for compiling the standard library and the rest would not, so build time and RAM would not compare between apps.

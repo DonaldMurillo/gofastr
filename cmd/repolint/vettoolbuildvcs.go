@@ -9,17 +9,8 @@ import (
 	"strings"
 )
 
-// vettoolBuild matches a line that builds cmd/vettool: a shell `go build`
-// or a Go exec.Command(..., "build", ...) whose target ends at cmd/vettool.
-var vettoolBuild = regexp.MustCompile(`(\bgo build\b|"build").*cmd/vettool("|\s|$)`)
+var vettoolBuild = regexp.MustCompile(`(\bgo build\b|"build").*cmd/vettool/?("|\s|$)`)
 
-// lintVettoolBuildVCS checks that every build of cmd/vettool passes
-// -buildvcs=false. go vet keys each cached result on the vettool binary's
-// hash, and a plain build in a git checkout stamps the commit into the
-// binary, so every new commit changed the hash and re-vetted every package
-// and its dependencies from scratch: about 75 s per GOOS, 3.7 minutes of
-// every CI run (2026-11), and the same on every local commit through the
-// pre-commit hook.
 func lintVettoolBuildVCS(root string) ([]finding, error) {
 	var findings []finding
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {

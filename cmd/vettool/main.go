@@ -1,9 +1,5 @@
-// vettool runs GoFastr's analyzer suite (internal/analyzers/suite) for
-// `go vet -vettool` over this repo. Run via `make analyze`, the
-// pre-commit hook, and CI's vet step:
-//
-//	go build -buildvcs=false -o dist/vettool ./cmd/vettool
-//	go vet -vettool=dist/vettool ./...
+// vettool runs the analyzer suite (internal/analyzers/suite) as
+// go vet -vettool; make analyze builds and runs it.
 package main
 
 import (

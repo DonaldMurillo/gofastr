@@ -194,6 +194,10 @@ func TestStop(t *testing.T) {
 	if commentOnly(root, "HEAD", "a/a.go") {
 		t.Error("a new build constraint is a comment that changes the code")
 	}
+	write("a/a.go", "package a\n\n// One is one.\n//gofastr:allow(x) a reason\nfunc One() int { return 1 }\n")
+	if commentOnly(root, "HEAD", "a/a.go") {
+		t.Error("a new //gofastr: directive is a comment that changes the code")
+	}
 	write("a/a.go", "package a\n\n// One is one.\nfunc One() int { return 1 + 0 }\n")
 	if commentOnly(root, "HEAD", "a/a.go") {
 		t.Error("a changed expression is not comment-only")
@@ -580,6 +584,7 @@ func TestRelPathComparesPathSegments(t *testing.T) {
 		filepath.Join(root, "..notes", "a.go"): "..notes/a.go",
 		// Outside the root there is nothing to make it relative to.
 		outside: filepath.ToSlash(outside),
+		filepath.Join(filepath.Dir(root), "repo-other", "a.go"): filepath.ToSlash(filepath.Join(filepath.Dir(root), "repo-other", "a.go")),
 	} {
 		if got := relPath(root, arg); got != want {
 			t.Errorf("relPath(%s) = %q, want %q", arg, got, want)

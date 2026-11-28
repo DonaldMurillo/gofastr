@@ -1,0 +1,152 @@
+primitive: tools.mutate
+summary: The mutation tool behind make mutate - it breaks each if-guard in one package both ways (never fires, always fires), runs the package's tests against each mutant, and reports the mutants no test notices.
+code:
+  - cmd/mutate/
+on_change:
+  - Run make mutate PKG=./cmd/mutate/guardmut/ and keep it clean; the CLI wiring in cmd/mutate itself is exercised by use and by its subprocess tests, not held to that bar.
+invariants:
+  - id: baseline-must-be-green
+    rule: Before writing any mutant, a run executes the unmutated suite under the same -timeout and refuses, writing nothing, when that suite fails or runs no test.
+    enforced_by:
+      - test: cmd/mutate.TestRunRefusesBeforeAnyMutant
+  - id: refused-run-releases-its-lock
+    rule: Every refusal in run returns through its deferred unlock instead of calling os.Exit, so a refused run leaves no .mutate.lock behind.
+    enforced_by:
+      - test: cmd/mutate.TestRunRefusesBeforeAnyMutant
+  - id: one-run-per-package
+    rule: A run takes an exclusive .mutate.lock in the package directory before reading any source and refuses when another run holds it.
+    enforced_by:
+      - test: cmd/mutate.TestRunRefusesBeforeAnyMutant
+  - id: every-go-test-is-bounded
+    rule: Every go test run, baseline and mutant, passes -count=1 and -timeout, runs from the module root, and sets a WaitDelay so a grandchild holding the output pipe cannot wedge the run past its deadline.
+    enforced_by:
+      - test: cmd/mutate.TestEveryGoTestRunIsBounded
+      - test: cmd/mutate.TestBaselineAndMutantRunsGoThroughTheBoundedSeam
+  - id: wall-clock-deadline-on-every-run
+    rule: Every go test run is started under a context deadline of -timeout plus baselineBuildGrace, because -timeout bounds the test binary and not the build before it.
+    enforced_by:
+      - test: cmd/mutate.TestBaselineAndMutantRunsGoThroughTheBoundedSeam
+  - id: expired-run-needs-the-test-timeout
+    rule: A run killed at its wall-clock deadline is caught only when the output holds the test binary's own timeout panic; otherwise it is a harness error, not a verdict.
+    enforced_by:
+      - test: cmd/mutate.TestExpiredRunNeedsTheTestTimeout
+  - id: test-failure-is-checked-before-build-failure
+    rule: classify scores a run whose output holds a --- FAIL line as caught before it looks for a build failure, so application log text that reads like a compiler error never turns a caught mutant into BROKEN.
+    enforced_by:
+      - test: cmd/mutate.TestClassifyIsNotFooledByApplicationLogOutput
+      - test: cmd/mutate.TestClassifyDistinguishesFailureFromNotRunning
+  - id: build-failure-is-structural
+    rule: A build failure is go's [build failed] or [setup failed] marker, or a "# pkg" header whose next non-blank line is a file.go:line:col compiler diagnostic, never a word found anywhere in the output.
+    enforced_by:
+      - test: cmd/mutate.TestIsBuildFailureKeysOnStructure
+  - id: uncompilable-mutant-is-broken
+    rule: A mutant that does not compile is reported as BROKEN and fails the run, never counted as caught.
+    enforced_by:
+      - test: cmd/mutate.TestClassifyDistinguishesFailureFromNotRunning
+  - id: panic-is-caught
+    rule: A non-zero run that reports no --- FAIL line but a package FAIL line or a panic is caught.
+    enforced_by:
+      - test: cmd/mutate.TestClassifyDistinguishesFailureFromNotRunning
+  - id: unexplained-failure-is-not-scored
+    rule: A non-zero run that shows no test failure, no build failure, no FAIL line and no panic is an error naming a harness problem, not a verdict.
+    enforced_by:
+      - test: cmd/mutate.TestClassifyRefusesToScoreAHarnessProblem
+  - id: zero-exit-with-no-tests-is-not-survived
+    rule: A zero-exit run that printed "no tests to run" is an error, not a survived mutant.
+    enforced_by:
+      - test: cmd/mutate.TestClassifyRefusesAZeroExitThatRanNoTests
+  - id: mutant-must-differ
+    rule: writeVerified refuses a mutant identical to the original and reports a failed write as an error, so neither can read as an uncaught guard.
+    enforced_by:
+      - test: cmd/mutate.TestWriteVerifiedCatchesEveryWayAMutationCanBeAFiction
+  - id: mutant-must-land
+    rule: writeVerified re-reads the file and refuses when its content is not the mutant.
+    judge: Does this change let a mutant's test run start without re-reading the written file and comparing it with the mutant?
+  - id: restore-is-exact
+    rule: restore writes the original bytes back unchanged.
+    enforced_by:
+      - test: cmd/mutate.TestRestoreReturnsTheFileExactly
+  - id: no-mutant-after-interrupt
+    rule: On SIGINT or SIGTERM the run marks itself stopping, restores every file holding a mutant, releases the lock and exits 130; addAndWrite refuses once stopping and writes under the same mutex, so no mutant lands after the restore.
+    enforced_by:
+      - test: cmd/mutate.TestInterruptRestoresAndRefusesFurtherMutants
+      - test: cmd/mutate.TestInterruptMidRunRestoresTheSourceAndExits130
+      - test: cmd/mutate.TestInterruptStopsBeforeItRestores
+      - test: cmd/mutate.TestRestoreSetRefusesNewMutantsOnceStopping
+      - test: cmd/mutate.TestRestoreSetIsSafeUnderConcurrentUse
+  - id: one-package-per-run
+    rule: packageFiles refuses a pattern that matches more than one package, naming the packages, and a package with no non-test Go file.
+    enforced_by:
+      - test: cmd/mutate.TestPackageFilesRejectsAMultiPackagePattern
+      - test: cmd/mutate.TestPackageFilesRefusesAPackageWithOnlyTests
+      - test: cmd/mutate.TestPackageFilesResolvesOnePackage
+  - id: file-list-is-structured
+    rule: packageFiles reads go list -json, so a file name holding a newline stays one name inside the package directory.
+    enforced_by:
+      - test: cmd/mutate.TestPackageFilesHandlesANewlineInAFilename
+  - id: empty-filter-is-refused
+    rule: A -file or -line filter that selects no guard fails the run with a message naming both filters.
+    enforced_by:
+      - test: cmd/mutate.TestFilterNeedsGuard
+  - id: mutant-annotates-the-condition
+    rule: guardmut rewrites a condition as (cond) && false or (cond) || true, keeping every identifier referenced and the original precedence, so a mutant compiles whenever the original did.
+    enforced_by:
+      - test: cmd/mutate/guardmut.TestMutantsStillParseAndKeepEveryIdentifier
+      - test: cmd/mutate/guardmut.TestApplyProducesTheIntendedTruthValue
+      - test: cmd/mutate/guardmut.TestPrecedenceIsPreserved
+  - id: both-directions-in-source-order
+    rule: Find returns a Never and an Always guard for every if-condition, sorted by line and then kind.
+    enforced_by:
+      - test: cmd/mutate/guardmut.TestFindCollectsBothDirections
+      - test: cmd/mutate/guardmut.TestFindSortsByLineThenKind
+      - test: cmd/mutate/guardmut.TestFindAcceptsAConditionAtTheFileEdge
+  - id: skip-err-nil-is-exact
+    rule: SkipErrNil drops only conditions that are exactly err != nil or err == nil.
+    enforced_by:
+      - test: cmd/mutate/guardmut.TestSkipErrNilDropsOnlyErrorPlumbing
+      - test: cmd/mutate/guardmut.TestIsErrNilRejectsLookalikes
+  - id: apply-checks-offsets
+    rule: Apply refuses a guard whose offsets fall outside the source or are empty.
+    enforced_by:
+      - test: cmd/mutate/guardmut.TestApplyRefusesOffsetsOutsideTheSource
+decisions:
+  - id: annotate-not-replace
+    date: 2026-11-26
+    status: accepted
+    decision: A mutant wraps the condition and appends && false or || true instead of replacing it.
+    rejected:
+      - option: Replace the condition with a literal false or true.
+        why: Locals and imports used only in the condition become unused, the mutant does not compile, and a mutant that does not compile proves nothing.
+    upholds: [mutant-annotates-the-condition]
+  - id: skip-err-nil-by-default
+    date: 2026-11-26
+    status: accepted
+    decision: The CLI skips err-nil guards unless -err is given.
+    rejected:
+      - option: Mutate every guard by default.
+        why: Error plumbing is guarded almost everywhere and asserted almost nowhere, so its hundreds of expected survivors bury the interesting ones.
+    upholds: [skip-err-nil-is-exact]
+  - id: refuse-rather-than-score
+    date: 2026-11-26
+    status: accepted
+    decision: Any run the tool cannot read as a test failure, a pass or a build failure is an error, and the run stops.
+    rejected:
+      - option: Read every non-zero exit as caught.
+        why: The first draft did, and a package pattern wrong for its working directory reported full coverage while running no test.
+    upholds: [unexplained-failure-is-not-scored, baseline-must-be-green]
+  - id: lock-file-not-flock
+    date: 2026-11-26
+    status: accepted
+    decision: The per-package lock is an O_EXCL file that a killed run leaves behind, and its message tells the user to check git diff before removing it.
+    rejected:
+      - option: An advisory lock released by the kernel when the process dies.
+        why: A killed run may have left a mutant in the source; a stale lock is what stops the next run from adopting that mutant as the original.
+    upholds: [one-run-per-package]
+  - id: hung-mutant-is-caught
+    date: 2026-11-26
+    status: accepted
+    decision: A mutant whose test binary hits -timeout is caught.
+    rejected:
+      - option: Treat every deadline as a harness error.
+        why: A guard whose removal makes the tests stop terminating is load-bearing, and the test binary's own timeout panic says so.
+    upholds: [expired-run-needs-the-test-timeout]

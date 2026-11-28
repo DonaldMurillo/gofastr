@@ -1,120 +1,22 @@
-// affected prints the Go packages whose test outcome could change given
-// what differs between the working tree and a base ref, the way
-// `nx affected` scopes a JavaScript monorepo. It is the default scope for
-// `make test`, the git hooks, the red and coverage sweeps, and CI's
-// pull-request run; `scripts/test-all.sh` and GOFASTR_TEST_ALL=1 are the
-// explicit "test everything" spellings.
-// Git filenames are read verbatim, including whitespace and non-ASCII names.
-// A filename containing a line break widens the wrapped command's environment
-// to GOFASTR_TEST_ALL=1 instead of exporting an ambiguous newline-delimited list.
-//
-// A package is affected when any of these hold:
-//
-//   - a changed file sits in the package's directory or anywhere below it
-//     that is not itself a package (testdata, embedded assets, fixtures);
-//   - one of the package's //go:embed patterns covers a changed file,
-//     deleted ones included, which can sit inside a nested package: cmd/gofastr
-//     embeds the app spec's packages/ trees, each its own package, so
-//     editing a template never selected the generator or the gates that
-//     run it;
-//   - the package imports an affected package, transitively (go list's
-//     Deps);
-//   - the package's test files import an affected package (TestImports
-//     and XTestImports, whose own transitive deps the first rule covers);
-//   - the package, or its test files, import a package the change
-//     deleted or moved: a changed file's directory counts by its import
-//     path even when go list no longer reports a package there;
-//   - a changed file matches a pattern one of the package's test files
-//     declares it reads (see "Files a test reads" below).
-//
-// Some changes make the graph meaningless and widen the set to every
-// package: go.mod, go.sum, go.work, this tool's own source, and the
-// coverage-floor table (scripts/coverage-floors.sh). A base ref
-// that cannot be resolved, or a merge base that cannot be computed, also
-// widens to everything, so a misconfigured checkout degrades to the full
-// run and never to a skipped one. -all-if-changed adds callers' own
-// triggers (the vet step passes internal/analyzers: a new rule can flag
-// code nobody touched).
-//
-// The change set is the working tree against the merge base of HEAD and
-// the base ref: staged, unstaged and untracked files all count, and a
-// deleted file still marks the package it left. With -diff-base the base
-// ref is diffed directly instead; CI uses that with the pull request's
-// base SHA, where the checkout is the PR's merge commit and no history is
-// fetched.
-//
-// Files a test reads: a gate that walks the repo (every _test.go, every
-// package.json, every exported symbol) depends on files no import edge
-// reaches. internal/chromedptest's launch-allowance gate reads every test
-// file in the module, so a new hand-booted Chrome in another package
-// never selected it, and #536's missing allowance reached main. Such a
-// test names its inputs with a directive at the start of a comment line
-// in the test file:
-//
-//	//gofastr:test-reads *_test.go
-//	//gofastr:test-reads framework/ui/ /README.md core-ui/**/*.js
-//
-// A pattern ending in "/" is a directory prefix; one with no "/" matches
-// the base name anywhere ("*_test.go", "package.json"); one starting with
-// "/" is anchored at the repo root ("/README.md" is the root README
-// only); any other is a repo-relative glob where "**" spans directories.
-// "importers:<import path>" matches a change in any package that imports
-// that path directly, and any changed .go file whose text, now or at the
-// base, names it in quotes: a nested module's file, a deleted file, or
-// one that dropped the import still changes what a gate reading "every
-// caller of this API" sees (core-ui/runtime/internal/treegate's registry
-// gates). Patterns are space-separated and a file may carry several
-// directive lines. A match selects the declaring package only: nothing
-// imports a test. scripts/test-reads-audit.sh finds the tests that need
-// a directive: it records the files each test opens and fails on one
-// whose change would not select its reader.
+// affected prints the Go packages whose tests could change outcome given
+// what differs between the working tree and a base ref, or runs the
+// command after `--` with them appended. What counts as affected is the
+// tools.affected primitive (go run ./cmd/primitives show tools.affected).
 //
 // Usage:
 //
 //	go run ./cmd/affected                         # one import path per line
 //	go run ./cmd/affected -format dir             # ./relative/dir per line
 //	go run ./cmd/affected -- go test -short       # run with the set appended
-//	go run ./cmd/affected -tags red -format dir
-//	go run ./cmd/affected -exclude 'examples/site$' -- go test -p 2
-//	go run ./cmd/affected -match '/framework(/|$)' -- go test
+//	go run ./cmd/affected -exclude 'examples/site$' -match '/framework(/|$)'
 //	go run ./cmd/affected -coverage-dir           # where wrapped commands keep coverage manifests
 //	GOOS=windows affected -files-differ-from 'GOOS=linux CGO_ENABLED=1' -- go vet
 //
-// With a command after `--`, an empty set skips the command and exits 0
-// with a note on stderr: `go test` with no packages would test the
-// current directory, which is never what a caller meant. The command's
-// own exit code is propagated otherwise. The command also learns what the
-// set came from: GOFASTR_AFFECTED_FILES holds the change set, one
-// repo-relative path per line, or, when the set is every package,
-// GOFASTR_TEST_ALL=1 is set instead (see changeEnv).
+// Environment: GOFASTR_TEST_ALL=1 (same as -all), GOFASTR_AFFECTED_BASE
+// (base ref when -base is not given, else origin/main, else main),
+// GOFASTR_AFFECTED_DIFF_BASE=1 (same as -diff-base).
 //
-// -files-differ-from narrows a second pass under another GOOS, GOARCH or
-// CGO_ENABLED to the packages that pass can say something new about: the
-// ones whose Go files here are not the files the named environment
-// builds. CI vets every affected package on linux, then on windows and
-// darwin only these (41 and 15 of 457 packages, 2026-11); the rest hold
-// the same source the linux pass read. A finding that needs another
-// package's OS-specific types, in a package whose own files are the same,
-// is not looked for.
-//
-// The affected set is the first half of what nx affected does; Go's test
-// cache is the second. A package in the set whose binary and recorded
-// inputs (files read, env vars) match a previous pass replays "(cached)"
-// instead of running. That only holds while tests read nothing the suite
-// itself rewrites, so the wrapped command gets GOFASTR_AXE_COVERAGE_DIR
-// pointed outside the module (see commandEnv), and CI fails a second run
-// over the same tree that re-runs any package
-// (scripts/test-cache-replay.sh).
-//
-// Environment:
-//
-//	GOFASTR_TEST_ALL=1             every package, no graph walk (same as -all)
-//	GOFASTR_AFFECTED_BASE          base ref when -base is not given
-//	GOFASTR_AFFECTED_DIFF_BASE=1   same as -diff-base
-//
-// Without a base, origin/main is used when that ref exists, then main.
-//
-// Exits 0 on success (including an empty set), 2 on infrastructure error,
+// Exits 0 on success, including an empty set, 2 on infrastructure error,
 // or with the wrapped command's status.
 package main
 
@@ -142,11 +44,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/coverageroot"
 )
 
-// alwaysAll lists repo-relative paths whose change widens the set to every
-// package. Directory entries match everything beneath them. The coverage
-// floor table is in scripts/coverage-floors.sh, which owns no package: a
-// floor edit must reach the floored packages, and CI's coverage gate reads
-// the profile the widened test run writes.
 var alwaysAll = []string{"go.mod", "go.sum", "go.work", "go.work.sum", "cmd/affected/", "scripts/coverage-floors.sh"}
 
 type options struct {
@@ -185,8 +82,6 @@ type pkg struct {
 	reads testReadSet // from //gofastr:test-reads in the test files
 }
 
-// testReadSet is what a package's tests declare they read: repo-relative
-// path patterns, and import paths whose direct importers they read.
 type testReadSet struct {
 	paths       []*regexp.Regexp
 	importersOf []string
@@ -300,22 +195,6 @@ func main() {
 	}
 }
 
-// commandEnv is the wrapped command's environment. Test binaries merge
-// what they scanned into one manifest per coverage root, by default
-// .gofastr/ at the module root, and read it back: a strict-mode boot
-// reads the axe manifest, every recorder reads before it merges. That
-// file changes during every sweep, and Go's test cache hashes the
-// in-module files a test opens, so every package touching it re-ran on
-// an unchanged tree. Outside the module Go does not recheck it. The
-// directory is fixed per checkout, because the variable's value is a
-// cache input too, and survives runs, because a package replayed from
-// the cache records nothing. An explicit setting wins.
-//
-// It also turns off VCS stamping for every go build under it. A stamped
-// build runs git, which takes and drops index.lock in .git; that moves the
-// .git directory's mtime, the root listing that every repo-walking test
-// hashes carries it, and those tests re-ran on the next sweep. Tests do
-// not read the stamp.
 func commandEnv(root string) []string {
 	env := append(os.Environ(), "GOFLAGS="+noVCSStamp(os.Getenv("GOFLAGS")))
 	if os.Getenv(coverageroot.AxeDirEnv) != "" {
@@ -327,23 +206,10 @@ func commandEnv(root string) []string {
 	return env
 }
 
-// changedFilesEnv carries the change set to the wrapped command, one
-// repo-relative path per line.
 const changedFilesEnv = "GOFASTR_AFFECTED_FILES"
 
-// maxChangedEnv bounds that value: Linux refuses to exec a process with
-// one environment string over 128 KiB (MAX_ARG_STRLEN), and the whole
-// wrapped run would fail instead of testing.
 const maxChangedEnv = 64 << 10
 
-// changeEnv tells the wrapped command what its package list came from. A
-// run that walked the graph lists its change set in GOFASTR_AFFECTED_FILES;
-// a run that tests everything (-all, GOFASTR_TEST_ALL=1, a widening
-// change, an unresolved base: changed is nil) sets GOFASTR_TEST_ALL=1
-// instead, and so does a change set too long for one variable, which
-// degrades to the full run like every other doubt here. A test worth
-// running only when its own input changed reads them: cmd/gofastr's
-// generated-app variant builds (clitest.VariantBuild).
 func changeEnv(env, changed []string, stderr io.Writer) []string {
 	if changed == nil {
 		return append(env, "GOFASTR_TEST_ALL=1")
@@ -356,8 +222,6 @@ func changeEnv(env, changed []string, stderr io.Writer) []string {
 	return append(env, changedFilesEnv+"="+list)
 }
 
-// noVCSStamp adds -buildvcs=false to goflags unless it already sets
-// -buildvcs either way.
 func noVCSStamp(goflags string) string {
 	for _, f := range strings.Fields(goflags) {
 		name, _, _ := strings.Cut(strings.TrimLeft(f, "-"), "=")
@@ -368,12 +232,6 @@ func noVCSStamp(goflags string) string {
 	return strings.TrimSpace(goflags + " -buildvcs=false")
 }
 
-// coverageDir is the coverage root commandEnv hands the wrapped command:
-// the explicit setting, else a per-checkout directory in the user cache,
-// else "" (the module root) when there is no user cache, which it says on
-// stderr because every test that records coverage then misses the cache.
-// -coverage-dir prints it, so `gofastr verify` in the hooks reads the
-// manifests the sweep wrote.
 func coverageDir(root string) string {
 	if v := os.Getenv(coverageroot.AxeDirEnv); v != "" {
 		return v
@@ -392,11 +250,6 @@ func fatal(err error) {
 	os.Exit(2)
 }
 
-// compute returns the affected package set in the requested format,
-// sorted, and the change set it was computed from, which is nil when the
-// set is every package. It never returns an empty set by accident: every
-// failure to establish the change set widens to all packages and says so
-// on stderr.
 func compute(o options) ([]string, []string, error) {
 	all, err := listPackages(o.root, o.tags)
 	if err != nil {
@@ -435,8 +288,6 @@ func compute(o options) ([]string, []string, error) {
 	return format(o, all, affected), files, nil
 }
 
-// widensToAll reports the first changed path that matches an always-all
-// trigger, or "" when none does.
 func widensToAll(files []string, extra []string) string {
 	triggers := append(slices.Clone(alwaysAll), extra...)
 	for _, f := range files {
@@ -449,12 +300,6 @@ func widensToAll(files []string, extra []string) string {
 	return ""
 }
 
-// ownerDirs maps every changed file to the nearest enclosing package
-// directory, and to every package whose //go:embed patterns cover it. A
-// file under no package (README.md, scripts/) owns nothing. The patterns
-// are matched rather than go list's EmbedFiles, which lists only what
-// exists now: a deleted template, or the old name of a renamed one, still
-// changes what the embedding package ships.
 func ownerDirs(root string, files []string, all []pkg) map[string]bool {
 	isPkg := make(map[string]bool, len(all))
 	for _, p := range all {
@@ -486,13 +331,6 @@ func ownerDirs(root string, files []string, all []pkg) map[string]bool {
 	return owners
 }
 
-// dirImportPaths returns the import path of each changed file's
-// directory. For a current package that is its own path, already in the
-// changed set. What it adds is the path of a package the change deleted,
-// or the old place of a moved one: no current package owns that file, but
-// whatever still imports the old path (a test-only import the build never
-// sees) no longer compiles and has to be selected. A directory no package
-// ever had (testdata, assets) adds a path nothing imports.
 func dirImportPaths(root string, files []string, all []pkg) []string {
 	module := ""
 	if len(all) > 0 {
@@ -507,10 +345,6 @@ func dirImportPaths(root string, files []string, all []pkg) []string {
 	return paths
 }
 
-// embeds reports whether one of p's //go:embed patterns, test patterns
-// included, names file or a directory above it. Go leaves out a matched
-// directory's dot and underscore files unless the pattern says "all:";
-// counting them anyway only selects more.
 func embeds(p pkg, file string) bool {
 	rel, err := filepath.Rel(p.Dir, file)
 	if err != nil {
@@ -531,12 +365,6 @@ func embeds(p pkg, file string) bool {
 	return false
 }
 
-// closure returns the import paths affected by the packages in dirs and
-// the import paths in extra: the packages themselves, their transitive
-// importers, and every package whose test files import one of those. An
-// extra path that is no longer a package is in no package's ImportPath
-// but still in its importers' Deps and test imports, which go list -e
-// keeps.
 func closure(all []pkg, dirs map[string]bool, extra []string) map[string]bool {
 	changed := map[string]bool{}
 	for _, p := range all {
@@ -561,10 +389,6 @@ func closure(all []pkg, dirs map[string]bool, extra []string) map[string]bool {
 			affected[p.ImportPath] = true
 		}
 	}
-	// Test imports are direct, not transitive, so one more pass over the
-	// first set is exact: a test import's own deps are regular deps,
-	// already resolved above. changed also holds the extra paths of
-	// packages that are gone, which are never in affected.
 	viaTests := map[string]bool{}
 	for _, p := range all {
 		if hit(p.TestImports, affected) || hit(p.XTestImports, affected) ||
@@ -578,8 +402,6 @@ func closure(all []pkg, dirs map[string]bool, extra []string) map[string]bool {
 	return affected
 }
 
-// format renders the selected packages (every package when set is nil),
-// applying -exclude and -format.
 func format(o options, all []pkg, set map[string]bool) []string {
 	var out []string
 	for _, p := range all {
@@ -610,8 +432,6 @@ func format(o options, all []pkg, set map[string]bool) []string {
 	return out
 }
 
-// goFiles is the source a vet or build of p reads, as one comparable
-// string: the same names in another list are another string.
 func goFiles(p pkg) string {
 	lists := [][]string{p.GoFiles, p.CgoFiles, p.TestGoFiles, p.XTestGoFiles}
 	parts := make([]string, len(lists))
@@ -621,10 +441,6 @@ func goFiles(p pkg) string {
 	return strings.Join(parts, "\x01")
 }
 
-// filesDiffer lists the packages again under o.differFrom laid over this
-// process's environment and returns those whose Go files are not the ones
-// listed here. A package the other environment does not list at all
-// differs.
 func filesDiffer(o options, here []pkg) (map[string]bool, error) {
 	args := []string{"list", "-e", "-json=ImportPath,GoFiles,CgoFiles,TestGoFiles,XTestGoFiles"}
 	if o.tags != "" {
@@ -690,9 +506,6 @@ func listPackages(root, tags string) ([]pkg, error) {
 	return pkgs, nil
 }
 
-// scanTestFiles reads every package's test files once for the edges go
-// list cannot report: commands the tests run, and files they declare
-// they read.
 func scanTestFiles(pkgs []pkg) error {
 	var mains []string
 	for _, p := range pkgs {
@@ -717,14 +530,6 @@ func scanTestFiles(pkgs []pkg) error {
 	return nil
 }
 
-// addCommandRuns records a test that runs one of the module's commands
-// as a test import of that command. A test that shells out to
-// `go run <module>/cmd/gofastr` depends on the generator's source as
-// much as an import would, but go list sees no edge: examples/meridian's
-// generated-tree gate stayed out of the affected set when the CLI
-// generator changed, and the stale tree surfaced only in CI. The edge is
-// read from the full import path spelled as a Go string literal in the
-// package's test files.
 func addCommandRuns(p *pkg, src []byte, mains []string) {
 	for _, m := range mains {
 		if m != p.ImportPath && bytes.Contains(src, []byte(`"`+m+`"`)) && !slices.Contains(p.TestImports, m) {
@@ -735,11 +540,6 @@ func addCommandRuns(p *pkg, src []byte, mains []string) {
 
 const testReadsDirective = "//gofastr:test-reads"
 
-// parse adds the patterns of every //gofastr:test-reads comment in src.
-// The directive must open a // comment; go/scanner finds the comments, so
-// a fixture line inside a raw string declares nothing. A directive with
-// no pattern is an error: it would read as coverage while selecting
-// nothing.
 func (r *testReadSet) parse(src []byte) error {
 	var sc scanner.Scanner
 	fset := token.NewFileSet()
@@ -781,13 +581,6 @@ func (r *testReadSet) parse(src []byte) error {
 	return nil
 }
 
-// readPattern turns one test-reads pattern into a regexp over
-// repo-relative slash paths: "dir/" is everything below dir, a leading
-// "/" anchors at the repo root, a pattern with no "/" matches the base
-// name in any directory, and otherwise "**/" spans zero or more
-// directories, "*" and "?" stay within one. A pattern that could never
-// match a repo-relative path ("./x", "../x", "/") is an error, not a
-// declaration that selects nothing.
 func readPattern(pat string) (*regexp.Regexp, error) {
 	for _, bad := range []string{"./", "../"} {
 		if strings.HasPrefix(pat, bad) || strings.Contains(pat, "/"+bad) {
@@ -828,10 +621,6 @@ func readPattern(pat string) (*regexp.Regexp, error) {
 	return regexp.Compile(b.String())
 }
 
-// matches reports whether a changed file matches a path pattern, a
-// changed package (owners, by directory) directly imports a declared
-// import path, or a changed .go file names one (named, from
-// namedImports).
 func (r testReadSet) matches(files []string, owners map[string]bool, all []pkg, named map[string]bool) bool {
 	for _, f := range files {
 		for _, re := range r.paths {
@@ -856,14 +645,6 @@ func (r testReadSet) matches(files []string, owners map[string]bool, all []pkg, 
 	return false
 }
 
-// namedImports returns the importers: paths any package declares that a
-// changed .go file names in quotes, in the working tree or, when base is
-// known, at the base commit, or that a build-excluded file of a changed
-// package names. go list's Imports alone misses four shapes: a file in a
-// nested module (outside go list ./...), a deleted file, a file whose
-// change removed the import, and an import behind a build constraint
-// (the registry gates read every .go file, whatever the build). A quoted
-// path in a string literal counts too; that only widens the selection.
 func namedImports(root, base string, files []string, owners map[string]bool, all []pkg) map[string]bool {
 	var wanted []string
 	for _, p := range all {
@@ -911,10 +692,6 @@ func namedImports(root, base string, files []string, owners map[string]bool, all
 	return named
 }
 
-// changedFiles asks git for the change set: the working tree (staged and
-// unstaged) against the base commit, plus untracked files, and returns
-// that base commit. Renames are reported as a delete plus an add so the
-// package a file left is tested too.
 func changedFiles(o options) ([]string, string, error) {
 	base, err := resolveBase(o)
 	if err != nil {
@@ -933,8 +710,6 @@ func changedFiles(o options) ([]string, string, error) {
 	return slices.Compact(files), base, nil
 }
 
-// resolveBase picks the base ref and, unless -diff-base, its merge base
-// with HEAD. Any failure is an error the caller turns into "everything".
 func resolveBase(o options) (string, error) {
 	ref := o.base
 	if ref == "" {

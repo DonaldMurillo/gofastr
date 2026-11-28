@@ -144,7 +144,7 @@ func indexTemplateTag(html string, from int) int {
 		case name == "" || n == i+1 && !isASCIILetter(html[n]):
 			i++
 			continue
-		case strings.EqualFold(name, "template"):
+		case asciiEqualFold(name, "template"):
 			return i
 		}
 		i = startTagEnd(html, i)
@@ -163,7 +163,7 @@ var rawTextElements = []string{"script", "style", "textarea", "title", "xmp", "i
 
 func isRawTextElement(name string) bool {
 	for _, r := range rawTextElements {
-		if strings.EqualFold(name, r) {
+		if asciiEqualFold(name, r) {
 			return true
 		}
 	}
@@ -178,7 +178,7 @@ func indexEndTag(html string, from int, name string) int {
 		}
 		i += j
 		n := i + 2
-		if n+len(name) <= len(html) && strings.EqualFold(html[n:n+len(name)], name) &&
+		if n+len(name) <= len(html) && asciiEqualFold(html[n:n+len(name)], name) &&
 			(n+len(name) == len(html) || !isTagNameByte(html[n+len(name)])) {
 			return i
 		}
@@ -193,51 +193,8 @@ func isTagNameByte(c byte) bool {
 func isASCIILetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
 
 func hasAttrName(tag, name string) bool {
-	j := 1
-	for j < len(tag) && isTagNameByte(tag[j]) {
-		j++
-	}
-	for j < len(tag) {
-		c := tag[j]
-		if c == '>' {
-			return false
-		}
-		if c == '/' || isHTMLSpace(c) {
-			j++
-			continue
-		}
-		k := j
-		for k < len(tag) && tag[k] != '=' && tag[k] != '>' && tag[k] != '/' && !isHTMLSpace(tag[k]) {
-			k++
-		}
-		if strings.EqualFold(tag[j:k], name) {
-			return true
-		}
-		j = k
-		for j < len(tag) && isHTMLSpace(tag[j]) {
-			j++
-		}
-		if j >= len(tag) || tag[j] != '=' {
-			continue
-		}
-		j++
-		for j < len(tag) && isHTMLSpace(tag[j]) {
-			j++
-		}
-		if j < len(tag) && (tag[j] == '"' || tag[j] == '\'') {
-			q := tag[j]
-			j++
-			for j < len(tag) && tag[j] != q {
-				j++
-			}
-			j++
-			continue
-		}
-		for j < len(tag) && tag[j] != '>' && !isHTMLSpace(tag[j]) {
-			j++
-		}
-	}
-	return false
+	_, ok := findAttr(tag, 0, name)
+	return ok
 }
 
 func isHTMLSpace(c byte) bool {
@@ -245,18 +202,9 @@ func isHTMLSpace(c byte) bool {
 }
 
 func startTagEnd(html string, i int) int {
-	var q byte
-	for j := i + 1; j < len(html); j++ {
-		switch c := html[j]; {
-		case q != 0:
-			if c == q {
-				q = 0
-			}
-		case c == '"' || c == '\'':
-			q = c
-		case c == '>':
-			return j + 1
-		}
+	end, _ := walkTag(html, i, nil)
+	if end < 0 {
+		return len(html)
 	}
-	return len(html)
+	return end + 1
 }
