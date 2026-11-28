@@ -174,11 +174,12 @@ invariants:
     enforced_by:
       - test: framework/ui.TestToastRowSwappedIntoAStackOpensIt
   - id: toast-held-while-the-page-is-modal
-    rule: A toast raised while a modal is open (a :modal element, a widget modal on _modalStack) or while its stack sits in an inert subtree is built and its id returned, but joins its stack only once none of those holds, checked when a dialog closes, a widget closes (fui:widget-close) or an open or inert attribute or the tree changes.
+    rule: A toast raised while a modal is open (a dialog matching :modal, a widget modal on _modalStack; a fullscreen element, which also matches :modal, holds nothing) or while its stack sits in an inert subtree is built and its id returned, but joins its stack only once none of those holds, checked when a dialog closes, a widget closes (fui:widget-close) or an open or inert attribute or the tree changes.
     enforced_by:
       - test: framework/ui.TestToastHeldWhileAModalIsOpen
       - test: framework/ui.TestToastHeldWhileTheStackIsInert
       - test: framework/ui.TestToastHeldWhileAWidgetModalIsOpen
+      - test: framework/ui.TestToastShowsOverAFullscreenElement
   - id: toast-role-from-live
     rule: A Toast renders role=status, or role=alert when Live is LiveAssertive.
     enforced_by:

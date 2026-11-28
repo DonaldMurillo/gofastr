@@ -203,3 +203,21 @@ func TestToastDismissInASlotKeepsTheStackUp(t *testing.T) {
 		t.Fatal("dismissing the row in the slot closed the stack while another row remains")
 	}
 }
+
+// A fullscreen element matches :modal but leaves the page around it
+// live, and leaving fullscreen fires nothing the hold watches: a toast
+// raised over it shows at once, above it.
+func TestToastShowsOverAFullscreenElement(t *testing.T) {
+	ctx := toastPage(t)
+	evalJS(t, ctx, `(() => { const b = document.createElement('button'); b.id = 'fs'; b.textContent = 'Fullscreen'; b.addEventListener('click', () => document.getElementById('cover').requestFullscreen()); document.body.prepend(b); })()`, nil)
+	if err := chromedp.Run(ctx, chromedp.Click(`#fs`, chromedp.ByID)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollJS(ctx, `document.fullscreenElement === document.getElementById('cover')`) {
+		t.Skip("this browser did not enter fullscreen")
+	}
+	evalJS(t, ctx, `window.__gofastr.toast({title: 'Saved', ttl: 0})`, nil)
+	if !pollJS(ctx, `document.querySelectorAll('[data-cui-toast-stack="toasts"] [data-hui-toast-id]').length === 1 && `+stackHost+`.matches(':popover-open')`) {
+		t.Fatal("a toast raised over a fullscreen element was held")
+	}
+}

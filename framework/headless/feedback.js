@@ -112,7 +112,7 @@
   const pending = [];
   let watch = null;
   function held(stack) {
-    try { if (document.querySelector(':modal')) return true; } catch (_) {}
+    try { if (document.querySelector('dialog:modal')) return true; } catch (_) {}
     return !!(NS._modalStack?.length || stack.closest('[inert]'));
   }
   function release() {
