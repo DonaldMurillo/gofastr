@@ -42,3 +42,14 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestDuplicateDeclsSeeStructFields
       - test: cmd/gofastr/internal/appgen.TestSDKDerivedNamesMustNotCollide
+decisions:
+  - id: integer-id-is-int
+    date: 2026-11-28
+    status: accepted
+    decision: An entity keyed on a declared integer id types it int in the generated Go code, and number in TypeScript.
+    rejected:
+      - option: string, as for a generated id.
+        why: The server answers the id as a JSON number, so an id read off a row would need converting everywhere it passes back.
+      - option: int64.
+        why: The other int fields and framework.IntColumn are int.
+    upholds: [model-types-follow-the-wire]

@@ -501,3 +501,25 @@ func TestA11yJSONModeKeepsWarningsOffStdout(t *testing.T) {
 		}
 	}
 }
+
+func TestA11ySnapshotLimitsAreTheStatedNumbers(t *testing.T) {
+	if a11ySnapshotMaxBytes != 4<<20 || ariaSnapshotMaxDepth != 128 || ariaSnapshotMaxNodes != 50000 {
+		t.Errorf("limits are %d bytes, depth %d, %d entries; the rule states 4 MiB, 128 and 50,000", a11ySnapshotMaxBytes, ariaSnapshotMaxDepth, ariaSnapshotMaxNodes)
+	}
+}
+
+func TestAriaErrorQuoteIsCutToSixtyRunes(t *testing.T) {
+	_, err := parseAriaSnapshot("- heading /" + strings.Repeat("é", 100))
+	if err == nil {
+		t.Fatal("parsed an unterminated regex name")
+	}
+	if want := `"heading /` + strings.Repeat("é", 60-len("heading /")) + `"…`; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q, want the input quoted and cut to 60 runes", err)
+	}
+	if got := ariaQuote(strings.Repeat("é", 100)); got != `"`+strings.Repeat("é", 60)+`"…` {
+		t.Errorf("a 100-rune input quotes as %q, want it cut to 60 runes", got)
+	}
+	if got := ariaQuote(strings.Repeat("x", 60)); got != `"`+strings.Repeat("x", 60)+`"` {
+		t.Errorf("a 60-rune input was cut: %q", got)
+	}
+}

@@ -4,7 +4,9 @@ code:
   - cmd/gofastr/internal/appgen/generate_cli.go
   - cmd/gofastr/internal/appgen/generate_cli_derived.go
   - cmd/gofastr/internal/appgen/generate_cli_openapi_render.go
-  - cmd/gofastr/internal/appgen/generate_cli_*_test.go
+  - cmd/gofastr/internal/appgen/generate_cli_test.go
+  - cmd/gofastr/internal/appgen/generate_cli_[^o]*_test.go
+  - cmd/gofastr/internal/appgen/generate_cli_ops_test.go
 docs:
   - framework/docs/content/app-cli.md
 invariants:
@@ -60,7 +62,7 @@ invariants:
   - id: invisible-runes-come-from-textsafe
     rule: The generated CLI's terminal scrub drops exactly the runes core/textsafe.IsInvisible names, read at generation time, beside C0, DEL and C1.
     enforced_by:
-      - test: cmd/gofastr/internal/appgen.TestGenerateCLI_OpenAPIHostileStringsStayQuoted
+      - test: cmd/gofastr/internal/appgen.TestGeneratedCLIScrubDropsExactlyTextsafeInvisibles
 decisions:
   - id: refuse-not-rename
     date: 2026-11-28
@@ -70,3 +72,19 @@ decisions:
       - option: Rename the flag or struct with a suffix.
         why: The CLI's flags would stop matching the field names users and docs see.
     upholds: [no-auto-renaming]
+  - id: binary-name-refuses-control-bytes
+    date: 2026-11-28
+    status: accepted
+    decision: The binary name refuses control bytes though only the command line sets it today, since it also lands in the header comment of the generated main.go, where a newline puts the rest at statement position.
+    rejected:
+      - option: Accept any binary name, as only the operator who runs the command can set it.
+        why: The sibling generate sdk reads its name from a discovered gofastr.settings.yml, and if generate cli gains the same the name would stop being operator-only without anyone noticing.
+    upholds: [declaration-text-cannot-become-code]
+  - id: backup-rechecks-the-bak
+    date: 2026-11-28
+    status: accepted
+    decision: backupCLICustom refuses an existing custom.go.bak itself, though RunGenerateCLI checks for one first, as defence in depth.
+    rejected:
+      - option: Rely on the caller's check alone and drop the inner one.
+        why: A file created between the check and the rename would be replaced by the rename, destroying the earlier backup the rule says is never overwritten.
+    upholds: [custom-go-is-owned]

@@ -36,6 +36,24 @@ func TestConfigRefusesScaffoldGenerators(t *testing.T) {
 	}
 }
 
+func TestScaffoldGeneratorsAreExactlyTheOwnedWriters(t *testing.T) {
+	var scaffold []string
+	for _, g := range Generators {
+		if g.Kind == ScaffoldKind {
+			scaffold = append(scaffold, g.Name)
+		}
+	}
+	if want := []string{"app", "entity", "screen", "package"}; !reflect.DeepEqual(scaffold, want) {
+		t.Errorf("scaffold generators = %v, want %v", scaffold, want)
+	}
+	for _, name := range []string{"app", "entity", "screen", "package"} {
+		cfg := codegen.CodegenConfig{Generators: []codegen.GeneratorConfig{{Name: name}}}
+		if checkConfigGenerators(cfg) == nil {
+			t.Errorf("a codegen config listing %q was accepted", name)
+		}
+	}
+}
+
 // An extension may share a built-in's name: the entry runs the extension,
 // not the scaffold generator, so it is not refused.
 func TestConfigAllowsExtensionNamedLikeScaffold(t *testing.T) {

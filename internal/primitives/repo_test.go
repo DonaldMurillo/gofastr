@@ -333,6 +333,9 @@ var ownedPackages = []string{
 	"cmd/gofastr/internal/appspec",
 	// cmd/gofastr group F: the app generator.
 	"cmd/gofastr/internal/appgen",
+	// cmd/gofastr, owned by contracts and cliplugin.
+	"cmd/gofastr/internal/verifycmd",
+	"cmd/gofastr/internal/plugincmd",
 }
 
 //gofastr:test-reads primitives/ *.go

@@ -7,6 +7,7 @@ code:
   - cmd/gofastr/internal/appgen/appspec_e2e.go
   - cmd/gofastr/internal/appgen/appspec_endpoints.go
   - cmd/gofastr/internal/appgen/appspec_phrases.go
+  - cmd/gofastr/internal/appgen/appspec_test.go
   - cmd/gofastr/internal/appgen/appspec_*_test.go
   - cmd/gofastr/internal/appgen/project_app.go
   - cmd/gofastr/internal/appgen/view_stubs.go
@@ -73,6 +74,7 @@ invariants:
     rule: A PWA app gets a static dir for its icons, and its deny list carries a custom api_prefix and auth base path so the service worker never caches or intercepts the API.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestPWAAppGetsAStaticDirAndItsMountsDenied
+      - test: cmd/gofastr/internal/appgen.TestAuthBaseReachesPWAAndAxe
   - id: e2e-boots-a-seeded-app
     rule: The generated e2e test loads .env for ADMIN_SEED_PASSWORD whenever the app seeds an admin, with or without a gated screen to log in to, and expects 403 on a screen whose role the admin lacks.
     enforced_by:
@@ -97,3 +99,12 @@ decisions:
     rejected:
       - option: Emit the @font-face rules as a CSS string.
         why: The generator, and then every generated app, would own a second styling surface that gofastr verify flags (hard rule 7).
+  - id: e2e-boots-the-declared-driver
+    date: 2026-11-28
+    status: accepted
+    decision: The generated e2e test boots the app on the spec's declared driver, provisioning a throwaway database for a Postgres spec and skipping when Postgres is unreachable.
+    rejected:
+      - option: Boot every generated e2e test on SQLite, since the generated app links both drivers and DB_DRIVER can switch.
+        why: The declared engine is the one the spec ships against, so a SQLite run would not test it.
+      - option: Fail when Postgres is unreachable.
+        why: CI with no Postgres would fail every Postgres spec's test; it stays green by skipping.

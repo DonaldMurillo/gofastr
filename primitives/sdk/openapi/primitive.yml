@@ -6,6 +6,11 @@ code:
   - cmd/gofastr/internal/appgen/generate_sdk_openapi.go
   - cmd/gofastr/internal/appgen/generate_sdk_openapi_types.go
   - cmd/gofastr/internal/appgen/generate_sdkjs_openapi.go
+  - cmd/gofastr/internal/appgen/generate_cli_openapi*_test.go
+  - cmd/gofastr/internal/appgen/generate_sdk_openapi*_test.go
+  - cmd/gofastr/internal/appgen/generate_sdkjs_openapi*_test.go
+  - cmd/gofastr/internal/appgen/openapi_*_test.go
+  - cmd/gofastr/internal/appgen/gen_oasummary_c1_security_test.go
 docs:
   - framework/docs/content/sdk.md
   - framework/docs/content/app-cli.md
@@ -141,6 +146,7 @@ invariants:
     rule: An operation summary carrying a C0 control other than newline and tab, DEL or a C1 code point is refused for the CLI, which prints summaries verbatim in its help.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOASummaryRefusesC1Controls
+      - test: cmd/gofastr/internal/appgen.TestCLISummaryControlBytesRefused
       - test: cmd/gofastr/internal/appgen.TestGenerateCLI_OpenAPIHostileStringsStayQuoted
   - id: every-placeholder-is-filled
     rule: Each path parameter fills every occurrence of its placeholder, path-escaped, and a declared path parameter with no placeholder is refused.
