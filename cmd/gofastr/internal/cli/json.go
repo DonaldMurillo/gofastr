@@ -18,9 +18,7 @@ type jsonSession struct {
 
 var currentJSON *jsonSession
 
-// BeginJSON reserves the current stdout for one JSON document and redirects
-// ordinary output to stderr until end runs. Nested calls share that session.
-// Like the command dispatcher and stdout capture helpers, it is not concurrent.
+// BeginJSON reserves stdout for one JSON document until end runs.
 func BeginJSON() (end func()) {
 	if currentJSON != nil {
 		return func() {}
@@ -36,9 +34,7 @@ func BeginJSON() (end func()) {
 	}
 }
 
-// JSONWriter returns the reserved machine-output stdout handle while a JSON
-// session is active, or os.Stdout otherwise. Override plugins use this so
-// `--json` output reaches stdout instead of the redirected stderr stream.
+// JSONWriter returns the stdout a JSON session reserved, or os.Stdout without one.
 func JSONWriter() *os.File {
 	if currentJSON != nil && currentJSON.writer != nil {
 		return currentJSON.writer
@@ -51,8 +47,7 @@ func InJSONSession() bool {
 	return currentJSON != nil
 }
 
-// EmitJSON marshals v before writing the session's only document. Without a
-// session it writes to stdout. A second document is refused without writing.
+// EmitJSON marshals v and writes it as EmitRawJSON does.
 func EmitJSON(v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -61,8 +56,7 @@ func EmitJSON(v any) error {
 	return EmitRawJSON(data)
 }
 
-// EmitRawJSON validates one complete JSON value and writes one trailing newline.
-// A write attempt consumes the session even if its writer reports an error.
+// EmitRawJSON writes data, which must be one JSON value, as the session's document.
 func EmitRawJSON(data []byte) error {
 	if !json.Valid(data) {
 		return errors.New("output is not one JSON document")

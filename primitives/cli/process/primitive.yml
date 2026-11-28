@@ -1,0 +1,14 @@
+primitive: cli.process
+summary: The rest of the CLI's shared plumbing in cmd/gofastr/internal/cli - the version variables main fills, the OsExit indirection tests swap, OpenBrowser and Min.
+code:
+  - cmd/gofastr/internal/cli/doc.go
+  - cmd/gofastr/internal/cli/process.go
+docs:
+  - framework/docs/content/cli.md
+on_change:
+  - A command exits through cli.OsExit, not os.Exit, so a test can observe the code with clitest.CovT_capExit.
+invariants:
+  - id: browser-failure-is-a-hint
+    rule: OpenBrowser starts the platform opener without waiting for it and, when the opener cannot start, prints a hint on stderr and returns, since the caller has already printed the URL.
+    enforced_by:
+      - test: cmd/gofastr/internal/cli.TestOpenBrowserWithoutAnOpenerPrintsAHint
