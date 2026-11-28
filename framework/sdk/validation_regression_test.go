@@ -18,7 +18,7 @@ func TestPackZipRejectsDuplicateNames(t *testing.T) {
 }
 
 func TestReadManifestRejectsNegativeArtifactSize(t *testing.T) {
-	body := []byte(`{"schemaVersion":2,"app":"x","entities":["item"],"schemaHash":"sha256:ab","artifacts":{"go":{"file":"sdk-go.zip","sha256":"ab","bytes":-1}}}`)
+	body := []byte(`{"schemaVersion":2,"app":"x","entities":["item"],"schemaHash":"sha256:ab","artifacts":{"go":{"file":"sdk-go.zip","sha256":"ab","bytes":-1,"directory":"x-sdk"}}}`)
 	if _, err := ReadManifest(fstest.MapFS{ManifestFile: {Data: body}}); err == nil {
 		t.Fatal("accepted an artifact with negative size")
 	}

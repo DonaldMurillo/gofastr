@@ -109,10 +109,13 @@ func TestPackZipPrefixesEntries(t *testing.T) {
 }
 
 func TestPackZipRejectsUnsafePaths(t *testing.T) {
-	for _, p := range []string{"", "/abs", "../escape"} {
+	for _, p := range []string{"", "/abs", "../escape", `types\client.go`} {
 		if _, err := PackZip("p", []File{{Path: p}}); err == nil {
-			t.Fatalf("path %q was accepted", p)
+			t.Errorf("path %q was accepted", p)
 		}
+	}
+	if _, err := PackZip(`release\sdk`, []File{{Path: "client.go"}}); err == nil {
+		t.Error("prefix with a backslash was accepted")
 	}
 }
 

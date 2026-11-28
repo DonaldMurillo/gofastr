@@ -10,13 +10,14 @@ on_change:
   - A change to the Manifest's JSON shape must be written by cmd/gofastr/internal/appgen and read by framework/sdkdocs in the same change.
 invariants:
   - id: manifest-is-complete
-    rule: ReadManifest refuses a manifest that is missing, malformed, or has no schemaVersion, no artifacts, an artifact without file or sha256, a Go artifact without a safe directory, an unknown source, no entities for the entity source or any for the openapi source; a different SchemaVersion is not an error.
+    rule: ReadManifest refuses a manifest that is missing, malformed, or has no schemaVersion, no artifacts, an artifact without file or sha256 or with a negative size, a Go artifact without a safe directory, an unknown source, no entities for the entity source or any for the openapi source; a different SchemaVersion is not an error.
     enforced_by:
       - test: framework/sdk.TestReadManifestSources
       - test: framework/sdk.TestReadManifestValidates
       - test: framework/sdk.TestReadManifestRejectsEmptyEntities
       - test: framework/sdk.TestReadManifestRefusesEachMissingPart
       - test: framework/sdk.TestReadManifestRequiresSafeGoArchiveDirectory
+      - test: framework/sdk.TestReadManifestRejectsNegativeArtifactSize
   - id: go-archive-directory-is-shared
     rule: The Go artifact's directory is one shell-safe path component used verbatim in the zip, generated README and served install guide.
     enforced_by:
@@ -32,7 +33,7 @@ invariants:
       - test: framework/sdk.TestPackZipDeterministic
       - test: framework/sdk.TestPackZipSortsAndFixesMode
   - id: zip-never-escapes
-    rule: PackZip refuses an absolute or parent-relative prefix or entry path, and places every entry under a given prefix.
+    rule: PackZip requires slash-separated paths, refuses an absolute or parent-relative prefix or entry path, and places every entry under a given prefix.
     enforced_by:
       - test: framework/sdk.TestPackZipRejectsUnsafePaths
       - test: framework/sdk.TestPackZipPrefixCannotEscapeDir
