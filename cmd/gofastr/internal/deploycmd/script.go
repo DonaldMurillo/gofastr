@@ -6,51 +6,29 @@ import (
 	"strings"
 )
 
-// Exit codes of the remote scripts, which the command turns into what
-// it tells the person.
 const (
-	exitRolledBack = 3 // the attempted release failed; the one before runs again
-	exitDown       = 4 // neither the attempted release nor any fallback came up
-	exitNoPrevious = 5 // rollback: no earlier release is kept
+	exitRolledBack = 3
+	exitDown       = 4
+	exitNoPrevious = 5
 )
 
-// plan is everything the remote scripts are written from. Each value
-// has passed its own check (see options.validate) before it gets here:
-// the scripts are text a root shell runs, and a name is only ever a
-// name.
 type plan struct {
-	// root prefixes every path the script touches. Empty on a server;
-	// a test gives a temporary directory, so the script's own logic
-	// (the swap, the rollback, the pruning) runs for real without root.
 	root string
 
-	name    string // service, user, directory
+	name    string
 	release string
-	upload  string // remote directory holding "bin" and, with hasEnv, "env"
+	upload  string
 	hasEnv  bool
-	// socket hands the port to systemd, which keeps it open through
-	// restarts: set when the binary can take a socket passed to it.
-	socket bool
-	port   int
-	health string // "/healthz"
-	wait   int    // seconds to wait for the health check
-	keep   int    // releases kept beside the running one
+	socket  bool
+	port    int
+	health  string
+	wait    int
+	keep    int
 }
 
-// unit is the systemd unit of an app. It runs as its own user, may
-// write only its state directory, and comes back after a crash, every
-// time: with systemd's default start limit an app that failed five
-// times in ten seconds is left stopped until someone logs in. HOME
-// and XDG_STATE_HOME point there, so anything the app keeps by default
-// (the telemetry files among it) lands under /var/lib/<name>.
-// GOFASTR_ENV says production, which turns the dev-only features off
-// (the ungated MCP tools, livereload) whatever GOFASTR_DEV says: an env
-// file copied from a laptop often carries it. The env file is read
-// after, so a server that is meant to be something else can say so.
 func (p plan) unit() string {
 	held := ""
 	if p.socket {
-		// The service is started with the socket and never without it.
 		held = "Requires=" + p.name + ".socket\nAfter=" + p.name + ".socket\n"
 	}
 	return `[Unit]
@@ -88,10 +66,6 @@ WantedBy=multi-user.target
 `
 }
 
-// socketUnit is the unit that holds the app's port. systemd opens it
-// once and keeps it: while the app is down, between two releases or
-// after a crash, connections wait in its queue for the app that starts
-// next, where a port the app opened itself would refuse them.
 func (p plan) socketUnit() string {
 	return `[Unit]
 Description=` + p.name + ` port
@@ -108,7 +82,6 @@ func (p plan) appPath() string {
 	return fmt.Sprintf("set -eu\nNAME=%s\nROOT=%s\nAPP=\"$ROOT/opt/$NAME\"\n", p.name, shellQuote(p.root))
 }
 
-// preamble defines the paths and health checks the scripts share.
 func (p plan) preamble() string {
 	var b strings.Builder
 	b.WriteString(p.appPath())
@@ -262,8 +235,6 @@ reconcile_order() {
 ` + script + "GOFASTR_LOCKED\n"
 }
 
-// install is the script that puts a release in place and starts it. It
-// leaves the server running the new release, or the one before it.
 func (p plan) install() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "REL=%s\nUPLOAD=%s\nKEEP=%d\n", p.release, shellQuote(p.upload), p.keep)
@@ -352,8 +323,6 @@ echo "DEPLOYED $REL"
 	return p.locked(b.String())
 }
 
-// rollback is the script that points the server at the release before
-// the running one and starts it.
 func (p plan) rollback() string {
 	return p.locked(`
 CUR="$(running)"
@@ -380,7 +349,6 @@ echo "DEPLOYED $PREV"
 `)
 }
 
-// status is the script that says what is running.
 func (p plan) status() string {
 	return p.preamble() + `
 REL="$(running)"
@@ -398,7 +366,6 @@ ls -1 "$APP/releases" 2>/dev/null | sort -r | sed 's/^/  /'
 `
 }
 
-// shellQuote writes s as one single-quoted shell word.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

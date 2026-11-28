@@ -59,11 +59,9 @@ func parseExportOptions(args []string) (exportOptions, error) {
 	return opts, nil
 }
 
-// RunExport writes the app as a static site: it runs the app's main
-// package with GOFASTR_EXPORT set, and App.Start renders every page
-// (dynamic routes through StaticPaths) into the directory and returns
-// instead of serving. A battery that adds export files, such as
-// battery/sitesearch's index, writes them too.
+// RunExport runs `gofastr export`: it runs the app's main package with
+// GOFASTR_EXPORT set, so App.Start writes the site and returns, and exits
+// non-zero unless the app's receipt for this run says it did.
 func RunExport(args []string) {
 	if cli.HasHelpFlag(args) {
 		printExportUsage()
@@ -102,9 +100,6 @@ func RunExport(args []string) {
 		cli.OsExit(1)
 		return
 	}
-	// Exit 0 is not proof: a main that returns before App.Start exits 0
-	// having exported nothing, over an empty or stale directory. App.Start
-	// writes a receipt naming this run once the export is on disk.
 	got, pages, ok, err := readReceipt(dir)
 	switch {
 	case err != nil:

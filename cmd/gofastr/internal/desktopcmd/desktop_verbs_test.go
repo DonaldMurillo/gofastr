@@ -278,7 +278,7 @@ func TestDesktopFeedRefusesBadInputs(t *testing.T) {
 	}
 	// A missing required flag exits 2 naming it.
 	outStr, code := verbOutput(t, func() { runDesktopFeed([]string{"--key", key}) })
-	if code != 2 || !strings.Contains(outStr, "--version") {
+	if code != 2 || !strings.Contains(outStr, "--version --platform --archive --url") {
 		t.Fatalf("missing-flag feedback = %q, exit %d", outStr, code)
 	}
 }

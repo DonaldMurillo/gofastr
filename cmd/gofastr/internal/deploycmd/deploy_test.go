@@ -467,6 +467,7 @@ func TestRefusedBeforeAnythingRuns(t *testing.T) {
 	for _, args := range [][]string{
 		{},
 		{"-oProxyCommand=evil", "--name", "shop"},
+		{"--name", "shop", "--", "-oProxyCommand"},
 		{"deploy@example.com", "extra", "--name", "shop"},
 		{"deploy@example.com", "--name", "Shop"},
 		{"deploy@example.com", "--name", "shop;rm -rf /"},

@@ -320,6 +320,14 @@ var ownedPackages = []string{
 	"cmd/gofastr/internal/projectfs",
 	"cmd/gofastr/internal/harnesscmd",
 	"cmd/gofastr/internal/devcmd",
+	// cmd/gofastr: build and ship
+	"cmd/gofastr/internal/buildcmd",
+	"cmd/gofastr/internal/deploycmd",
+	"cmd/gofastr/internal/desktopcmd",
+	"cmd/gofastr/internal/exportcmd",
+	"cmd/gofastr/internal/releasecmd",
+	"cmd/gofastr/internal/gates",
+	"cmd/gofastr/internal/packcmd",
 }
 
 //gofastr:test-reads primitives/ *.go

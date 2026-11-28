@@ -1,0 +1,45 @@
+primitive: cli.gates
+summary: The source lints gofastr build, gofastr dev and gofastr audit a11y run over an app's tree, the accessibility lint over .go files and the hydration-sandbox lint over .ui.go files, through one walk.
+code:
+  - cmd/gofastr/internal/gates/
+docs:
+  - framework/docs/content/cli.md
+on_change:
+  - A new gate is a suffix and a check.Lint* function passed to auditTree, so it reads the same files and skips the same ones as the other two.
+invariants:
+  - id: files-in-scope
+    rule: The accessibility lint reads every .go file and the sandbox lint every .ui.go file under root that is not a _test.go file, not generated and not below a directory sourcewalk skips, and the root is read whatever its name.
+    enforced_by:
+      - test: cmd/gofastr/internal/gates.TestAuditA11ySkipsTestsVendorAndGenerated
+      - test: cmd/gofastr/internal/gates.TestSandboxReadsOnlyUiGoFiles
+      - test: cmd/gofastr/internal/gates.TestGatesExcludedRootStillScanned
+  - id: unreadable-files-are-skipped
+    rule: A file that vanishes during the walk or does not parse is skipped without failing the audit, and a missing root is an error.
+    enforced_by:
+      - test: cmd/gofastr/internal/gates.TestGatesIgnoreDisappearedFiles
+      - test: cmd/gofastr/internal/gates.TestAuditSkipsUnparsableFilesAndSortsFindings
+  - id: findings-are-sorted
+    rule: Findings carry root-relative paths and are sorted by path, then line.
+    enforced_by:
+      - test: cmd/gofastr/internal/gates.TestAuditSkipsUnparsableFilesAndSortsFindings
+      - test: cmd/gofastr/internal/gates.TestAuditA11yFindsViolations
+  - id: report-is-scrubbed
+    rule: A gate writes its report through cli.Fprintf, so a project path reaches the terminal scrubbed even when gofastr dev hands the gate a MultiWriter over os.Stdout.
+    enforced_by:
+      - test: cmd/gofastr/internal/gates.TestA11yGateReportCarriesNoLiveEscapes
+  - id: a11y-report-guides-the-fix
+    rule: FormatA11yReport follows each finding whose element has an a11yGuidance entry with that fix hint, and prints one line when there are no findings.
+    enforced_by:
+      - test: cmd/gofastr/internal/gates.TestFormatA11yReportGuidesTheFix
+      - test: cmd/gofastr/internal/gates.TestFormatA11yReportCleanIsQuiet
+decisions:
+  - id: skip-what-the-developer-did-not-write
+    date: 2026-11-28
+    status: accepted
+    decision: Generated files are not linted, the same policy as gofastr verify, and a file that does not parse is skipped.
+    rejected:
+      - option: Lint generated files.
+        why: A finding there is the generator's to fix, and the developer's next generate would overwrite any hand fix.
+      - option: Fail the audit on a parse error.
+        why: gofastr dev runs the gates on every save, and a file caught mid-edit would hold the dev server on an error the compiler already reports.
+    upholds: [files-in-scope, unreadable-files-are-skipped]

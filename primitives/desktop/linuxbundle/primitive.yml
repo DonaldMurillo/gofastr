@@ -3,10 +3,12 @@ summary: The Linux desktop bundle, the fixed five-file payload and manifest the 
 code:
   - internal/linuxbundle/
   - cmd/gofastr/internal/desktopcmd/desktop_install_linux.go
+  - cmd/gofastr/internal/desktopcmd/desktop_linux_archive.go
 docs:
   - framework/docs/content/desktop.md
 on_change:
   - A change to what Open accepts or Populate writes changes both what desktop install installs and what the Linux updater swaps in; run TestLinuxDesktopUpdateEndToEnd, which proves desktop uninstall still accepts an updated installation.
+  - desktop install checks the bundle's checksums, which prove it is intact, not who published it; nothing here may call an installed bundle authenticated.
 invariants:
   - id: open-verifies-the-fixed-payload
     rule: Open refuses a bundle whose manifest is not strict JSON of this format, whose payload is not exactly the five expected files at their modes, sizes and sha256, that holds an unlisted file, link or directory, whose executable is not an ELF for the manifest's architecture with its entry in an executable segment, or whose icon is not a PNG of 1 to 4096 pixels a side.
@@ -47,6 +49,41 @@ invariants:
   - id: build-identity-is-the-bundle-check
     rule: gofastr desktop build checks a Linux bundle's id, name, version and scheme through CheckIdentity, the check Open applies to a manifest, and DesktopEntry refuses a scheme off SchemeGrammar.
     judge: Does this change let gofastr desktop build or DesktopEntry accept an id, name, version or scheme that CheckIdentity refuses?
+  - id: install-rolls-back-its-own
+    rule: desktop install reserves each destination with Mkdir or an exclusive create, rechecks the payload while copying, and on failure removes only what this attempt created.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxInstallCopyRollback
+  - id: relative-xdg-ignored
+    rule: A relative XDG_DATA_HOME is ignored in favour of $HOME/.local/share, as the XDG specification says, and HOME and the data directory must be absolute storable paths without =, tab or line breaks.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxInstallRelativeXDG
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxInstallPathRefusals
+  - id: archive-checks-before-output
+    rule: gofastr desktop build --format tar.gz checks the id, name, version, scheme, linker flags and icon before it creates the output directory or runs the compiler.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxArchiveInvalidInputBeforeOutput
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxArchiveMetadataValidation
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxInvalidSchemeBeforeOutput
+  - id: archive-icon-is-a-regular-png
+    rule: The archive's --icon must be a regular file, checked before it is opened so a FIFO cannot block the build, of at most 16 MiB, decoding as a PNG of 1 to 4096 pixels a side.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxArchiveRejectsSpecialIcon
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxArchiveIconValidation
+  - id: archive-replaces-atomically
+    rule: The archive is written to a temporary file in the output directory and renamed over the destination, a non-regular destination is refused, and a failed build leaves an earlier archive in place.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxArchiveDestinationSymlink
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxArchiveBuildFailurePreservesRelease
+  - id: archive-is-deterministic
+    rule: Two archives of the same build are byte-identical, and the launcher script names the executable by the app id alone, never the display name.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxArchiveDeterministic
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxArchiveLauncherQuotes
+  - id: archive-warns-of-an-unfeedable-version
+    rule: A Linux archive whose version installs but is not major.minor.patch is built with a warning that no update feed can carry it.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxUpdateVersionWarning
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxArchiveBuildWarnsOfAnUpdateVersion
 decisions:
   - id: one-package-for-the-format
     date: 2026-11-25

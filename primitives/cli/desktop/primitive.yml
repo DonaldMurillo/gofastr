@@ -1,0 +1,65 @@
+primitive: cli.desktop
+summary: gofastr desktop - run (once or watching), build (validating flags, then the macOS bundle, the Windows build or the Linux executable or archive), install, uninstall and types; its children own each platform's packaging and the update verbs.
+code:
+  - cmd/gofastr/internal/desktopcmd/desktop.go
+  - cmd/gofastr/internal/desktopcmd/desktop_verbs.go
+  - cmd/gofastr/internal/desktopcmd/subcommand_usage.go
+  - cmd/gofastr/internal/desktopcmd/doc.go
+  - cmd/gofastr/internal/desktopcmd/desktop_run_other.go
+  - cmd/gofastr/internal/desktopcmd/desktop_build_other.go
+  - cmd/gofastr/internal/desktopcmd/desktop_install.go
+  - cmd/gofastr/internal/desktopcmd/desktop_install_other.go
+  - cmd/gofastr/internal/desktopcmd/desktop_linkflags.go
+  - cmd/gofastr/internal/desktopcmd/desktop_linux_bundle.go
+  - cmd/gofastr/internal/desktopcmd/desktop_icons.go
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - A new verb or flag goes in printDesktopUsage and framework/docs/content/desktop.md, and every flag check runs before anything is built or written.
+invariants:
+  - id: flags-checked-before-building
+    rule: desktop build refuses an invalid --id, --name or --scheme, a bad --launch-args or --ldflags, --no-sign with --sign, --notarize without a real identity, a Windows-only flag off Windows and a macOS-only flag on Windows, all before any tool runs or the output directory appears.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestDesktopBuildRefusesMisplacedSigningFlags
+      - test: cmd/gofastr/internal/desktopcmd.TestDesktopBuildRejectsBadIDBeforeBuilding
+      - test: cmd/gofastr/internal/desktopcmd.TestDesktopBuildIDValidation
+      - test: cmd/gofastr/internal/desktopcmd.TestDesktopBuildNameValidation
+      - test: cmd/gofastr/internal/desktopcmd.TestDesktopBuildNotarizeRefusesAdhoc
+  - id: update-builds-need-semver
+    rule: A macOS bundle and a Windows build with --zip are refused unless --version is major.minor.patch with an optional pre-release, no build metadata and at most 64 characters, because the updater compares the version they carry as semver.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestMacBuildRefusesNonSemverVersion
+      - test: cmd/gofastr/internal/desktopcmd.TestDesktopBuildRefusesMisplacedSigningFlags
+  - id: launch-args-survive-argv
+    rule: --launch-args is split on whitespace into 1 to 16 arguments of at most 256 bytes, refused with a control byte or invalid UTF-8, and stamped as base64url JSON with -X, the scheme beside it; --ldflags is appended last, verbatim, and refused with a control byte.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestParseLaunchArgs
+      - test: cmd/gofastr/internal/desktopcmd.TestExtraLinkerFlags
+      - test: cmd/gofastr/internal/desktopcmd.TestLaunchArgsStampReachesBattery
+  - id: linux-build-is-a-plain-executable
+    rule: The default Linux build is one ELF executable for amd64 or arm64; signing, notarization and --icon are refused there, and the tar.gz bundle is the opt-in --format.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxDesktopBuildRejectsUnsupportedOptions
+      - test: cmd/gofastr/internal/desktopcmd.TestDesktopBuildProducesLinuxELF
+      - test: cmd/gofastr/internal/desktopcmd.TestDesktopBuildRejectsUnsupportedFormat
+  - id: failed-run-cleans-up
+    rule: desktop run removes its private build directory when the build fails, when a run without --watch ends, and when a watching run shuts down.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestFailedRunRemovesBuildDir
+  - id: watch-lists-with-the-build-env
+    rule: The desktop watch loop's dependency query runs with the same environment, CGO_ENABLED=0 included, as the build it reruns.
+    judge: Does this change give the watcher's go list in desktop run --watch an environment different from the build's?
+  - id: icons-from-one-source
+    rule: The macOS .icns and the Windows .ico are made from one PNG, --icon or a generated square, center-cropped to a square rather than stretched, the .ico with four PNG frames of 16, 32, 48 and 256 pixels and the .icns with one PNG per icnsEntries type.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestNonSquareIconIsCroppedNotStretched
+      - test: cmd/gofastr/internal/desktopcmd.TestBuildWindowsICOEmitsFourPNGFrames
+      - test: cmd/gofastr/internal/desktopcmd.TestDesktopBuildProducesBundleLayout
+decisions:
+  - id: watch-owns-the-signal
+    date: 2026-11-28
+    status: accepted
+    decision: With --watch the command takes SIGINT and SIGTERM from the start and a signal ends a build in progress; without it nothing takes the signal, and the build stays in the terminal's process group.
+    rejected:
+      - option: Take the signal only once the app is running.
+        why: A signal during the first build waited for the build and the app it started before anything shut down.
