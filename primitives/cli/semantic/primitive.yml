@@ -4,11 +4,14 @@ code:
   - cmd/gofastr/internal/semanticcmd/
 docs:
   - framework/docs/content/cli.md
+on_change:
+  - Changing how localSnapshotDir names the index directory orphans every index already on disk; keep the format, or migrate the old directories in the same change.
 invariants:
   - id: one-index-per-directory
     rule: The local index lives at ~/.gofastr/semantic/<first 12 hex of sha1(cwd)>, so two working directories never share one.
     enforced_by:
       - test: cmd/gofastr/internal/semanticcmd.TestLocalSnapshotDir
+      - test: cmd/gofastr/internal/semanticcmd.TestLocalSnapshotDirNameIsPinned
   - id: readers-open-read-only
     rule: query and stats open the local index read-only, so they run beside a semantic watch that holds the writer lock without touching its WAL.
     enforced_by:
