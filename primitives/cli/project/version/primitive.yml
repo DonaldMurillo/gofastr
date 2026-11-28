@@ -14,6 +14,7 @@ invariants:
       - test: cmd/gofastr/internal/appgen.TestVersionReadsGoInstallBuildInfo
       - test: cmd/gofastr/internal/appgen.TestVersionLdflagsWinOverBuildInfo
       - test: cmd/gofastr/internal/appgen.TestVersionIgnoresForeignModule
+      - test: cmd/gofastr/internal/project.TestCliVersionReadsOnlyTheGofastrModule
   - id: local-build-has-no-release
     rule: InstalledFrameworkVersion is CliVersion normalized to a v-prefixed semver, and "" for dev, (devel) or any other non-version, so a local build never claims a release.
     enforced_by:

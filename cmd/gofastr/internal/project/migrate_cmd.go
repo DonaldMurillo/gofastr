@@ -6,7 +6,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
-// CanonicalDBDriver maps sqlite(3) to sqlite3 and postgres(ql) to postgres; any other value comes back trimmed.
+// CanonicalDBDriver maps sqlite(3) to sqlite3, postgres(ql) to postgres and mysql to mysql, in any letter case; any other value comes back trimmed with its case kept.
 func CanonicalDBDriver(name string) string {
 	name = strings.TrimSpace(name)
 	switch strings.ToLower(name) {

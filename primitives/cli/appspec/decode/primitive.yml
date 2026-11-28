@@ -111,10 +111,6 @@ invariants:
       - test: cmd/gofastr/internal/appspec.TestAppSpecRejectsUnknownReadScopeOp
       - test: cmd/gofastr/internal/appspec.TestAppSpecRejectsReadScopeInWithoutValues
       - test: cmd/gofastr/internal/appspec.TestAppSpecRejectsEmptyReadScope
-  - id: seed-counts-are-whole-numbers
-    rule: A seed count and every seed weight is a whole number; a string, a fraction or a list is refused.
-    enforced_by:
-      - test: cmd/gofastr/internal/appspec.TestDecodeRefusals
 decisions:
   - id: strict-where-false-is-open
     date: 2026-11-28

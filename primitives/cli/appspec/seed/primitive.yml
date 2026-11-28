@@ -8,7 +8,7 @@ on_change:
   - A change to how the generated seed hook inserts, orders or resolves rows changes the matching check here, since each check mirrors what the hook does at boot.
 invariants:
   - id: seed-decodes-strictly
-    rule: A seed block names its entity, and its count and every weight are whole numbers that are not negative.
+    rule: A seed block names its entity, and its count and every weight are whole numbers that are not negative; a string, a fraction or a list there is refused.
     enforced_by:
       - test: cmd/gofastr/internal/appspec.TestSeedRefusals
       - test: cmd/gofastr/internal/appspec.TestDecodeRefusals

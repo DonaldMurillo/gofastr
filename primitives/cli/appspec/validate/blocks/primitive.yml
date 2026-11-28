@@ -139,6 +139,14 @@ decisions:
       - option: Let the renderer swap the href for "#" or draw a form that goes nowhere.
         why: Safe but silent, the author asked for a link or a form and ships one that does nothing.
     upholds: [links-are-safe-and-labelled]
+  - id: no-raw-block
+    date: 2026-11-28
+    status: accepted
+    decision: A raw block is refused, and markup is written with the supported block kinds or in the app's own code.
+    rejected:
+      - option: A raw block that passes its text through as HTML.
+        why: Spec text would reach the page unescaped, an XSS sink in every generated app that used it.
+    upholds: [props-belong-to-their-kind]
   - id: bar-masked-group-by-at-load
     date: 2026-11-28
     status: accepted
@@ -147,6 +155,14 @@ decisions:
       - option: Mask the grouped values in groupCounts.
         why: Every row would fall into one masked bucket, so the chart would show nothing useful.
     upholds: [charts-group-a-shown-column, stat-cards-read-what-they-say]
+  - id: no-filter-on-a-masked-column
+    date: 2026-11-28
+    status: accepted
+    decision: A stat_card source filter may not name a hidden or no_query column.
+    rejected:
+      - option: Allow it, since the card shows only a count.
+        why: A count filtered on a hidden column answers whether any row holds the value, a one-bit oracle an author can turn into the column's contents one guess at a time.
+    upholds: [stat-cards-read-what-they-say]
   - id: spec-words-before-the-boot-check
     date: 2026-11-28
     status: accepted
