@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -167,12 +169,22 @@ func TestStaticDocsServerListensOnLoopbackAtPort(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(export, "index.html"), []byte("<h1>home</h1>"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	for attempt := 1; ; attempt++ {
+		err := startStaticDocsSiteOnce(t, export, freePort(t))
+		if err == nil {
+			return
+		}
+		if errors.Is(err, syscall.EADDRINUSE) && attempt < 5 {
+			continue
+		}
+		t.Fatalf("static docs server exited before listening: %v", err)
 	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	_ = ln.Close()
+}
+
+// startStaticDocsSiteOnce returns the error startDocsSite gave before it
+// listened, and fails the test on any other wrong outcome.
+func startStaticDocsSiteOnce(t *testing.T, export string, port int) error {
+	t.Helper()
 	app, err := newDocsSiteApp(export)
 	if err != nil {
 		t.Fatal(err)
@@ -184,17 +196,27 @@ func TestStaticDocsServerListensOnLoopbackAtPort(t *testing.T) {
 	})
 	done := make(chan error, 1)
 	go func() { done <- startDocsSite(app, docsServeOptions{port: port}) }()
+	var addr string
 	select {
-	case addr := <-bound:
-		if want := net.JoinHostPort("127.0.0.1", strconv.Itoa(port)); addr != want {
-			t.Fatalf("static docs server listened on %s, want %s", addr, want)
-		}
+	case addr = <-bound:
 	case err := <-done:
-		t.Fatalf("static docs server exited before listening: %v", err)
+		select {
+		case addr = <-bound:
+			done <- err
+		default:
+			if err == nil {
+				t.Fatal("static docs server returned without listening")
+			}
+			return err
+		}
 	case <-time.After(30 * time.Second):
 		t.Fatal("static docs server never listened")
+	}
+	if want := net.JoinHostPort("127.0.0.1", strconv.Itoa(port)); addr != want {
+		t.Fatalf("static docs server listened on %s, want %s", addr, want)
 	}
 	if err := <-done; err != nil {
 		t.Fatalf("startDocsSite = %v", err)
 	}
+	return nil
 }
