@@ -14,33 +14,12 @@ import (
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// RenderGeneratedProject emits the entities package for a set of entity
-// declarations. Output is ONE FILE PER ENTITY plus thin fixed seams:
-//
-//   - entities/register.go: the RegisterAll seam. It is byte-identical for
-//     every project regardless of entity count; each entity file appends
-//     itself to registrars in init(), so adding an entity means adding one
-//     new file and never editing an existing one.
-//   - entities/events.go: the event-helper seam (onEntityEvent,
-//     onEntityDeleted, extractEntityRecord), also byte-identical regardless
-//     of entity count; each entity file's On<Camel>* wrappers delegate to it.
-//   - entities/<snake_name>.go: everything for one entity: model struct,
-//     column constants, typed repo, event wrappers, and its registration func.
-//   - client/client.go: a standalone typed HTTP client (separate package).
-//
-// Declaration order is carried by the registrar.order field so RegisterAll
-// registers entities in app spec order and gofastr pack can recover it.
+// RenderGeneratedProject renders the entities package, one file per entity plus the register.go and events.go seams, and entities/client.
 func RenderGeneratedProject(decls []framework.EntityDeclaration) ([]GeneratedFile, error) {
 	return renderGeneratedProjectWithOrder(decls, 0)
 }
 
-// renderGeneratedProjectWithOrder is the additive-generation variant: the
-// order assigned to each entity is orderOffset+i, so entities added via --add
-// to a project that already has N entities (orders 0..N-1) continue at N, N+1,
-// … keeping RegisterAll's declaration order and pack recovery coherent.
 func renderGeneratedProjectWithOrder(decls []framework.EntityDeclaration, orderOffset int) ([]GeneratedFile, error) {
-	// Validate up front so a bad entity fails fast, with its name in the
-	// error, before any file is emitted.
 	for _, decl := range decls {
 		if _, err := decl.Config(); err != nil {
 			return nil, err
@@ -49,35 +28,20 @@ func renderGeneratedProjectWithOrder(decls []framework.EntityDeclaration, orderO
 			return nil, fmt.Errorf("entity %q: code generation does not support endpoints: endpoints require Go handlers and must be wired in code (use app.Entity with EntityConfig.Endpoints)", decl.Name)
 		}
 	}
-	// renderClient emits move methods and their doc comments straight from
-	// these declarations, so its input must have passed the states boot check
-	// (the reserved-name and grammar refusals live there, one implementation
-	// in framework/entity): the Config() call above checks shape, not states,
-	// and a hand-edited declaration could carry a key or an enum value no
-	// emitter may render.
 	for _, decl := range decls {
 		if err := validateDeclarationStates(decl); err != nil {
 			return nil, fmt.Errorf("entity %q: %w", decl.Name, err)
 		}
 	}
-	// The client is the client generator's derived output, stamped as
-	// such here, so the first copy matches every later rebuild.
 	clientSrc, err := renderAppClient(decls)
 	if err != nil {
 		return nil, err
 	}
 	files := []GeneratedFile{
 		{Name: "register.go", Content: RenderRegisterSeam()},
-		// Event helpers are entity-independent: one fixed seam file instead
-		// of a copy of each body per entity file. Additive generation writes
-		// it only when absent (the skip-existing partition).
 		{Name: "events.go", Content: renderEventHelpers()},
-		// Generated client lives in its own package so consumers can import
-		// it without dragging the server-side schema/framework deps along.
 		{Name: "client/client.go", Content: clientSrc},
 	}
-	// Preserve the caller's entity order (the app spec's authored order) so
-	// scaffolds are reproducible byte-for-byte and gofastr pack round-trips.
 	for i, decl := range decls {
 		content, err := renderEntityFile(decl, orderOffset+i, decls)
 		if err != nil {
@@ -91,9 +55,7 @@ func renderGeneratedProjectWithOrder(decls []framework.EntityDeclaration, orderO
 	return files, nil
 }
 
-// RenderRegisterSeam emits entities/register.go, the fixed registration seam.
-// It carries no entity-specific text, so its bytes are identical whether the
-// project declares one entity or a hundred.
+// RenderRegisterSeam renders entities/register.go, identical for every project.
 func RenderRegisterSeam() string {
 	return `package entities
 
@@ -132,16 +94,10 @@ func RegisterAll(app *framework.App) {
 `
 }
 
-// renderEntityFile emits the single entities/<snake_name>.go for one entity:
-// its model struct, column constants, typed repository, event helpers, and a
-// registration func that self-registers via init(). decls are the
-// project's entities, for the types of cascade children's ids.
 func renderEntityFile(decl framework.EntityDeclaration, order int, decls []framework.EntityDeclaration) (string, error) {
 	var sb strings.Builder
 	strconvImport := ""
 	if intID(decl) {
-		// The repo and the deleted event turn an integer id into the
-		// string key CrudHandler takes, and back.
 		strconvImport = "\t\"strconv\"\n"
 	}
 	sb.WriteString(`package entities
@@ -169,9 +125,6 @@ import (
 	return sb.String(), nil
 }
 
-// renderEntityRegistrationFunc wraps an entity's app.Entity(...) call in a
-// register<Camel> func and self-registers it via init() so register.go never
-// needs editing when an entity is added.
 func renderEntityRegistrationFunc(decl framework.EntityDeclaration, order int) (string, error) {
 	structName := appspec.ToCamelCase(decl.Name)
 	var sb strings.Builder
@@ -310,10 +263,6 @@ func RenderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 	return sb.String(), nil
 }
 
-// renderDisplayLiteral emits the Display group of an entity registration:
-// every YAML-settable field, strings quoted, only non-zero fields, map keys
-// sorted so the emitted Go is byte-stable. Empty string when the declaration
-// carries no display config.
 func renderDisplayLiteral(d *fwentity.DisplayConfig) string {
 	if d == nil {
 		return ""
@@ -503,8 +452,6 @@ func renderDisplayLiteral(d *fwentity.DisplayConfig) string {
 	return sb.String()
 }
 
-// formItemsLiteral emits a []framework.FormItem literal: a field item as
-// {Field: "x"}, a row as {Row: [...]}, a section with its nested items.
 func formItemsLiteral(items []fwentity.FormItem) string {
 	var parts []string
 	for _, it := range items {
@@ -531,9 +478,6 @@ func formItemsLiteral(items []fwentity.FormItem) string {
 	return "[]framework.FormItem{" + strings.Join(parts, ", ") + "}"
 }
 
-// renderStatesLiteral emits the States group of an entity registration, the
-// same only-non-zero-fields rule as Display. Empty string when the
-// declaration declares no states.
 func renderStatesLiteral(s *fwentity.StatesConfig) string {
 	if s == nil {
 		return ""
@@ -580,7 +524,6 @@ func renderStatesLiteral(s *fwentity.StatesConfig) string {
 	return sb.String()
 }
 
-// stringSliceLiteral emits {"a", "b"} for a string slice, in order.
 func stringSliceLiteral(values []string) string {
 	quoted := make([]string, len(values))
 	for i, v := range values {
@@ -597,11 +540,6 @@ func intsLiteral(values []int) string {
 	return strings.Join(parts, ", ")
 }
 
-// scopeDeclHasContent, exposureDeclHasContent, and paginationDeclHasContent
-// gate group-literal emission: a nil or all-zero group must emit nothing, so
-// the generated Go packs back to the same declaration the YAML parsed to
-// (a materialized-but-empty group would round-trip as non-nil where the
-// author wrote nothing).
 func scopeDeclHasContent(s *fwentity.ScopeDeclaration) bool {
 	return s != nil && *s != (fwentity.ScopeDeclaration{})
 }
@@ -614,16 +552,10 @@ func paginationDeclHasContent(p *fwentity.PaginationDeclaration) bool {
 	return p != nil && (p.CursorField != "" || len(p.CursorFields) > 0 || p.MaxListLimit != 0)
 }
 
-// readScopeDeclHasContent is the ReadScope half of exposureDeclHasContent: an
-// all-zero ReadScope must emit nothing, or an app spec that declares
-// `read_scope: {}` would round-trip as a non-nil scope where the author wrote
-// a no-op — and pack would re-emit it forever after.
 func readScopeDeclHasContent(rs *fwentity.ReadScopeDeclaration) bool {
 	return rs != nil && (rs.Unrestricted != "" || len(rs.Filter) > 0)
 }
 
-// Returns "" when access is nil or every operation is un-gated, so the
-// generated registration stays byte-identical for app specs without RBAC.
 func renderAccessLiteral(access *fwentity.AccessDeclaration) string {
 	if access == nil {
 		return ""
@@ -646,10 +578,6 @@ func renderAccessLiteral(access *fwentity.AccessDeclaration) string {
 	return "framework.AccessControl{" + strings.Join(parts, ", ") + "}"
 }
 
-// renderReadScopeLiteral renders an entity's read_scope declaration as a
-// framework.ReadScopeConfig composite literal for the generated register.go.
-// Returns "" when the scope is nil or all-zero, so an app spec without one
-// stays byte-identical.
 func renderReadScopeLiteral(rs *fwentity.ReadScopeDeclaration) string {
 	if !readScopeDeclHasContent(rs) {
 		return ""
@@ -698,13 +626,6 @@ func renderIndexLiteral(idx framework.Index) string {
 	if idx.Unique {
 		parts = append(parts, "Unique: true")
 	}
-	// Expression replaces Columns for function/constant indices (see
-	// framework/entity Index). Dropping it silently downgraded the declaration:
-	// a `{Name: …, Expression: "LOWER(email)", Unique: true}` came back out as
-	// `{Name: …, Unique: true}`, an index with no key at all, so the UNIQUE
-	// constraint the developer declared simply did not exist in the generated
-	// app. Case-insensitive uniqueness is the usual reason to reach for one, so
-	// the failure mode was duplicate rows differing only by case.
 	if idx.Expression != "" {
 		parts = append(parts, fmt.Sprintf("Expression: %q", idx.Expression))
 	}
@@ -821,10 +742,7 @@ func onDeleteConstName(action framework.OnDeleteAction) string {
 	}
 }
 
-// RelationKindFor returns t's row, or the belongs_to row for a kind the
-// table has not learned — the default every former switch's fallback arm
-// produced, so unknown kinds keep reading as belongs_to instead of failing
-// pack on generated code.
+// RelationKindFor returns the kind of t, belongs_to for one it does not know.
 func RelationKindFor(t framework.RelationType) appspec.RelationKind {
 	for _, k := range appspec.RelationKinds {
 		if k.Typ == t {
@@ -834,14 +752,10 @@ func RelationKindFor(t framework.RelationType) appspec.RelationKind {
 	return appspec.RelationKind{Typ: framework.RelManyToOne, ConstName: "RelManyToOne", Yaml: "belongs_to"}
 }
 
-// relationTypeConst returns the framework const name for t, for emitting
-// `Type: framework.<Name>` in generated relation literals.
 func relationTypeConst(t framework.RelationType) string {
 	return RelationKindFor(t).ConstName
 }
 
-// goExpr is Go source renderGoLiteral writes as is: a phrase read
-// inside a literal the app spec otherwise spells out.
 type goExpr string
 
 func renderGoLiteral(value any) (string, error) {
@@ -862,8 +776,6 @@ func renderGoLiteral(value any) (string, error) {
 	case int, int32, int64:
 		return fmt.Sprintf("%d", v), nil
 	case json.Number:
-		// A spec decoded with UseNumber: an int64 keeps every digit; any
-		// other number takes the float64 spelling above.
 		if i, err := v.Int64(); err == nil {
 			return fmt.Sprintf("%d", i), nil
 		}
@@ -921,18 +833,11 @@ func renderEntityModel(decl framework.EntityDeclaration) string {
 			continue
 		}
 		typ := entityFieldGoType(structName, field)
-		// Optional scalars read as pointers: null on the wire stays nil,
-		// addressable, instead of collapsing into an authored-looking zero.
 		if !readFieldTakesValue(decl, field) {
 			typ = "*" + typ
 		}
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n", appspec.ToCamelCase(field.Name), typ, appspec.WireKey(field.Name)))
 	}
-	// Relation fields: populated by TypedQuery.Include() and Repo.Get(...,
-	// includes...). Singular relations (HasOne/BelongsTo) get *Target;
-	// collections (HasMany/ManyToMany) get []*Target. Pointer so the absent
-	// case marshals as null (matches the framework's nil-for-missing
-	// contract).
 	for _, rel := range decl.Relations {
 		targetStruct := appspec.ToCamelCase(rel.Entity)
 		fieldName := appspec.ToCamelCase(rel.Name)
@@ -998,11 +903,6 @@ func autoGenerateConstName(value string) (string, error) {
 	}
 }
 
-// goTypeForField is a field's Go type in the generated entity model, write
-// shapes and HTTP client. A JSON field holds any JSON value (crud stores
-// arrays, numbers and strings as well as objects), so it is any: a
-// map[string]any fails the decode of every row whose value is an array,
-// and a list fails for the whole page.
 func goTypeForField(value string) string {
 	switch strings.ToLower(value) {
 	case "int", "integer":

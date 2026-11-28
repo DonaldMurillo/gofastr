@@ -8,8 +8,6 @@ code:
   - cmd/gofastr/internal/appgen/doc.go
   - cmd/gofastr/internal/appgen/*_test.go
   - cmd/gofastr/internal/appgen/testdata/
-  - cmd/gofastr/internal/appspec/appspec.go
-  - cmd/gofastr/internal/appspec/doc_examples_test.go
 docs:
   - framework/docs/content/app-spec.md
   - framework/docs/content/entity-declarations.md
