@@ -59,3 +59,41 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/appspec.TestFormFieldsEntryMustDraw
       - test: cmd/gofastr/internal/appgen.TestEntityFormUsesWireNames
+  - id: theme-text-cannot-inject-css
+    rule: A theme font family reaches the emitted CSS reduced to letters, digits, space, dash and underscore, and a theme color that fails style.ValidateColorValue is dropped for the default with a comment that does not quote it.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestFontFamilyCannotInjectCSS
+      - test: cmd/gofastr/internal/appgen.TestThemeValueCannotInjectCSS
+  - id: font-fetch-trusts-only-gstatic
+    rule: Generation fetches a font only from an https URL whose host is exactly fonts.gstatic.com and whose path ends in .woff2, whatever the css2 response names.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestFontFetchOnlyTrustsGstatic
+      - test: cmd/gofastr/internal/appgen.TestFontFetchChecksThePathNotTheQuery
+  - id: pwa-follows-the-app
+    rule: A PWA app gets a static dir for its icons, and its deny list carries a custom api_prefix and auth base path so the service worker never caches or intercepts the API.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestPWAAppGetsAStaticDirAndItsMountsDenied
+  - id: e2e-boots-a-seeded-app
+    rule: The generated e2e test loads .env for ADMIN_SEED_PASSWORD whenever the app seeds an admin, with or without a gated screen to log in to, and expects 403 on a screen whose role the admin lacks.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestE2ELoadsTheSeedPasswordWithoutGatedScreens
+      - test: cmd/gofastr/internal/appgen.TestE2EExpects403ForRoleAdminLacks
+  - id: phrase-scopes-are-distinct
+    rule: Every screen and crud file gets its own phrase key scope, a lower-cased repeat numbered in spec order, so i18n.Define never sees one key with two texts.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestPhraseScopesNeverFold
+  - id: add-merges-endpoints-project-first
+    rule: Under --add the settings endpoints section is the project's entries plus the fragment's new names, a name the project has keeping the project's entry.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestMergeEndpointsKeepsTheProjectsEntry
+  - id: view-stubs-ship-verbatim
+    rule: view_stubs_impl.go is embedded and written into every generated app as is, so its source, comments included, is generated output.
+    judge: Does this change edit view_stubs_impl.go, including its comments, without accepting that every generated app's view_stubs.go changes with it?
+decisions:
+  - id: fonts-through-the-design-system
+    date: 2026-11-28
+    status: accepted
+    decision: The generated app declares fontFaceCSS as a call to style.FontFaceCSS, emitted even with no fonts since main.go reads it.
+    rejected:
+      - option: Emit the @font-face rules as a CSS string.
+        why: The generator, and then every generated app, would own a second styling surface that gofastr verify flags (hard rule 7).

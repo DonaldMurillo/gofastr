@@ -10,16 +10,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
 )
 
-// projectRouteApp reads, off the generated app.go and main.go under
-// writeRoot, the project's app settings (appspec.ReadGeneratedApp, the
-// reader pack uses): the API prefix, auth and its base path, the admin
-// back office and its path, PWA, llm.md, locale prefixes and the base
-// URL decide which routes the project's framework mounts. generate app
-// --add hands them to validation (AppSpec.SetProjectApp), so a fragment
-// screen at one of those routes is refused the way validating the whole
-// spec refuses it. ok is false when app.go cannot be read or parsed: the
-// project is not an app spec project, and the fragment is validated
-// alone.
 func projectRouteApp(writeRoot string) (app appspec.AppSpecApp, ok bool) {
 	root, err := os.OpenRoot(writeRoot)
 	if err != nil {
@@ -44,13 +34,6 @@ func projectRouteApp(writeRoot string) (app appspec.AppSpecApp, ok bool) {
 	return appspec.ReadGeneratedApp(appFile, parse("main.go")), true
 }
 
-// projectShell reads what the project under writeRoot's generated app.go
-// declares for screens to mount through (appLayout, guestPolicy), and
-// the routes its screens already pass them: the first string argument of
-// an authPolicy call is the login route, of a guestPolicy call the app
-// home. Every generated call names the same one, so the first found, in
-// file name order, is the project's. ok is false when app.go cannot be
-// read or parsed.
 func projectShell(writeRoot string) (shell appspec.ProjectShell, ok bool) {
 	root, err := os.OpenRoot(writeRoot)
 	if err != nil {

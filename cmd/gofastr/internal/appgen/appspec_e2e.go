@@ -12,9 +12,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
-// appSpecE2EScreenRoutes splits the app spec's STATIC screen routes (those
-// without a `{param}`) into public (anonymous-renderable) and gated (auth) sets.
-// Dynamic routes are exercised by the CRUD lifecycle, which has a real id.
 func appSpecE2EScreenRoutes(bp appspec.AppSpec) (public, gated []string) {
 	for _, s := range bp.Screens {
 		route := app.CanonicalRoutePattern(s.Route)
@@ -30,8 +27,6 @@ func appSpecE2EScreenRoutes(bp appspec.AppSpec) (public, gated []string) {
 	return public, gated
 }
 
-// appSpecHasHomeScreen reports whether a screen is routed at /, the
-// one page the generated e2e asserts the brand on.
 func appSpecHasHomeScreen(bp appspec.AppSpec) bool {
 	for _, s := range bp.Screens {
 		if s.Route == "/" {
@@ -41,8 +36,6 @@ func appSpecHasHomeScreen(bp appspec.AppSpec) bool {
 	return false
 }
 
-// appSpecSeedAdminRoles are the roles the bootstrap admin is created with:
-// the admin role (default "admin") and "user".
 func appSpecSeedAdminRoles(bp appspec.AppSpec) []string {
 	role := bp.App.Admin.Role
 	if role == "" {
@@ -51,10 +44,6 @@ func appSpecSeedAdminRoles(bp appspec.AppSpec) []string {
 	return []string{role, "user"}
 }
 
-// appSpecE2ERoleSplit splits the static gated routes into those the seeded
-// admin can open and those whose screen requires a role it does not hold.
-// authPolicy's RolePolicy matches roles exactly, so the second set answers
-// the admin 403, and the e2e expects that instead of a 200.
 func appSpecE2ERoleSplit(bp appspec.AppSpec, gated []string) (open, locked []string) {
 	held := appSpecSeedAdminRoles(bp)
 	lockedRoute := map[string]bool{}
@@ -73,23 +62,18 @@ func appSpecE2ERoleSplit(bp appspec.AppSpec, gated []string) (open, locked []str
 	return open, locked
 }
 
-// appSpecCRUDTarget is the entity the generated e2e exercises with a full
-// create→read→update→delete lifecycle.
 type appSpecCRUDTarget struct {
 	entity      string
-	apiPath     string   // /api/<table>
-	newRoute    string   // /app/<entity>/create
-	detailBase  string   // /app/<entity>  (detail = detailBase + "/" + id), "" if no detail screen
-	createJSON  string   // a valid create payload
-	updateJSON  string   // a payload mutating one field
-	probe       string   // a value present in the created record (to find in record HTML)
-	accessGated bool     // entity is access- or owner-scoped → anonymous writes must be refused
-	keys        []string // wire names of the key columns; nil for the generated id
+	apiPath     string
+	newRoute    string
+	detailBase  string
+	createJSON  string
+	updateJSON  string
+	probe       string
+	accessGated bool
+	keys        []string
 }
 
-// appSpecE2EWritableTarget picks an entity to lifecycle-test: one whose list
-// is `create: true` (so a /create form exists) and whose required fields are all
-// simple scalars (no required relation), so a valid body can be synthesized.
 func appSpecE2EWritableTarget(bp appspec.AppSpec) (appSpecCRUDTarget, bool) {
 	entityMap := make(map[string]framework.EntityDeclaration, len(bp.Entities))
 	for _, d := range bp.Entities {
@@ -145,9 +129,6 @@ func appSpecE2EWritableTarget(bp appspec.AppSpec) (appSpecCRUDTarget, bool) {
 	return appSpecCRUDTarget{}, false
 }
 
-// appSpecUnfillableRelation reports a relation the e2e create body cannot
-// fill (it sends no relation) and the record cannot do without: a
-// required one, or one in the declared key, which the id is made of.
 func appSpecUnfillableRelation(decl framework.EntityDeclaration) bool {
 	keyCols := appspec.AppSpecKeyColNames(decl)
 	for _, f := range decl.Fields {
@@ -170,19 +151,10 @@ func appSpecUnfillableConstraints(decl framework.EntityDeclaration) bool {
 	return false
 }
 
-// appSpecE2ECreateBody synthesizes a valid create payload (JSON literal) for
-// decl, plus an update payload mutating one string field, and a probe value that
-// the created record will contain (for asserting record HTML). To stay valid
-// across any schema it sends only the entity's REQUIRED fields (best-effort per
-// type). Optional fields with exotic validators (json, image, file) are left
-// out; the screens still exercise all-field rendering.
 func appSpecE2ECreateBody(decl framework.EntityDeclaration) (createJSON, updateJSON, probe string) {
 	var parts []string
 	probeField := ""
 	for _, f := range decl.Fields {
-		// A declared key's columns are sent whether required or not:
-		// the record has no id without them. The update never changes
-		// one, since that would move the record off the path it names.
 		isKey := !appspec.DeclKeyIsID(decl) && slices.Contains(decl.PrimaryKey, f.Name)
 		if appspec.AppSpecFieldSystem(f.Name) || f.Hidden || (!f.Required && !isKey) {
 			continue
@@ -195,12 +167,8 @@ func appSpecE2ECreateBody(decl framework.EntityDeclaration) (createJSON, updateJ
 			}
 			v = `"` + f.Values[0] + `"`
 		case "relation":
-			// The create sends no relation: one the record needs (a
-			// required or key relation) disqualifies the entity upstream.
 			continue
 		case "uuid":
-			// The server fills only an auto_generate uuid: any other is
-			// sent, one value per field.
 			if appspec.FieldAutoGenerated(f) {
 				continue
 			}
@@ -212,7 +180,7 @@ func appSpecE2ECreateBody(decl framework.EntityDeclaration) (createJSON, updateJ
 		case "float":
 			v = "1"
 		case "decimal":
-			v = `"1"` // decimal is validated as a string
+			v = `"1"`
 		case "date":
 			v = `"2025-01-01"`
 		case "timestamp", "datetime":
@@ -221,7 +189,7 @@ func appSpecE2ECreateBody(decl framework.EntityDeclaration) (createJSON, updateJ
 			v = "[]"
 		case "image", "file", "blob", "binary":
 			v = `"https://e2e.test/x.png"`
-		default: // string, text, email, ...
+		default:
 			if strings.EqualFold(f.Type, "email") || strings.Contains(f.Name, "email") {
 				v = `"e2e-` + f.Name + `@example.com"`
 			} else {
@@ -243,31 +211,8 @@ func appSpecE2ECreateBody(decl framework.EntityDeclaration) (createJSON, updateJ
 	return createJSON, updateJSON, probe
 }
 
-// renderAppSpecE2ETest emits an end-to-end test (package main) that builds and
-// boots the generated binary, then asserts the real flow: every static public +
-// gated screen renders (gated ones redirect anonymous callers and render once
-// authed), a full create→read→update→delete lifecycle runs against a writable
-// entity through its CRUD API + screens, and anonymous writes to an
-// access-gated entity are refused.
-// renderAppSpecAxeTest emits the generated app's runtime accessibility
-// gate: boot the built binary, discover public pages from /sitemap.xml,
-// scan them with an ANONYMOUS browser, then scan access-gated screens
-// with a separately-authenticated browser. One shared login state
-// would make guest-only pages (login) redirect and record the wrong
-// screen. Gated DYNAMIC patterns classify concrete sitemap pages (a
-// StaticPaths-bearing "/orders/:id" puts "/orders/42" in the sitemap;
-// it must go through the authenticated pass, not bounce anonymously).
-// Every scan asserts it landed on the intended route before running
-// axe, so an unexpected redirect fails loudly instead of silently
-// covering a different page. Scans record the axe-coverage manifest
-// uihost strict mode (which generated apps ship with) verifies on dev
-// boot, so this test IS the strict axe gate. It shares the
-// e2eFreeAddr / e2eWaitReady / e2ePostgresDSN helpers emitted in
-// e2e_test.go.
 func renderAppSpecAxeTest(bp appspec.AppSpec) string {
 	_, gatedAll := appSpecE2EScreenRoutes(bp)
-	// Static gated routes are scanned directly; dynamic gated PATTERNS
-	// classify concrete sitemap pages into the authenticated pass.
 	var gated, gatedPatterns []string
 	for _, r := range gatedAll {
 		if isAppSpecDynamicRoute(r) {
@@ -295,9 +240,6 @@ func renderAppSpecAxeTest(bp appspec.AppSpec) string {
 	var b strings.Builder
 	b.WriteString("package main\n\n")
 	b.WriteString("import (\n")
-	// net/http rides the login arm (http.Client for the cookie-jar
-	// login): the sitemap fetch goes through e2eClient (declared in
-	// e2e_test.go), so a login-less axe file has no other http use.
 	imports := []string{"context", "io", "net/url", "os", "os/exec", "path/filepath", "regexp", "runtime", "strings", "testing", "time"}
 	if login {
 		imports = append(imports, "net/http")
@@ -535,9 +477,6 @@ func renderAppSpecAxeTest(bp appspec.AppSpec) string {
 	return b.String()
 }
 
-// isAppSpecDynamicRoute reports whether a route pattern has a
-// parameter segment and therefore cannot be scanned without a concrete
-// instance.
 func isAppSpecDynamicRoute(route string) bool {
 	return strings.Contains(route, ":") || strings.Contains(route, "{")
 }
@@ -550,25 +489,10 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 	public, gated := appSpecE2EScreenRoutes(bp)
 	adminEmail := bp.App.Admin.SeedEmail
 	adminPass := bp.App.Admin.SeedPassword
-	// The cookie-jar login client (and its net/url + net/http/cookiejar imports)
-	// is only emitted when there's a gated screen AND a seeded admin to log in as.
 	needsAuthClient := len(gated) > 0 && adminEmail != "" && adminPass != ""
-	// Whether the APP seeds an admin at boot, which is a different question
-	// from whether this TEST logs in. An app with a seeded admin refuses to
-	// start on a fresh database without ADMIN_SEED_PASSWORD, so the test has to
-	// supply one even when it never authenticates. Gating the environment
-	// preamble on needsAuthClient meant an app spec with a seeded admin and no
-	// gated screen generated a test that could not boot its own app: it passed
-	// wherever the gitignored .env happened to exist and failed on every fresh
-	// checkout, which is the worst place for the difference to show up.
 	adminSeeded := bp.App.Auth.Enabled && adminEmail != "" && adminPass != ""
 	target, hasTarget := appSpecE2EWritableTarget(bp)
-	crud := hasTarget && needsAuthClient // the lifecycle needs an authed client
-	// The generated e2e test boots against the app spec's declared driver,
-	// so a postgres spec provisions a throwaway Postgres database (skips
-	// when Postgres is unreachable so driverless CI stays green-by-skip):
-	// the declared engine is the one the spec ships against, even though
-	// the generated app now links both drivers and DB_DRIVER can switch.
+	crud := hasTarget && needsAuthClient
 	dbDriver := strings.ToLower(strings.TrimSpace(bp.App.DBDriver))
 	isPostgres := dbDriver == "postgres" || dbDriver == "postgresql"
 
@@ -627,7 +551,6 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 			b.WriteString("\t\tt.Setenv(\"ADMIN_SEED_PASSWORD\", adminPass)\n")
 			b.WriteString("\t}\n")
 		} else {
-			// No login here, so no adminPass variable to declare and leave unused.
 			b.WriteString("\tif os.Getenv(\"ADMIN_SEED_PASSWORD\") == \"\" {\n")
 			b.WriteString("\t\tt.Setenv(\"ADMIN_SEED_PASSWORD\", \"e2e-seed-admin-pw\")\n")
 			b.WriteString("\t}\n")
@@ -643,9 +566,6 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 	b.WriteString("\tsrv := exec.Command(bin)\n")
 	b.WriteString("\tsrv.Dir = dir\n")
 	if bp.App.PWA.Enabled {
-		// The server runs from dir and serves its static directory, the
-		// PWA icons the suite asserts below included, relative to where
-		// it runs: from dir alone every icon answered 404.
 		staticDir := appSpecEffectiveStaticDir(bp)
 		b.WriteString("\t// The server serves its static directory relative to where it runs.\n")
 		b.WriteString(fmt.Sprintf("\tif err := os.CopyFS(filepath.Join(dir, %q), os.DirFS(%q)); err != nil { t.Fatalf(\"copy static dir: %%v\", err) }\n", staticDir, staticDir))
@@ -662,14 +582,10 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 	b.WriteString("\tt.Cleanup(func() { _ = srv.Process.Kill(); _, _ = srv.Process.Wait() })\n")
 	b.WriteString("\tbase := \"http://\" + addr\n")
 	b.WriteString("\te2eWaitReady(t, base)\n\n")
-	// The home page carries the brand, when a screen sits at /. With none
-	// there, / is a 404 the app was never meant to serve, and the public
-	// screens below are what renders.
 	if appSpecHasHomeScreen(bp) {
 		b.WriteString(fmt.Sprintf("\tif code, body := e2eDo(t, e2eClient, \"GET\", base+\"/\", \"\"); code != http.StatusOK || !strings.Contains(body, %q) {\n\t\tt.Errorf(\"home page = %%d, missing brand? %%v\", code, !strings.Contains(body, %q))\n\t}\n", appName, appName))
 	}
 
-	// Every static public screen renders.
 	b.WriteString("\n\t// Public screens render for anonymous visitors.\n")
 	b.WriteString(fmt.Sprintf("\tfor _, p := range %s {\n", goSlice(public)))
 	b.WriteString("\t\tif code, body := e2eDo(t, e2eClient, \"GET\", base+p, \"\"); code != http.StatusOK {\n")
@@ -717,14 +633,10 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 	}
 
 	if needsAuthClient {
-		// The client stops at a redirect to a login page: with no session
-		// each gated screen bounced there, the client followed, and the
-		// login page's 200 passed for the screen (2026-10-27 G14).
 		b.WriteString("\n\t// Sign in, then every gated screen renders. A redirect to a login\n")
 		b.WriteString("\t// page is returned, not followed: it means the session did not take.\n")
 		b.WriteString("\tjar, _ := cookiejar.New(nil)\n")
 		b.WriteString("\tclient := &http.Client{Jar: jar, Timeout: 10 * time.Second, CheckRedirect: func(req *http.Request, _ []*http.Request) error {\n")
-		// authPolicy sends an anonymous caller to the login screen's route.
 		b.WriteString(fmt.Sprintf("\t\tif req.URL.Path == %q { return http.ErrUseLastResponse }\n", appSpecLoginRoute(bp)))
 		b.WriteString("\t\treturn nil\n")
 		b.WriteString("\t}}\n")
@@ -783,7 +695,6 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 	}
 	b.WriteString("}\n\n")
 
-	// helpers
 	b.WriteString("func e2eCaptureServerLog(t *testing.T, srv *exec.Cmd, dir string) {\n")
 	b.WriteString("\tt.Helper()\n")
 	b.WriteString("\tserverLog, err := os.CreateTemp(dir, \"server-*.log\")\n")
@@ -822,10 +733,6 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 	b.WriteString("\tbb, _ := io.ReadAll(r.Body)\n")
 	b.WriteString("\treturn r.StatusCode, string(bb)\n}\n")
 	if crud && len(target.keys) > 0 {
-		// A declared key's record path is each key value path-escaped and
-		// joined with "/", the path the API and the detail screen take.
-		// The values come from the decoded response, so a comma, quote or
-		// number in a key value reads whole.
 		b.WriteString("\nvar e2eKeyCols = " + goSlice(target.keys) + "\n\n")
 		b.WriteString("func e2eExtractID(body string) string {\n\tvar env struct{ Data map[string]any `json:\"data\"` }\n\td := json.NewDecoder(strings.NewReader(body))\n\td.UseNumber()\n\tif d.Decode(&env) != nil { return \"\" }\n\tparts := make([]string, len(e2eKeyCols))\n\tfor i, k := range e2eKeyCols {\n\t\tv, ok := env.Data[k]\n\t\tif !ok || v == nil { return \"\" }\n\t\tparts[i] = url.PathEscape(fmt.Sprint(v))\n\t}\n\treturn strings.Join(parts, \"/\")\n}\n")
 	} else if crud {
