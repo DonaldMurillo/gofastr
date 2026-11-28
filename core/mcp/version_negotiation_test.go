@@ -22,12 +22,13 @@ func TestInitializeNegotiatesVersion(t *testing.T) {
 		{"echo newest", `{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1"}}`, "2025-11-25"},
 		{"echo 2025-06-18", `{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"c","version":"1"}}`, "2025-06-18"},
 		{"echo older supported", `{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"c","version":"1"}}`, "2025-03-26"},
-		{"unknown future version", `{"protocolVersion":"2099-01-01","capabilities":{}}`, LatestProtocolVersion},
-		{"unsupported old version", `{"protocolVersion":"2024-11-05","capabilities":{}}`, LatestProtocolVersion},
-		{"empty version", `{"protocolVersion":"","capabilities":{}}`, LatestProtocolVersion},
-		{"missing version", `{"capabilities":{}}`, LatestProtocolVersion},
-		{"non-string version", `{"protocolVersion":20250326}`, LatestProtocolVersion},
-		{"no params", ``, LatestProtocolVersion},
+		{"modern revision is not a handshake", `{"protocolVersion":"2026-07-28","capabilities":{}}`, LatestHandshakeVersion},
+		{"unknown future version", `{"protocolVersion":"2099-01-01","capabilities":{}}`, LatestHandshakeVersion},
+		{"unsupported old version", `{"protocolVersion":"2024-11-05","capabilities":{}}`, LatestHandshakeVersion},
+		{"empty version", `{"protocolVersion":"","capabilities":{}}`, LatestHandshakeVersion},
+		{"missing version", `{"capabilities":{}}`, LatestHandshakeVersion},
+		{"non-string version", `{"protocolVersion":20250326}`, LatestHandshakeVersion},
+		{"no params", ``, LatestHandshakeVersion},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := NewServer()

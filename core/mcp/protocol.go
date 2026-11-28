@@ -33,6 +33,8 @@ type Response struct {
 	ID      any       `json:"id"`
 	Result  any       `json:"result,omitempty"`
 	Error   *RPCError `json:"error,omitempty"`
+
+	modern bool
 }
 
 // RPCError is a JSON-RPC 2.0 error object.
@@ -64,6 +66,17 @@ func (s *Server) HandleRequest(ctx context.Context, req Request) Response {
 		}
 	}
 
+	facts, rpcErr := readRequestFacts(req)
+	if rpcErr != nil {
+		return Response{JSONRPC: "2.0", ID: req.ID, Error: rpcErr}
+	}
+	if facts.modern || req.Method == "server/discover" {
+		return s.handleModern(ctx, req, facts)
+	}
+	return s.dispatch(ctx, req)
+}
+
+func (s *Server) dispatch(ctx context.Context, req Request) Response {
 	switch req.Method {
 	case "tools/list", "tools/call", "resources/list", "resources/read",
 		"resources/templates/list", "resources/subscribe",
@@ -137,14 +150,27 @@ func newErrorResponse(id any, code int, message string) Response {
 	}
 }
 
-// LatestProtocolVersion is the newest MCP revision the server speaks, answered when the client asks for an unsupported one.
-const LatestProtocolVersion = "2025-11-25"
+// LatestProtocolVersion is the newest MCP revision the server speaks, a modern one that a request declares in its own `_meta`.
+const LatestProtocolVersion = "2026-07-28"
 
-var supportedProtocolVersions = []string{LatestProtocolVersion, "2025-06-18", "2025-03-26"}
+// LatestHandshakeVersion is the newest revision initialize negotiates, answered when a client asks initialize for one it cannot serve.
+const LatestHandshakeVersion = "2025-11-25"
 
-// SupportedProtocolVersions returns a copy of the MCP revisions initialize negotiates, newest first.
+var modernProtocolVersions = []string{LatestProtocolVersion}
+
+var handshakeProtocolVersions = []string{LatestHandshakeVersion, "2025-06-18", "2025-03-26"}
+
+var supportedProtocolVersions = append(append([]string(nil), modernProtocolVersions...), handshakeProtocolVersions...)
+
+// SupportedProtocolVersions returns a copy of every MCP revision the server speaks, newest first: the modern ones a
+// request declares per request, then the ones initialize negotiates.
 func SupportedProtocolVersions() []string {
 	return append([]string(nil), supportedProtocolVersions...)
+}
+
+// HandshakeProtocolVersions returns a copy of the MCP revisions initialize negotiates, newest first.
+func HandshakeProtocolVersions() []string {
+	return append([]string(nil), handshakeProtocolVersions...)
 }
 
 func negotiateProtocolVersion(params json.RawMessage) string {
@@ -152,18 +178,18 @@ func negotiateProtocolVersion(params json.RawMessage) string {
 		ProtocolVersion json.RawMessage `json:"protocolVersion"`
 	}
 	if len(params) == 0 || json.Unmarshal(params, &p) != nil {
-		return LatestProtocolVersion
+		return LatestHandshakeVersion
 	}
 	var requested string
 	if json.Unmarshal(p.ProtocolVersion, &requested) != nil {
-		return LatestProtocolVersion
+		return LatestHandshakeVersion
 	}
-	for _, v := range supportedProtocolVersions {
+	for _, v := range handshakeProtocolVersions {
 		if v == requested {
 			return v
 		}
 	}
-	return LatestProtocolVersion
+	return LatestHandshakeVersion
 }
 
 func (s *Server) handleInitialize(req Request) Response {

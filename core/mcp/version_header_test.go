@@ -36,12 +36,12 @@ func TestVersionHeaderRefusesUnsupported(t *testing.T) {
 				want     int
 			}{
 				{"absent", nil, http.StatusOK},
-				{"newest", []string{LatestProtocolVersion}, http.StatusOK},
+				{"newest handshake", []string{LatestHandshakeVersion}, http.StatusOK},
 				{"older supported", []string{"2025-03-26"}, http.StatusOK},
 				{"unknown", []string{"2099-01-01"}, http.StatusBadRequest},
 				{"dropped revision", []string{"2024-11-05"}, http.StatusBadRequest},
 				{"empty", []string{""}, http.StatusBadRequest},
-				{"repeated", []string{LatestProtocolVersion, LatestProtocolVersion}, http.StatusBadRequest},
+				{"repeated", []string{LatestHandshakeVersion, LatestHandshakeVersion}, http.StatusBadRequest},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					w := postWithVersionHeader(t, h, list, tc.versions...)
@@ -79,8 +79,8 @@ func TestVersionHeaderRefusesUnsupported(t *testing.T) {
 func TestVersionHeaderLeavesInitializeToNegotiation(t *testing.T) {
 	s := NewServer()
 	w := postWithVersionHeader(t, s, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2099-01-01"}}`, "2099-01-01")
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"protocolVersion":"`+LatestProtocolVersion+`"`) {
-		t.Fatalf("initialize = %d %s, want 200 negotiating %s", w.Code, w.Body, LatestProtocolVersion)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"protocolVersion":"`+LatestHandshakeVersion+`"`) {
+		t.Fatalf("initialize = %d %s, want 200 negotiating %s", w.Code, w.Body, LatestHandshakeVersion)
 	}
 }
 

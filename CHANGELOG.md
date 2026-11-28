@@ -26,6 +26,17 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Added
 
+- **MCP `2026-07-28`, beside the handshake revisions.** A request whose
+  `params._meta` names `io.modelcontextprotocol/protocolVersion` is served
+  under `2026-07-28` with no `initialize`, on stdio and HTTP; every other
+  request is served as before. New: `server/discover`, the result fields
+  (`resultType`, serverInfo in `_meta`, `ttlMs`/`cacheScope`), the
+  `Mcp-Method`/`Mcp-Name` header checks, `LatestHandshakeVersion`,
+  `HandshakeProtocolVersions()`, `ErrHeaderMismatch`,
+  `ErrMissingRequiredClientCapability`, `ErrUnsupportedProtocolVersion`
+  and the `Meta*` key constants. See
+  [MCP server](framework/docs/content/mcp.md#per-request-protocol-2026-07-28)
+  ([#945](https://github.com/DonaldMurillo/gofastr/pull/945)).
 - **MCP `2025-11-25`.** `initialize` now negotiates `2025-11-25` beside
   `2025-06-18` and `2025-03-26`. New: `WithToolIcons`,
   `WithResourceIcons`, `WithResourceTemplateIcons`, `WithPromptIcons`
@@ -44,6 +55,13 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Changed
 
+- **BREAKING: `mcp.LatestProtocolVersion` is now `2026-07-28`**, which has
+  no handshake. `initialize` falls back to the new `LatestHandshakeVersion`
+  (`2025-11-25`), and `SupportedProtocolVersions()` now lists `2026-07-28`
+  first; use `HandshakeProtocolVersions()` for the revisions `initialize`
+  negotiates. Code that sent `LatestProtocolVersion` in `initialize`
+  should send `LatestHandshakeVersion`
+  ([#945](https://github.com/DonaldMurillo/gofastr/pull/945)).
 - **BREAKING: MCP not-found codes and argument refusals follow the spec.**
   An unknown or gate-hidden tool now answers `-32602` and an unknown or
   hidden resource `-32002`; both answered `-32601` before. Arguments that
