@@ -159,3 +159,18 @@ func TestHeaderSpeaksTheLocale(t *testing.T) {
 		}
 	}
 }
+
+func TestHeaderWithoutCtxUsesTheDefaultTranslator(t *testing.T) {
+	cat := i18n.NewMapCatalog()
+	cat.Set("es", "ui.nav.primary", i18n.Message{Text: "Principal"})
+	cat.Set("es", "ui.nav.toggle", i18n.Message{Text: "Abrir navegación"})
+	prev := i18n.Default()
+	i18n.SetDefault(i18n.NewTranslator(cat, "es"))
+	t.Cleanup(func() { i18n.SetDefault(prev) })
+	got := string(siteheader.Render(full()))
+	for _, want := range []string{`aria-label="Principal"`, `aria-label="Abrir navegación"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("a header with no Ctx ignores the default translator, lacks %s:\n%s", want, got)
+		}
+	}
+}

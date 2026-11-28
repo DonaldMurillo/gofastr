@@ -38,6 +38,32 @@ func TestGeneratePackageListsAllPackages(t *testing.T) {
 			t.Errorf("list output missing %q:\n%s", want, out)
 		}
 	}
+	for _, name := range []string{"docpage", "sitefooter", "siteheader"} {
+		var summary string
+		for line := range strings.SplitSeq(out, "\n") {
+			if f := strings.Fields(line); len(f) > 1 && f[0] == name {
+				summary = strings.Join(f[1:], " ")
+			}
+		}
+		if summary == "" || strings.Contains(summary, ". ") || strings.ContainsAny(summary[len(summary)-1:], " ,;") {
+			t.Errorf("%s's summary is not one sentence: %q", name, summary)
+		}
+	}
+}
+
+func TestFirstDocSentenceStopsAtTheFirstSentence(t *testing.T) {
+	for _, tc := range []struct{ text, want string }{
+		{"Package x is A. B.", "is A."},
+		{"Package x is A! B.", "is A!"},
+		{"Package x is A? B.", "is A?"},
+		{"Package x reads x.style.css and\nx_style.gen.go. Then more.", "reads x.style.css and x_style.gen.go."},
+		{"Package x is A\n\nB. C.", "is A"},
+		{"Package x ends at the end.", "ends at the end."},
+	} {
+		if got := firstDocSentence(tc.text, "x"); got != tc.want {
+			t.Errorf("firstDocSentence(%q) = %q, want %q", tc.text, got, tc.want)
+		}
+	}
 }
 
 // An unknown name is refused with the valid ones listed, exit 1.
