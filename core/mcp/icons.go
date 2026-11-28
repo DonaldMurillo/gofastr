@@ -22,7 +22,19 @@ func checkedIcons(option string, icons []Icon) []Icon {
 			panic(fmt.Sprintf("mcp.%s: icon %d: %v", option, i, err))
 		}
 	}
-	return append([]Icon(nil), icons...)
+	return cloneIcons(icons)
+}
+
+func cloneIcons(icons []Icon) []Icon {
+	if icons == nil {
+		return nil
+	}
+	out := make([]Icon, len(icons))
+	for i, ic := range icons {
+		ic.Sizes = append([]string(nil), ic.Sizes...)
+		out[i] = ic
+	}
+	return out
 }
 
 func validateIcon(ic Icon) error {
@@ -89,7 +101,7 @@ func (s *Server) SetServerDetails(d ServerDetails) error {
 			return fmt.Errorf("mcp: server icon %d: %w", i, err)
 		}
 	}
-	d.Icons = append([]Icon(nil), d.Icons...)
+	d.Icons = cloneIcons(d.Icons)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.details = d
@@ -108,7 +120,7 @@ func (s *Server) serverInfoLocked() map[string]any {
 		info["websiteUrl"] = s.details.WebsiteURL
 	}
 	if len(s.details.Icons) > 0 {
-		info["icons"] = append([]Icon(nil), s.details.Icons...)
+		info["icons"] = cloneIcons(s.details.Icons)
 	}
 	return info
 }
