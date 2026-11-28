@@ -113,6 +113,8 @@ type Server struct {
 	sseSubs         map[*sseSubscriber]struct{}
 	resourceSubs    map[string]int
 	resourceSubsBy  map[resourceSubKey]int
+	listenSubs      map[string]int
+	listenSubsBy    map[resourceSubKey]int
 	sseSeatCap      int
 	sseStreamLimit  int
 	sseSeatOverflow SeatOverflowPolicy

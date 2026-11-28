@@ -141,17 +141,22 @@ invariants:
       - test: core/mcp.TestModernHTTPStatusMapping
       - test: core/mcp.TestModernGETRefused
   - id: listen-delivers-only-what-was-asked
-    rule: A modern subscriptions/listen on ServeSSE answers an event stream whose first message is notifications/subscriptions/acknowledged with the honored filter, after which only the notification types the filter set and resources/updated for its listed URIs are delivered, each carrying _meta io.modelcontextprotocol/subscriptionId equal to the request id, and each still passing the server-wide gate and the resource's gate.
+    rule: A modern subscriptions/listen on ServeSSE answers an event stream whose first message is notifications/subscriptions/acknowledged with the honored filter, after which only the notification types the filter set and resources/updated for its listed URIs are delivered, each carrying _meta io.modelcontextprotocol/subscriptionId equal to the request id, and each still passing the server-wide gate and the resource's gate; a notification the filter does not deliver never enters the stream's buffer; when the server ends the stream (dropped, evicted or no longer held) it first sends the listen result, resultType complete with the subscription id.
     enforced_by:
+      - test: core/mcp.TestListenFilterKeepsBufferFree
+      - test: core/mcp.TestListenGracefulClosure
       - test: core/mcp.TestListenFiltersAndTags
       - test: core/mcp.TestListenHonorsResourceGate
   - id: listen-releases-on-close
-    rule: A listen stream holds one subscriber seat and one count per distinct listed URI from open to close, and closing it releases exactly those, so NotifyResourceUpdated stops reaching a URI no open stream lists.
+    rule: A listen stream holds one subscriber seat and one count per distinct listed URI, in counters of its own that resources/unsubscribe never touches, from open to close; closing it releases exactly those, NotifyResourceUpdated reaches a URI either kind holds, and the 1024, 4096 and per-caller 256 limits count both kinds together.
     enforced_by:
       - test: core/mcp.TestListenReleasesOnClose
+      - test: core/mcp.TestListenSurvivesLegacyUnsubscribe
+      - test: core/mcp.TestListenAndLegacyShareCallerCap
   - id: listen-refusals
-    rule: subscriptions/listen answers a JSON-RPC error without opening a stream when its envelope fails the checks HandleRequest applies (refuseEnvelope), the server-wide gate refuses, the filter is malformed (a non-boolean flag, a non-array or over-256 URI list, an empty or over-2048-byte URI), or holding its URIs would pass the resources/subscribe limits (1024 distinct URIs, 4096 caller-URI pairs, 256 distinct URIs per caller across all its streams); it answers -32601 on ServeHTTP, stdio or HandleRequest, which hold no streams.
+    rule: subscriptions/listen answers a JSON-RPC error without opening a stream when its envelope fails the checks HandleRequest applies (refuseEnvelope), the server-wide gate refuses, the filter is malformed (a non-boolean flag, a non-array or over-256 URI list, an empty or over-2048-byte URI), or holding its URIs would pass the resources/subscribe limits (1024 distinct URIs, 4096 caller-URI pairs, 256 distinct URIs per caller across all its streams); it answers -32601 on ServeHTTP, stdio or HandleRequest, which hold no streams; a caller at its seat cap gets 429 with a JSON-RPC -32000 (ErrTooManyStreams) under the request id.
     enforced_by:
+      - test: core/mcp.TestListenSeatRefusalIsJSON
       - test: core/mcp.TestListenRefusals
       - test: core/mcp.TestListenRefusesAmbiguousEnvelope
       - test: core/mcp.TestListenCapsURIsPerCaller

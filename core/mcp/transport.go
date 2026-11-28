@@ -558,8 +558,10 @@ func (s *Server) sseStream(w http.ResponseWriter, r *http.Request, path string) 
 }
 
 // pumpSSE writes the opening event and then every notification encode accepts to sub's stream, with keep-alives, until
-// the request ends, the stream is dropped, a write fails or the caller's principal no longer holds.
-func (s *Server) pumpSSE(w http.ResponseWriter, r *http.Request, sub *sseSubscriber, openEvent, openData string, encode func(sseNotification) ([]byte, bool)) {
+// the request ends, the stream is dropped, a write fails or the caller's principal no longer holds. It reports whether
+// the server ended the stream (dropped or no longer held) while it could still be written, and writes a final event
+// through the returned func, which is nil otherwise.
+func (s *Server) pumpSSE(w http.ResponseWriter, r *http.Request, sub *sseSubscriber, openEvent, openData string, encode func(sseNotification) ([]byte, bool)) func(event, data string) bool {
 	rc := http.NewResponseController(w)
 	ew := &errWriter{w: w}
 	writeSSEEvent := func(event, data string) bool {
@@ -580,7 +582,7 @@ func (s *Server) pumpSSE(w http.ResponseWriter, r *http.Request, sub *sseSubscri
 	}
 
 	if !writeSSEEvent(openEvent, openData) {
-		return
+		return nil
 	}
 
 	callerHeld := func() (context.Context, bool) {
@@ -601,21 +603,21 @@ func (s *Server) pumpSSE(w http.ResponseWriter, r *http.Request, sub *sseSubscri
 	for {
 		select {
 		case <-r.Context().Done():
-			return
+			return nil
 		case <-keepAlive.C:
 			if _, held := callerHeld(); !held {
-				return
+				return writeSSEEvent
 			}
 			if !writeSSEComment(rc, ew) {
-				return
+				return nil
 			}
 		case n, ok := <-sub.ch:
 			if !ok {
-				return
+				return writeSSEEvent
 			}
 			live, held := callerHeld()
 			if !held {
-				return
+				return writeSSEEvent
 			}
 			if !s.subscriberMayReceive(live, n) {
 				continue
@@ -625,7 +627,7 @@ func (s *Server) pumpSSE(w http.ResponseWriter, r *http.Request, sub *sseSubscri
 				continue
 			}
 			if !writeSSEEvent("message", string(data)) {
-				return
+				return nil
 			}
 		}
 	}

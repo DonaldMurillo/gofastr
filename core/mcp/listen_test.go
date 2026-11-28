@@ -176,7 +176,7 @@ func TestListenReleasesOnClose(t *testing.T) {
 	held := func(uri string) int {
 		s.sseMu.Lock()
 		defer s.sseMu.Unlock()
-		return s.resourceSubs[uri]
+		return s.listenSubs[uri]
 	}
 	if held("r://a") != 1 || held("r://b") != 1 {
 		t.Fatalf("held a=%d b=%d while listening, want 1 each", held("r://a"), held("r://b"))
@@ -289,5 +289,105 @@ func TestListenCapsURIsPerCaller(t *testing.T) {
 	same := openListen(t, srv.URL, listenBody(`3`, `{"resourceSubscriptions":["r://a/a/0"]}`))
 	if ack := same.next(t); ack["method"] != "notifications/subscriptions/acknowledged" {
 		t.Fatalf("a URI the caller already holds = %v, want it accepted", ack)
+	}
+}
+
+func postLegacy(t *testing.T, url, body string) {
+	t.Helper()
+	resp, err := http.Post(url+"/mcp", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+}
+
+// A legacy resources/unsubscribe from the same caller cannot release what a listen stream holds: the stream keeps
+// getting the URI's updates.
+func TestListenSurvivesLegacyUnsubscribe(t *testing.T) {
+	s, srv := listenServer(t)
+	ls := openListen(t, srv.URL, listenBody(`1`, `{"resourceSubscriptions":["r://a"]}`))
+	ls.next(t)
+	waitSubscribers(t, s, 1)
+	postLegacy(t, srv.URL, `{"jsonrpc":"2.0","id":9,"method":"resources/unsubscribe","params":{"uri":"r://a"}}`)
+	postLegacy(t, srv.URL, `{"jsonrpc":"2.0","id":9,"method":"resources/unsubscribe","params":{"uri":"r://a"}}`)
+	s.NotifyResourceUpdated("r://a")
+	if got := ls.next(t); got["method"] != "notifications/resources/updated" {
+		t.Fatalf("after a legacy unsubscribe the stream got %v, want the r://a update", got)
+	}
+}
+
+// The per-caller cap counts listen and resources/subscribe URIs together, so neither kind can exceed it beside the other.
+func TestListenAndLegacyShareCallerCap(t *testing.T) {
+	s, srv := listenServer(t)
+	parts := make([]string, maxResourceSubscriptionsPerCaller)
+	for i := range parts {
+		parts[i] = `"r://cap/` + strconv.Itoa(i) + `"`
+	}
+	ls := openListen(t, srv.URL, listenBody(`1`, `{"resourceSubscriptions":[`+strings.Join(parts, ",")+`]}`))
+	ls.next(t)
+	waitSubscribers(t, s, 1)
+	r := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	r.RemoteAddr = "127.0.0.1:1"
+	ctx := WithRequest(context.Background(), r)
+	resp := s.HandleRequest(ctx, Request{JSONRPC: "2.0", ID: 1, Method: "resources/subscribe", Params: json.RawMessage(`{"uri":"r://one-more"}`)})
+	if resp.Error == nil || resp.Error.Code != ErrInvalidParams {
+		t.Fatalf("legacy subscribe past the shared per-caller cap = %+v, want -32602", resp)
+	}
+	again := s.HandleRequest(ctx, Request{JSONRPC: "2.0", ID: 1, Method: "resources/subscribe", Params: json.RawMessage(`{"uri":"r://cap/0"}`)})
+	if again.Error != nil {
+		t.Fatalf("legacy subscribe to a URI the caller already listens to = %+v, want it accepted", again.Error)
+	}
+}
+
+// Notifications a listen filter does not deliver never enter the stream's buffer, so a burst of them cannot drop it.
+func TestListenFilterKeepsBufferFree(t *testing.T) {
+	s := NewServer()
+	f := &listenFilter{uris: map[string]bool{"r://a": true}}
+	sub, ok := s.addFilteredSSESubscriber(context.Background(), "k", f)
+	if !ok {
+		t.Fatal("subscriber refused")
+	}
+	for range 4 * sseSubBufferSize {
+		s.NotifyToolsListChanged()
+	}
+	s.sseMu.Lock()
+	_, alive := s.sseSubs[sub]
+	queued := len(sub.ch)
+	s.sseMu.Unlock()
+	if !alive || queued != 0 {
+		t.Fatalf("after a burst of unrequested notifications: alive=%v queued=%d, want alive with an empty buffer", alive, queued)
+	}
+}
+
+// When the server drops a listen stream (an evicted seat), it first answers the listen request with a complete result
+// tagged with the subscription id, as the spec's graceful closure asks.
+func TestListenGracefulClosure(t *testing.T) {
+	s, srv := listenServer(t)
+	s.SetSSESeatCap(1)
+	s.SetSSESeatOverflow(SeatOverflowEvictOldest)
+	first := openListen(t, srv.URL, listenBody(`"a"`, `{"toolsListChanged":true}`))
+	first.next(t)
+	waitSubscribers(t, s, 1)
+	second := openListen(t, srv.URL, listenBody(`"b"`, `{"toolsListChanged":true}`))
+	second.next(t)
+	got := first.next(t)
+	r, _ := got["result"].(map[string]any)
+	meta, _ := r["_meta"].(map[string]any)
+	if got["id"] != "a" || r["resultType"] != "complete" || meta[MetaSubscriptionID] != "a" {
+		t.Fatalf("evicted stream's last message = %v, want the listen result for subscription a", got)
+	}
+}
+
+// A listen refused at the seat cap answers 429 with a JSON-RPC error body, like its other refusals.
+func TestListenSeatRefusalIsJSON(t *testing.T) {
+	s, srv := listenServer(t)
+	s.SetSSESeatCap(1)
+	first := openListen(t, srv.URL, listenBody(`1`, `{"toolsListChanged":true}`))
+	first.next(t)
+	waitSubscribers(t, s, 1)
+	second := openListen(t, srv.URL, listenBody(`2`, `{"toolsListChanged":true}`))
+	var out map[string]any
+	if second.resp.StatusCode != http.StatusTooManyRequests || json.NewDecoder(second.resp.Body).Decode(&out) != nil || errCode(out) != ErrTooManyStreams || out["id"] != float64(2) {
+		t.Fatalf("seat refusal = %d %v, want 429 with -32000 under id 2", second.resp.StatusCode, out)
 	}
 }

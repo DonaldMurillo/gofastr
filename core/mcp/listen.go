@@ -11,6 +11,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
+// ErrTooManyStreams answers a subscriptions/listen refused because its caller already holds the most streams its seat allows; the HTTP status is 429.
+const ErrTooManyStreams = -32000
+
 // MetaSubscriptionID is the `_meta` key naming the subscriptions/listen request a notification belongs to.
 const MetaSubscriptionID = "io.modelcontextprotocol/subscriptionId"
 
@@ -88,9 +91,18 @@ func (s *Server) serveListen(w http.ResponseWriter, r *http.Request, ctx context
 		answer(newErrorResponse(req.ID, ErrInvalidParams, "invalid params: "+err.Error()))
 		return
 	}
-	sub, ok := s.addSSESubscriber(ctx, sseSeatKey(ctx, r))
+	f := &listenFilter{
+		id: req.ID, tools: want.ToolsListChanged, prompts: want.PromptsListChanged,
+		resources: want.ResourcesListChanged, uris: make(map[string]bool, len(want.ResourceSubscriptions)),
+	}
+	for _, uri := range want.ResourceSubscriptions {
+		f.uris[uri] = true
+	}
+	sub, ok := s.addFilteredSSESubscriber(ctx, sseSeatKey(ctx, r), f)
 	if !ok {
-		i18n.HTTPError(w, r, http.StatusTooManyRequests, i18n.ReasonTooManyStreams)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write(encodeResponse(newErrorResponse(req.ID, ErrTooManyStreams, i18n.ReasonTooManyStreams.Text(ctx))))
 		return
 	}
 	defer s.removeSSESubscriber(sub)
@@ -100,14 +112,6 @@ func (s *Server) serveListen(w http.ResponseWriter, r *http.Request, ctx context
 		return
 	}
 	defer s.releaseListenURIs(caller, want.ResourceSubscriptions)
-
-	f := &listenFilter{
-		id: req.ID, tools: want.ToolsListChanged, prompts: want.PromptsListChanged,
-		resources: want.ResourcesListChanged, uris: make(map[string]bool, len(want.ResourceSubscriptions)),
-	}
-	for _, uri := range want.ResourceSubscriptions {
-		f.uris[uri] = true
-	}
 	ack, err := json.Marshal(jsonrpcNotification{JSONRPC: "2.0", Method: "notifications/subscriptions/acknowledged", Params: map[string]any{
 		"_meta":         map[string]any{MetaSubscriptionID: req.ID},
 		"notifications": want,
@@ -122,7 +126,29 @@ func (s *Server) serveListen(w http.ResponseWriter, r *http.Request, ctx context
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
-	s.pumpSSE(w, r, sub, "message", string(ack), f.encode)
+	if final := s.pumpSSE(w, r, sub, "message", string(ack), f.encode); final != nil {
+		closing := newSuccessResponse(req.ID, map[string]any{
+			"resultType": "complete",
+			"_meta":      map[string]any{MetaSubscriptionID: req.ID},
+		})
+		final("message", string(bytes.TrimSuffix(encodeResponse(closing), []byte("\n"))))
+	}
+}
+
+// accepts reports whether the filter delivers n, so notifySubscribers keeps everything else out of the stream's buffer.
+func (f *listenFilter) accepts(n sseNotification) bool {
+	switch n.method {
+	case "notifications/tools/list_changed":
+		return f.tools
+	case "notifications/prompts/list_changed":
+		return f.prompts
+	case "notifications/resources/list_changed":
+		return f.resources
+	case "notifications/resources/updated":
+		p, ok := n.params.(resourceUpdatedParams)
+		return ok && f.uris[p.URI]
+	}
+	return false
 }
 
 func (f *listenFilter) encode(n sseNotification) ([]byte, bool) {
@@ -154,47 +180,42 @@ func (f *listenFilter) encode(n sseNotification) ([]byte, bool) {
 	return data, err == nil
 }
 
-// holdListenURIs counts uris as subscribed by caller under the limits resources/subscribe applies, answering why when
-// they would be passed and holding nothing then.
+// holdListenURIs counts uris as listened to by caller, in counters of their own so resources/unsubscribe cannot
+// release them, under the limits resources/subscribe applies to both kinds together. It answers why when they would be
+// passed, and holds nothing then.
 func (s *Server) holdListenURIs(caller string, uris []string) string {
 	if len(uris) == 0 {
 		return ""
 	}
 	s.sseMu.Lock()
 	defer s.sseMu.Unlock()
-	if s.resourceSubs == nil {
-		s.resourceSubs = make(map[string]int)
+	if s.listenSubs == nil {
+		s.listenSubs = make(map[string]int)
 	}
-	if s.resourceSubsBy == nil {
-		s.resourceSubsBy = make(map[resourceSubKey]int)
+	if s.listenSubsBy == nil {
+		s.listenSubsBy = make(map[resourceSubKey]int)
 	}
 	freshURIs, freshPairs := 0, 0
 	for _, uri := range uris {
-		if _, ok := s.resourceSubs[uri]; !ok {
+		if !s.uriHeldLocked(uri) {
 			freshURIs++
 		}
-		if _, ok := s.resourceSubsBy[resourceSubKey{caller: caller, uri: uri}]; !ok {
+		if !s.pairHeldLocked(resourceSubKey{caller: caller, uri: uri}) {
 			freshPairs++
 		}
 	}
-	if len(s.resourceSubs)+freshURIs > maxResourceSubscriptions {
+	if s.distinctURIsLocked()+freshURIs > maxResourceSubscriptions {
 		return fmt.Sprintf("too many distinct subscribed resource uris (max %d)", maxResourceSubscriptions)
 	}
-	if len(s.resourceSubsBy)+freshPairs > maxResourceSubscriptionPairs {
+	if s.pairsLocked()+freshPairs > maxResourceSubscriptionPairs {
 		return fmt.Sprintf("too many resource subscriptions (max %d)", maxResourceSubscriptionPairs)
 	}
-	own := 0
-	for k := range s.resourceSubsBy {
-		if k.caller == caller {
-			own++
-		}
-	}
-	if own+freshPairs > maxResourceSubscriptionsPerCaller {
+	if s.callerPairsLocked(caller)+freshPairs > maxResourceSubscriptionsPerCaller {
 		return fmt.Sprintf("too many distinct subscribed resource uris for this caller (max %d)", maxResourceSubscriptionsPerCaller)
 	}
 	for _, uri := range uris {
-		s.resourceSubs[uri]++
-		s.resourceSubsBy[resourceSubKey{caller: caller, uri: uri}]++
+		s.listenSubs[uri]++
+		s.listenSubsBy[resourceSubKey{caller: caller, uri: uri}]++
 	}
 	return ""
 }
@@ -206,16 +227,62 @@ func (s *Server) releaseListenURIs(caller string, uris []string) {
 	s.sseMu.Lock()
 	defer s.sseMu.Unlock()
 	for _, uri := range uris {
-		if n := s.resourceSubs[uri]; n <= 1 {
-			delete(s.resourceSubs, uri)
+		if n := s.listenSubs[uri]; n <= 1 {
+			delete(s.listenSubs, uri)
 		} else {
-			s.resourceSubs[uri] = n - 1
+			s.listenSubs[uri] = n - 1
 		}
 		key := resourceSubKey{caller: caller, uri: uri}
-		if n := s.resourceSubsBy[key]; n <= 1 {
-			delete(s.resourceSubsBy, key)
+		if n := s.listenSubsBy[key]; n <= 1 {
+			delete(s.listenSubsBy, key)
 		} else {
-			s.resourceSubsBy[key] = n - 1
+			s.listenSubsBy[key] = n - 1
 		}
 	}
+}
+
+func (s *Server) uriHeldLocked(uri string) bool {
+	return s.resourceSubs[uri] > 0 || s.listenSubs[uri] > 0
+}
+
+func (s *Server) pairHeldLocked(key resourceSubKey) bool {
+	return s.resourceSubsBy[key] > 0 || s.listenSubsBy[key] > 0
+}
+
+// distinctURIsLocked counts the URIs either kind of subscription holds, each once.
+func (s *Server) distinctURIsLocked() int {
+	n := len(s.resourceSubs)
+	for uri := range s.listenSubs {
+		if s.resourceSubs[uri] == 0 {
+			n++
+		}
+	}
+	return n
+}
+
+// pairsLocked counts the caller-URI pairs either kind holds, each once.
+func (s *Server) pairsLocked() int {
+	n := len(s.resourceSubsBy)
+	for key := range s.listenSubsBy {
+		if s.resourceSubsBy[key] == 0 {
+			n++
+		}
+	}
+	return n
+}
+
+// callerPairsLocked counts the distinct URIs caller holds across both kinds.
+func (s *Server) callerPairsLocked(caller string) int {
+	n := 0
+	for key := range s.resourceSubsBy {
+		if key.caller == caller {
+			n++
+		}
+	}
+	for key := range s.listenSubsBy {
+		if key.caller == caller && s.resourceSubsBy[key] == 0 {
+			n++
+		}
+	}
+	return n
 }
