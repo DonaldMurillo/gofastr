@@ -31,8 +31,9 @@ invariants:
       - test: cmd/gofastr/internal/packcmd.TestAppSpecLayoutBlocksRenderAndPack
       - test: cmd/gofastr/internal/packcmd.TestListFirstKeepsPageHeading
   - id: helper-hops-are-bounded
-    rule: Following package-local zero-argument helpers stops after 32 hops, so a self-referential or mutually recursive helper leaves the screen unreversed instead of hanging pack.
+    rule: Following package-local zero-argument helpers stops after 32 hops, in an appUI chain each call of the chain counting as one too, so a screen behind 33 helpers, or a self-referential or mutually recursive one, is left unreversed instead of hanging pack.
     enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestHelperHopsStopAfter32
       - test: cmd/gofastr/internal/packcmd.TestPackSelfReferentialHelperNoHang
       - test: cmd/gofastr/internal/packcmd.TestReverseEntityUIStopsOnARecursiveHelper
   - id: one-literal-pin
