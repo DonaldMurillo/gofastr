@@ -6,10 +6,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 )
 
-// RouteParamNames parses the param names a route declares, accepting
-// both supported syntaxes, "{slug}" / "{path...}" / "{id:int}" and
-// ":slug" / ":path*" / ":id:int", mirroring the router's
-// normalizeRoutePath + segParamName rules.
+// RouteParamNames returns the params a route declares, in {name} or :name syntax, as the router reads them.
 func RouteParamNames(route string) []string {
 	var names []string
 	for _, seg := range strings.Split(route, "/") {
@@ -20,8 +17,7 @@ func RouteParamNames(route string) []string {
 	return names
 }
 
-// RouteShape erases parameter names from the router's canonical route pattern.
-// It keeps literal segments, constraints and catch-all markers.
+// RouteShape is the router's canonical pattern for route with parameter names erased.
 func RouteShape(route string) string {
 	parts := strings.Split(app.CanonicalRoutePattern(route), "/")
 	for i, seg := range parts {
@@ -42,8 +38,7 @@ func RouteShape(route string) string {
 	return strings.Join(parts, "/")
 }
 
-// RouteSegParam returns the param a route segment declares, in either
-// supported syntax, and whether it declares one.
+// RouteSegParam returns the param a route segment declares and whether it declares one.
 func RouteSegParam(seg string) (string, bool) {
 	var name string
 	switch {
@@ -55,17 +50,12 @@ func RouteSegParam(seg string) (string, bool) {
 		return "", false
 	}
 	if i := strings.IndexByte(name, ':'); i >= 0 {
-		name = name[:i] // strip a typed constraint suffix
+		name = name[:i]
 	}
 	return name, true
 }
 
-// ScreenParamName returns the param key the generated SetParams reads:
-// a param literally named "id" when the route declares one (the
-// entity-record convention), else the LAST declared param: on a nested
-// route like /organizations/{organization_id}/users/{user_id} the final
-// segment identifies the record the screen shows. Falls back to "id"
-// for entity detail/edit screens whose {id} lives on a synthesized route.
+// ScreenParamName is the route param the generated SetParams reads: id when declared, else the last param, else id.
 func ScreenParamName(screen AppSpecScreen) string {
 	names := RouteParamNames(screen.Route)
 	for _, n := range names {
@@ -79,11 +69,7 @@ func ScreenParamName(screen AppSpecScreen) string {
 	return "id"
 }
 
-// ScreenRecordKeys returns the key columns of the record a screen shows
-// when that record's entity keys on more than one column, else nil. The
-// record is the screen's first entity_detail, else its first edit form.
-// Such a screen's {id} stands for the whole key: it mounts with one
-// segment per key column, the record path entityui links to.
+// ScreenRecordKeys returns the key columns of the composite-keyed record a screen shows, else nil.
 func ScreenRecordKeys(bp AppSpec, screen AppSpecScreen) []string {
 	entity := ""
 	for _, b := range AppSpecBlocksDeep(screen.Body) {
@@ -103,10 +89,7 @@ func ScreenRecordKeys(bp AppSpec, screen AppSpecScreen) []string {
 	return nil
 }
 
-// ScreenNeedsRouteID reports whether a screen's body tree contains an
-// entity_detail block or an entity_form with mode "edit". Both render a
-// specific record identified by a route {id} param. The first return is the
-// detail case, the second the edit-form case, so the validator can name it.
+// ScreenNeedsRouteID reports whether a screen holds an entity_detail and whether it holds an edit-mode entity_form.
 func ScreenNeedsRouteID(screen AppSpecScreen) (detail, editForm bool) {
 	for _, b := range AppSpecBlocksDeep(screen.Body) {
 		if IsEntityDetailBlock(b) {

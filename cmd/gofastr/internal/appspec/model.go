@@ -8,9 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/inflect"
 )
 
-// AppSpecHasTheme reports whether app.theme declared anything: light
-// tokens, a dark: map, or both. A theme with only a dark: map decodes to an
-// empty light map, so testing the light map alone dropped the dark palette.
+// AppSpecHasTheme reports whether app.theme declared light tokens, a dark map, or both.
 func AppSpecHasTheme(app AppSpecApp) bool {
 	return len(app.Theme) > 0 || len(app.ThemeDark) > 0
 }
@@ -34,8 +32,6 @@ func EntityDeclarationCRUDEnabled(decl framework.EntityDeclaration) bool {
 	return exposure.CRUD == nil || *exposure.CRUD
 }
 
-// appSpecEntityHasField reports whether the declaration already lists a field
-// of the given name (case-sensitive; column names are verbatim).
 func appSpecEntityHasField(decl framework.EntityDeclaration, name string) bool {
 	for _, f := range decl.Fields {
 		if f.Name == name {
@@ -45,9 +41,7 @@ func appSpecEntityHasField(decl framework.EntityDeclaration, name string) bool {
 	return false
 }
 
-// AppSpecKeyColNames lists the columns the record's id is made of: the
-// declared primary key, or "id" for an entity keyed on id alone (which
-// a declared id field, a relation included, fills).
+// AppSpecKeyColNames lists the columns a record's id is made of: the primary key, or id.
 func AppSpecKeyColNames(decl framework.EntityDeclaration) []string {
 	if DeclKeyIsID(decl) {
 		return []string{"id"}
@@ -55,17 +49,6 @@ func AppSpecKeyColNames(decl framework.EntityDeclaration) []string {
 	return decl.PrimaryKey
 }
 
-// appSpecEntityHasSystemColumn reports whether a framework-managed column
-// actually exists on THIS entity.
-//
-// appSpecFieldSystem answers "is this the name of a system column", which is
-// the right question for hiding one from a generated form and the wrong one
-// for validating a screen against a schema: created_at/updated_at exist only
-// under timestamps:, deleted_at only under soft_delete:, tenant_id only under
-// multi_tenant:. Treating the name as proof of existence let a screen name a
-// column the table does not have. Validation passed and the generated app
-// issued `WHERE created_at LIKE …` against a table without one, turning a
-// named generate-time error into an anonymous runtime failure.
 func appSpecEntityHasSystemColumn(decl framework.EntityDeclaration, name string) bool {
 	switch name {
 	case "id":
@@ -113,18 +96,6 @@ func AppSpecFieldSystem(name string) bool {
 	return false
 }
 
-// appSpecColumn resolves a column named in a screen block against the
-// entity's declaration, accounting for the columns the framework adds that
-// never appear in decl.Fields.
-//
-// Three of those exist, and every one of them was a legal, working screen
-// column before any of this validation existed: `id` (always present),
-// `created_at` / `updated_at` / `deleted_at` (from timestamps:/soft_delete:),
-// and a FK column declared by a top-level relations: block rather than a
-// type: relation field. Rejecting them as undefined broke app specs that
-// generated fine, and the message asserted something false. The column does
-// exist. None of them can carry a hidden or no_query flag of its own, so
-// found==nil with ok==true means "exists, unflagged".
 func appSpecColumn(decl framework.EntityDeclaration, name string) (found *framework.FieldDeclaration, ok bool) {
 	for i := range decl.Fields {
 		if decl.Fields[i].Name == name {
@@ -140,9 +111,6 @@ func appSpecColumn(decl framework.EntityDeclaration, name string) (found *framew
 	return nil, false
 }
 
-// appSpecIndexableColumn reports whether col is a column of the entity's
-// table, the ones an index may cover. id exists only under the generated
-// key.
 func appSpecIndexableColumn(decl framework.EntityDeclaration, col string) bool {
 	scope := EntityDeclarationScope(decl)
 	if scope.MultiTenant && scope.TenantField != "" && col == scope.TenantField {
@@ -158,23 +126,18 @@ func appSpecIndexableColumn(decl framework.EntityDeclaration, col string) bool {
 	if col == "id" {
 		return DeclKeyIsID(decl)
 	}
-	// The tenant column is the one tenant_field names: under a custom
-	// name the table has no tenant_id.
 	if col == "tenant_id" && scope.TenantField != "" {
 		return false
 	}
 	return true
 }
 
-// humanizeFieldLabel turns a column name into a header: "customer_id" →
-// "Customer", "due_on" → "Due", "generic_name" → "Generic Name".
 func humanizeFieldLabel(name string) string {
 	s := strings.TrimSuffix(name, "_id")
 	s = strings.TrimSuffix(s, "_on")
 	return ToDisplayName(s)
 }
 
-// appSpecEntityRelations maps each belongs_to FK column → target entity.
 func appSpecEntityRelations(decl framework.EntityDeclaration) map[string]string {
 	out := map[string]string{}
 	for _, f := range decl.Fields {
@@ -192,7 +155,6 @@ func appSpecEntityRelations(decl framework.EntityDeclaration) map[string]string 
 	return out
 }
 
-// appSpecDisplayField picks the human label column for an entity.
 func appSpecDisplayField(decl framework.EntityDeclaration) string {
 	for _, pref := range []string{"name", "title", "label", "email", "slug", "number", "code"} {
 		for _, f := range decl.Fields {
@@ -209,8 +171,6 @@ func appSpecDisplayField(decl framework.EntityDeclaration) string {
 	return "id"
 }
 
-// singularize is the naive English singularizer for entity display names,
-// shared with the admin battery so both spell "Category" the same way.
 func singularize(s string) string { return inflect.Singular(s) }
 
 // IsEditFormBlock reports whether block is an entity_form in edit mode.
@@ -218,11 +178,7 @@ func IsEditFormBlock(block AppSpecBlock) bool {
 	return IsEntityFormBlock(block) && strings.EqualFold(strings.TrimSpace(block.Mode), "edit")
 }
 
-// AppSpecBlocksDeep returns blocks and every block nested under them,
-// depth first, in document order. A screen's entity blocks count wherever
-// they sit, so every question about them (create synthesis, the drawer,
-// the CRUD file, the e2e target, route params) walks this, never Body
-// alone.
+// AppSpecBlocksDeep returns blocks and every block nested under them, depth first, in document order.
 func AppSpecBlocksDeep(blocks []AppSpecBlock) []AppSpecBlock {
 	var out []AppSpecBlock
 	for _, b := range blocks {
@@ -232,15 +188,12 @@ func AppSpecBlocksDeep(blocks []AppSpecBlock) []AppSpecBlock {
 	return out
 }
 
-// AppSpecCatalogKind reports whether a block kind maps to a framework/ui
-// catalog component (handled by renderAppSpecCatalogBlock).
+// AppSpecCatalogKind reports whether a block kind is drawn by a framework/ui catalog component.
 func AppSpecCatalogKind(kind string) bool {
 	kind = strings.ToLower(strings.TrimSpace(kind))
 	return appSpecCatalogKinds[kind] || AppSpecControlKind(kind)
 }
 
-// appSpecCatalogKinds is also the render-panic parity test's discovery
-// surface. Layout compositions belong here so the generator imports ui.
 var appSpecCatalogKinds = map[string]bool{
 	"stack": true, "cluster": true, "grid": true, "stat_grid": true,
 	"page_header": true, "hero": true, "section": true, "card": true,
@@ -249,11 +202,6 @@ var appSpecCatalogKinds = map[string]bool{
 	"markdown": true, "pricing": true,
 }
 
-// typeNamesCatalogKind reports whether a block's `type:` names a kind the
-// generator draws from the framework/ui catalog and nothing older:
-// decodeBlocks reads such a `type:` as the block's `kind:`. `section` is
-// left out. It is a catalog kind under `kind:` (ui.Section), and under
-// `type:` the plain <section> tag the sugar keys have always drawn.
 func typeNamesCatalogKind(blockType string) bool {
 	return AppSpecCatalogKind(blockType) && !strings.EqualFold(strings.TrimSpace(blockType), "section")
 }
@@ -306,10 +254,7 @@ func IsEntityDetailBlock(block AppSpecBlock) bool {
 	return AppSpecBlockKindIs(block, "entity_detail")
 }
 
-// entity_create is synthesized (never authored) by
-// appSpecSynthesizeCRUDScreens for the <list>/create screen. It renders
-// the appUI.Create builder. Authored entity_create blocks are refused at
-// decode and at validate.
+// IsEntityCreateBlock reports whether block is the entity_create block of a synthesized create screen.
 func IsEntityCreateBlock(block AppSpecBlock) bool {
 	return AppSpecBlockKindIs(block, "entity_create")
 }
@@ -322,9 +267,6 @@ func AppSpecBlockKindIs(block AppSpecBlock, want string) bool {
 	return strings.EqualFold(strings.TrimSpace(kind), want)
 }
 
-// toDisplayName converts a snake_case field/entity name to a human-readable Title Case display name.
-// displayAcronyms are words that read better fully uppercased in a label
-// ("mrr" → "MRR", not "Mrr"). Lowercase keys; matched case-insensitively per word.
 var displayAcronyms = map[string]bool{
 	"id": true, "url": true, "uri": true, "api": true, "mrr": true, "arr": true,
 	"ltv": true, "sku": true, "kpi": true, "roi": true, "sla": true, "ui": true,

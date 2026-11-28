@@ -10,3 +10,57 @@ docs:
   - framework/docs/content/app-spec.md
 on_change:
   - appspec.go, the spec types, is still owned by appgen; a change to a type there updates the decoder, the validator and pack's reader here in the same commit.
+invariants:
+  - id: system-columns-exist-only-when-declared
+    rule: A screen or index may name id, created_at and updated_at unless timestamps is false, deleted_at only under soft_delete, tenant_id only under multi_tenant with no custom tenant_field, and a foreign key column a relations block declares, each as an existing column with no flags of its own; id is indexable only under the generated key.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestSystemColumnsExistOnlyWhenTheEntityHasThem
+      - test: cmd/gofastr/internal/appspec.TestIndexTenantColumnFollowsTenantField
+      - test: cmd/gofastr/internal/appspec.TestIndexRefusesIDUnderNaturalKey
+  - id: blocks-are-walked-deep
+    rule: AppSpecBlocksDeep returns every block under the given ones, depth first in document order, and each question about a screen's entity blocks (create synthesis, the CRUD file, route params, the record screen) walks it rather than the screen's top-level body.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestBlocksDeepIsDepthFirstDocumentOrder
+    judge: Does this change answer a question about a screen's entity_list, entity_detail or entity_form blocks by looking only at Body instead of AppSpecBlocksDeep?
+  - id: block-kind-falls-back-to-type
+    rule: AppSpecBlockKindIs compares a block's Kind, or its Type when Kind is empty, case-insensitively and trimmed.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestEntityDetailRequiresIDInRoute
+      - test: cmd/gofastr/internal/appspec.TestEntityFormEditRequiresIDInRoute
+  - id: type-section-stays-a-tag
+    rule: Every catalog kind except section, spelled as a block's type, names that catalog kind; type section stays the plain section tag.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestDecodeReadsTypeSpelledCatalogKindAsKind
+      - test: cmd/gofastr/internal/appspec.TestNodeBlockRefusesEntityAndAuth
+  - id: dark-only-theme-is-a-theme
+    rule: AppSpecHasTheme is true for a theme with only a dark map.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestDarkOnlyThemeEmitsAppTheme
+  - id: create-form-omissions
+    rule: A create form omits a hidden field, a read-only or auto-generated field (auto_generate other than empty or none) and the server-filled id, created_at, updated_at and deleted_at, and draws every other field.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestCreateFormFieldOmission
+      - test: cmd/gofastr/internal/appspec.TestFormFieldsEntryMustDraw
+  - id: one-casing-rule
+    rule: ToSnakeCase puts a boundary before an upper-case letter that follows a lower-case letter or digit, or that ends an acronym before a lower-case letter, turns - and space into _, and collapses repeated underscores; ToCamelJSON is ToCamelCase with its first letter lowered; WireKey is the key crud's WireKey sends.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestToSnakeCase
+      - test: cmd/gofastr/internal/appspec.TestSnakeCamelRoundTrip
+      - test: cmd/gofastr/internal/appspec.TestToCamelJSON
+      - test: cmd/gofastr/internal/appgen.TestWireKeyMatchesCrudHandler
+  - id: one-relation-kind-table
+    rule: Every mapping between a framework.RelationType, its generated Go constant and its app spec string goes through RelationKinds.
+    judge: Does this change switch on framework.RelationType, or map a relation constant name or YAML spelling, anywhere other than through RelationKinds?
+  - id: id-key
+    rule: DeclKeyIsID is true for an entity with no primary_key or a primary_key of exactly [id].
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestDeclKeyIsID
+decisions:
+  - id: one-set-of-casing-converters
+    date: 2026-11-28
+    status: accepted
+    decision: casing.go holds the package's only name converters, shared by generate and pack.
+    rejected:
+      - option: Converters private to each file.
+        why: They disagreed on acronyms (HTTPServer became httpserver in one and h_t_t_p_server in the other).
+    upholds: [one-casing-rule]
