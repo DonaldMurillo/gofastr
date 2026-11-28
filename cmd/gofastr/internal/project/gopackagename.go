@@ -8,8 +8,7 @@ import (
 	"strings"
 )
 
-// FirstGoPackageName finds the first eligible package clause by file name.
-// A syntax error after the clause does not prevent package discovery.
+// FirstGoPackageName returns the first package clause in dir's non-test Go files, by file name.
 func FirstGoPackageName(dir, skipName string) (string, bool, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

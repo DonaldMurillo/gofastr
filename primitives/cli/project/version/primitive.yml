@@ -1,0 +1,52 @@
+primitive: cli.project.version
+summary: Which GoFastr release the CLI binary is, how gofastr version prints it, and the warning when the project requires another release.
+code:
+  - cmd/gofastr/internal/project/docs_serve.go
+  - cmd/gofastr/internal/project/init.go
+  - cmd/gofastr/internal/project/version.go
+  - cmd/gofastr/internal/project/versioncheck.go
+docs:
+  - framework/docs/content/cli.md
+invariants:
+  - id: version-source-order
+    rule: CliVersion is the -ldflags cli.Version when it is a version, else the build info's main module version when the main module is the gofastr module or one of its /cmd/ paths, else cli.Version unchanged.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestVersionReadsGoInstallBuildInfo
+      - test: cmd/gofastr/internal/appgen.TestVersionLdflagsWinOverBuildInfo
+      - test: cmd/gofastr/internal/appgen.TestVersionIgnoresForeignModule
+  - id: local-build-has-no-release
+    rule: InstalledFrameworkVersion is CliVersion normalized to a v-prefixed semver, and "" for dev, (devel) or any other non-version, so a local build never claims a release.
+    enforced_by:
+      - test: cmd/gofastr/internal/project.TestInstalledFrameworkVersionIsEmptyForADevBuild
+      - test: cmd/gofastr/internal/project.TestNormalizeFrameworkVersion
+  - id: release-tag-shape
+    rule: IsReleaseTag accepts a three-number semver only when it is not a pseudo-version and carries no + build metadata.
+    enforced_by:
+      - test: cmd/gofastr/internal/project.TestIsReleaseTag
+  - id: version-line-commit-fallback
+    rule: VersionLine takes the commit from vcs.revision cut to 12 characters only when no commit was stamped, and prints vcs.time labelled committed only when no build date was stamped; a stamped date is labelled built.
+    enforced_by:
+      - test: cmd/gofastr/internal/project.TestVersionLinePrintsCommitTimeOnlyWithoutABuildDate
+      - test: cmd/gofastr/internal/appgen.TestVersionCheckoutBuildShowsCommit
+  - id: mismatch-only-when-comparable
+    rule: VersionMismatch is empty when GOFASTR_NO_VERSION_CHECK is set, the CLI is a local build, there is no enclosing go.mod, the module is gofastr or one of its submodules, go.mod does not require gofastr, a replace overrides it, or the versions match; otherwise it names both versions and the go install command for the required one.
+    enforced_by:
+      - test: cmd/gofastr/internal/project.TestVersionMismatchWarns
+      - test: cmd/gofastr/internal/project.TestVersionMismatchQuiet
+decisions:
+  - id: no-latest-for-local-builds
+    date: 2026-11-28
+    status: accepted
+    decision: A CLI built from a checkout reports no release version, and callers that pin a framework version treat it as unknown.
+    rejected:
+      - option: Report @latest for a local build.
+        why: latest is not reproducible, so a scaffold pinned to it would build against whatever release is newest that day.
+    upholds: [local-build-has-no-release]
+  - id: replaced-module-is-not-compared
+    date: 2026-11-28
+    status: accepted
+    decision: VersionMismatch stays quiet when go.mod replaces the gofastr module.
+    rejected:
+      - option: Compare the required version anyway.
+        why: Under a replace the version in go.mod is not what builds, so the warning would be wrong.
+    upholds: [mismatch-only-when-comparable]

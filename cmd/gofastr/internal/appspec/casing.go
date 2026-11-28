@@ -6,19 +6,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/casing"
 )
 
-// Casing converters: the single in-package set. Before this file,
-// generate.go and pack.go each carried private converters that disagreed
-// on acronyms: toSnakeCase smashed them ("HTTPServer" → "httpserver")
-// while camelToSnake split every letter ("HTTPServer" →
-// "h_t_t_p_server"). Both directions now share one boundary rule: a
-// boundary is inserted before an uppercase run when the previous rune is
-// a lowercase letter or digit, or when the run is followed by a
-// lowercase letter (the acronym-to-word edge: "HTTPServer" →
-// "http_server", "APIKey" → "api_key").
-
-// ToCamelCase converts a separator-delimited name ("_", "-", " ") to
-// PascalCase. It never splits inside CamelCase input: there are no
-// case-based boundaries, only separator-based ones.
+// ToCamelCase joins a name's _, - or space separated parts into PascalCase, never splitting inside a part.
 func ToCamelCase(s string) string {
 	parts := strings.FieldsFunc(s, func(r rune) bool {
 		return r == '_' || r == '-' || r == ' '
@@ -32,8 +20,7 @@ func ToCamelCase(s string) string {
 	return result
 }
 
-// ToCamelJSON converts a field name to lowerCamelCase for JSON tags:
-// toCamelCase with the first rune lowered.
+// ToCamelJSON is ToCamelCase with its first letter lowered.
 func ToCamelJSON(value string) string {
 	camel := ToCamelCase(value)
 	if camel == "" {
@@ -42,19 +29,12 @@ func ToCamelJSON(value string) string {
 	return strings.ToLower(camel[:1]) + camel[1:]
 }
 
-// WireKey returns the default camel JSON key for a column or relation.
-// It uses the same conversion as crud.CrudHandler.WireKey: Title stays
-// Title, and _note becomes Note. Generated code uses WireKey for field
-// values and ToCamelJSON for lower-camel identifiers.
+// WireKey returns the JSON key crud.CrudHandler.WireKey sends for a column or relation.
 func WireKey(name string) string {
 	return casing.ToCamel(name)
 }
 
-// ToSnakeCase converts a name to snake_case for generated file names,
-// routes, and endpoints. It handles already-snake input ("blog_posts"),
-// CamelCase including acronyms ("HTTPServer" → "http_server",
-// "BlogPOST" → "blog_post"), and hyphenated or spaced input, collapsing
-// repeated separators.
+// ToSnakeCase converts a name to snake_case, splitting CamelCase and acronyms (HTTPServer to http_server).
 func ToSnakeCase(s string) string {
 	var b strings.Builder
 	runes := []rune(s)

@@ -1,0 +1,69 @@
+primitive: cli.appspec.seed
+summary: An app spec's seed section, its decoding, the demo rows a seed count generates, and the checks that keep a seed which generates green from aborting the shipped app's first boot.
+code:
+  - cmd/gofastr/internal/appspec/seed.go
+docs:
+  - framework/docs/content/app-spec.md
+on_change:
+  - A change to how the generated seed hook inserts, orders or resolves rows changes the matching check here, since each check mirrors what the hook does at boot.
+invariants:
+  - id: seed-decodes-strictly
+    rule: A seed block names its entity, and its count and every weight are whole numbers that are not negative.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestSeedRefusals
+      - test: cmd/gofastr/internal/appspec.TestDecodeRefusals
+      - test: cmd/gofastr/internal/appspec.TestSeedCountWeightsDecode
+  - id: generated-rows-skip-server-columns
+    rule: Count seeding leaves out system, hidden, read-only and auto-generated columns, and fills no relation, date, timestamp or json column that is not a key.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestSeedRowsSkipServerColumnsAndMixEnums
+  - id: enum-spread-is-weighted-and-mixed
+    rule: An enum column's generated values follow its weights exactly by largest remainder, are skewed and never uniform without weights, and are interleaved rather than grouped.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestSeedWeightsRespected
+      - test: cmd/gofastr/internal/appspec.TestSeedDefaultDistributionNotUniform
+      - test: cmd/gofastr/internal/appspec.TestSeedDefaultSkewSurvivesEqualWeights
+      - test: cmd/gofastr/internal/appspec.TestSeedRowsSkipServerColumnsAndMixEnums
+  - id: generated-keys-leave-the-e2e-row-free
+    rule: A key made only of enums takes one value combination per generated row starting from the second, an integer key starts at 1001 or the lowest value its min allows above 1, and a uuid key takes one value per row from a block apart from the e2e test's.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestSeedCountKeysDistinct
+      - test: cmd/gofastr/internal/appspec.TestSeedUUIDKeyTakesOneValuePerRow
+      - test: cmd/gofastr/internal/appspec.TestSeedRefusals
+  - id: seed-values-can-satisfy-their-field
+    rule: A seed value is refused when the field's boot validator, with its own coercions, can never accept it, a numeric literal on a relation column included, and every bad value of a row is reported in sorted key order.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestSeedRejectsNumericRelationValue
+      - test: cmd/gofastr/internal/appspec.TestSeedRejectsUnsatisfiableValueTypes
+      - test: cmd/gofastr/internal/appspec.TestSeedAcceptsSatisfiableValueTypes
+      - test: cmd/gofastr/internal/appspec.TestSeedErrorsReportEveryField
+      - test: cmd/gofastr/internal/packcmd.TestSeedVerdictMatchesBootValidator
+  - id: constraints-judged-in-final-form
+    rule: A seed value's pattern, bounds and enum membership are judged by the boot validator itself, and only when the value already has the Go type the generated code stores.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestSeedVerdictMatchesBootValidator
+      - test: cmd/gofastr/internal/appspec.TestSeedAcceptsSatisfiableValueTypes
+  - id: seed-runs-at-boot
+    rule: A seed names a declared entity, no entity has two seed blocks, every row key names a declared column, a count neither needs a required relation nor exceeds an enum key's combinations, a generated key is fillable, unseeded and inside its bounds, and an @entity.field=value reference points at an entity seeded earlier.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestSeedRefusals
+      - test: cmd/gofastr/internal/appspec.TestSeedRefusesDuplicateEntityBlocks
+      - test: cmd/gofastr/internal/appspec.TestSeedRowUnknownColumnRefused
+      - test: cmd/gofastr/internal/appgen.TestSeedCountKeysDistinct
+decisions:
+  - id: mirror-the-boot-coercions
+    date: 2026-11-28
+    status: accepted
+    decision: The seed type check accepts exactly what the runtime's coercions accept (a string 42 on an int column passes, a fraction does not).
+    rejected:
+      - option: A stricter check of the literal YAML type.
+        why: It would refuse seeds that boot, so validate and the shipped app would disagree.
+    upholds: [seed-values-can-satisfy-their-field, constraints-judged-in-final-form]
+  - id: count-seeding-fabricates-no-relations
+    date: 2026-11-28
+    status: accepted
+    decision: Count seeding generates scalar and enum values only; rows with relations are written as explicit rows.
+    rejected:
+      - option: Invent relation values.
+        why: A made-up id points at no row, and a failed seed row aborts startup.
+    upholds: [generated-rows-skip-server-columns]

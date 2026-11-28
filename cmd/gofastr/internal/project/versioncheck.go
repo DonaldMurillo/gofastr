@@ -8,23 +8,15 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-// EnvNoVersionCheck turns VersionMismatch off when set to any non-empty
-// value.
+// EnvNoVersionCheck, set to any value, turns VersionMismatch off.
 const EnvNoVersionCheck = "GOFASTR_NO_VERSION_CHECK"
 
-// VersionMismatch is the warning to print when the project around dir
-// requires a different GoFastr release than this CLI is, or "" when they
-// match or there is nothing to compare: a dev build of the CLI, no
-// enclosing go.mod, a go.mod that does not require GoFastr, the GoFastr
-// module itself, or a replace directive (the version in go.mod is then
-// not what builds). A project pinned to v0.95.0 run with a v0.94.1 CLI
-// printed nothing before (#635): generated code and checks came from the
-// older release.
+// VersionMismatch warns when dir's project requires another GoFastr release than this CLI, else "".
 func VersionMismatch(dir string) string {
 	if os.Getenv(EnvNoVersionCheck) != "" {
 		return ""
 	}
-	cliV := normalizeFrameworkVersion(CliVersion())
+	cliV := InstalledFrameworkVersion()
 	if cliV == "" {
 		return ""
 	}

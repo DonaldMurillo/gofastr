@@ -1,0 +1,157 @@
+primitive: cli.appspec.validate.blocks
+summary: The per-block checks of a screen body, entity lists, forms and record pages, charts and stat cards, catalog and control blocks, so a block the load passes renders as written instead of panicking, vanishing or leaking a masked column.
+code:
+  - cmd/gofastr/internal/appspec/validate_block.go
+  - cmd/gofastr/internal/appspec/catalog_required.go
+  - cmd/gofastr/internal/appspec/appspec_controls.go
+docs:
+  - framework/docs/content/app-spec.md
+on_change:
+  - A new prop a framework/ui component panics without is refused in validateCatalogRequired or validateAppSpecControlBlock and gets a case in TestRenderPanicParity.
+twins:
+  - job: Which props a catalog or control component refuses to render without.
+    why: The spec checks run on the spec's props while the component constructors run in the generated app's Go, so they cannot share code; TestRenderPanicParity renders each refused shape and keeps the two lists in step.
+    sites:
+      - path: cmd/gofastr/internal/appspec/catalog_required.go
+        note: validateCatalogRequired, the catalog blocks' required props.
+      - path: cmd/gofastr/internal/appspec/appspec_controls.go
+        note: validateAppSpecControlBlock, the control blocks' required props.
+      - path: framework/ui/components.go
+        note: The framework/ui constructors that panic on the same shapes.
+invariants:
+  - id: props-belong-to-their-kind
+    rule: bulk and filter are refused on any block but an entity_list, a label without children needs for, a fieldset needs legend, an image needs src, a heading level is 1 to 6, a raw block and an unknown block type are refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAppSpecValidationFailures
+      - test: cmd/gofastr/internal/appspec.TestBlocksNeedRequiredProps
+      - test: cmd/gofastr/internal/appspec.TestValidateAppSpecBlockErrors
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
+  - id: links-are-safe-and-labelled
+    rule: A link block has text, children or an aria label, and every href, form action, auth footer href and catalog link the load passes is one urlsafe.Anchor accepts, the predicate the renderer applies.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestLinkContentMatchesRenderer
+      - test: cmd/gofastr/internal/appspec.TestAppSpecControlBlocksNeedLabels
+      - test: cmd/gofastr/internal/appspec.TestAuthFooterHrefRejectedAtValidate
+      - test: cmd/gofastr/internal/appspec.TestAuthFormActionRedValidated
+      - test: cmd/gofastr/internal/appspec.TestCatalogBlockNeedsRequiredProps
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
+  - id: entity-blocks-target-crud-entities
+    rule: An entity_list, entity_form, entity_detail, chart source and stat_card source name a declared entity, by name rather than route, that has CRUD enabled; the retired entity_create and entity_edit kinds are refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAppSpecValidationFailures
+      - test: cmd/gofastr/internal/appspec.TestValidateAppSpecBlockErrors
+      - test: cmd/gofastr/internal/appspec.TestChartSourceCrudDisabledRejected
+      - test: cmd/gofastr/internal/appspec.TestChartShapeMatchesBootCheck
+      - test: cmd/gofastr/internal/appspec.TestStatCardEntityIsAName
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusesRetiredEntityKinds
+  - id: list-columns-draw
+    rule: Each entity_list fields entry resolves, by name, camel JSON spelling or the generated id of an id-keyed entity, to one column that is not hidden or omitted by display.fields and is listed once; limit is not negative and mode is table, cards or empty.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestValidateAppSpecBlockErrors
+      - test: cmd/gofastr/internal/appspec.TestListRefusesMissingIDColumn
+      - test: cmd/gofastr/internal/appspec.TestEntityListModeRefused
+      - test: cmd/gofastr/internal/appgen.TestEntityListThatCannotDrawIsRefusedAtLoad
+      - test: cmd/gofastr/internal/appgen.TestGeneratedEntityListDraws
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
+  - id: form-fields-draw
+    rule: An entity_form mode is create, edit or empty, each fields entry names a declared field the form draws (not hidden, and on a create form not read-only, auto-generated or server-filled) once, and a create form lists every required field with no default that the server does not fill and no before_create hook may set.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestFormFieldsEntryMustDraw
+      - test: cmd/gofastr/internal/appspec.TestCreateFormMustCoverRequired
+      - test: cmd/gofastr/internal/appspec.TestCreateFormMayOmitServerSet
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
+  - id: record-page-draws-from-display
+    rule: An entity_detail block takes no text and no fields.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
+  - id: charts-group-a-shown-column
+    rule: A chart has a source with entity and group_by, and group_by is a declared column that is not hidden, no_query, json or a many-to-many relation, and the load runs entityui.CheckChartFields over the fields the generated entity registers.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestChartWithoutSourceRejected
+      - test: cmd/gofastr/internal/appspec.TestChartShapeMatchesBootCheck
+      - test: cmd/gofastr/internal/appspec.TestChartGroupByLoadMatchesBoot
+      - test: cmd/gofastr/internal/appspec.TestScreenGuardsRejectHiddenColumns
+      - test: cmd/gofastr/internal/appspec.TestChartGroupByRefusesMaskedColumn
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
+  - id: stat-cards-read-what-they-say
+    rule: A stat_card has a label and, without a source, a value; its source filter names no hidden or no_query column and parses over the registered fields with literals its columns hold; agg is count or sum, a count takes no field or format, a sum totals an int, float or decimal field that is not hidden or no_query and formats as money or nothing.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestCatalogBlockNeedsRequiredProps
+      - test: cmd/gofastr/internal/appspec.TestStatFilterLoadMatchesBoot
+      - test: cmd/gofastr/internal/appspec.TestStatCardNoQueryFilterRejected
+      - test: cmd/gofastr/internal/appspec.TestStatCardAggIsExact
+      - test: cmd/gofastr/internal/appspec.TestStatCardShapeMatchesBootCheck
+      - test: cmd/gofastr/internal/appspec.TestStatCardFilterRefusesMistypedValue
+      - test: cmd/gofastr/internal/appspec.TestStatCardSumRefusesMaskedColumn
+  - id: list-pin-is-a-safe-equality
+    rule: An entity_list filter is one bare field=value whose field resolves to a declared column that is not hidden, no_query or of a type no equality matches, and whose value the column's type holds and, for an enum, is one of its values.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestEntityListFilterRefusesMalformed
+      - test: cmd/gofastr/internal/appspec.TestEntityListFilterRefusesHiddenColumn
+      - test: cmd/gofastr/internal/appspec.TestEntityListFilterRefusesNoQueryColumn
+      - test: cmd/gofastr/internal/appspec.TestEntityListFilterRefusesJSONColumn
+      - test: cmd/gofastr/internal/appspec.TestEntityListFilterRefusesUnknownColumn
+      - test: cmd/gofastr/internal/appspec.TestEntityListFilterRefusesMistypedValue
+  - id: catalog-props-render
+    rule: A catalog block carries every prop its framework/ui component panics without, and every prop the generator reads as text (catalogTextProps) is text, not a number or bool.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestCatalogBlockNeedsRequiredProps
+      - test: cmd/gofastr/internal/appspec.TestCatalogTextPropRefusesNumber
+      - test: cmd/gofastr/internal/appspec.TestRenderPanicParity
+      - test: cmd/gofastr/internal/appgen.TestCatalogTextPropsCoverGenerator
+  - id: layout-props-are-tokens
+    rule: A layout block's gap is a design token, a stack or cluster's align and justify are supported values, each of those props is text, and a cluster's no_wrap is a bool.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAppSpecLayoutBlocksRejectNonTokenGap
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
+  - id: node-blocks-hold-node-kinds
+    rule: A node block holds no catalog block, entity block or auth form at any depth, and a custom_form holds no custom_form.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestNodeBlockRefusesEntityAndAuth
+      - test: cmd/gofastr/internal/appspec.TestAppSpecControlBlocksNeedLabels
+  - id: control-blocks-render
+    rule: A control block carries the label, name, legend, options, columns or action its component needs; options, columns and rows have the list shapes the generator reads; enum props fold ASCII only.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAppSpecControlBlocksNeedLabels
+      - test: cmd/gofastr/internal/appspec.TestControlEnumsFoldASCIIOnly
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
+  - id: control-defaults-are-dropped
+    rule: An action_button's variant primary and type button and a nav_links gap md decode as absent, lower-cased otherwise, so pack writes a control back the way the author would.
+    enforced_by:
+      - test: cmd/gofastr/internal/packcmd.TestPackUnionControlCanonicalRoundTrip
+  - id: actions-are-supported
+    rule: A block's actions use supported events, each event and name once, a click action first, and each with client_js.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestValidateAppSpecActionsErrors
+      - test: cmd/gofastr/internal/appspec.TestAppSpecValidationFailures
+  - id: relation-keys-match
+    rule: A foreign key names one declared field per column of the key it references, in key order, none twice, none a state field, each of the referenced column's type family; a many_to_many links two one-column keys.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestForeignKeyRefusedAtLoad
+      - test: cmd/gofastr/internal/appspec.TestStateFieldRefusedInForeignKey
+decisions:
+  - id: refuse-what-the-renderer-would-degrade
+    date: 2026-11-28
+    status: accepted
+    decision: An unsafe href or form action is refused at load with the renderer's own predicate.
+    rejected:
+      - option: Let the renderer swap the href for "#" or draw a form that goes nowhere.
+        why: Safe but silent, the author asked for a link or a form and ships one that does nothing.
+    upholds: [links-are-safe-and-labelled]
+  - id: bar-masked-group-by-at-load
+    date: 2026-11-28
+    status: accepted
+    decision: A chart's group_by and a summed stat_card field may not be hidden or no_query.
+    rejected:
+      - option: Mask the grouped values in groupCounts.
+        why: Every row would fall into one masked bucket, so the chart would show nothing useful.
+    upholds: [charts-group-a-shown-column, stat-cards-read-what-they-say]
+  - id: spec-words-before-the-boot-check
+    date: 2026-11-28
+    status: accepted
+    decision: The common chart and stat_card mistakes are refused in the spec's own words, and the boot check entityui runs is called after them as the backstop.
+    rejected:
+      - option: Call only the boot check.
+        why: Its errors name Go fields and options the author never wrote.
+    upholds: [charts-group-a-shown-column, stat-cards-read-what-they-say]

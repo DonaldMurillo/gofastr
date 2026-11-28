@@ -1,0 +1,28 @@
+primitive: cli.appspec.phrases
+summary: Collects the reader-facing text one generated file says and declares each as an i18n phrase at the top of that file, so the app's catalog can translate it.
+code:
+  - cmd/gofastr/internal/appspec/appspec_phrases.go
+docs:
+  - framework/docs/content/app-spec.md
+invariants:
+  - id: one-phrase-per-text
+    rule: The same English said twice in one file is one phrase, and a key or variable name already taken gets the next free _2, _3 suffix.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestPhraseCollectorDedupesAndNumbers
+  - id: phrases-in-first-use-order
+    rule: Block declares a file's phrases in first-use order, and nothing for a file that says none.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestPhraseCollectorDedupesAndNumbers
+  - id: slug-rules
+    rule: A phrase slug is the text's first four ASCII words, lower-cased and joined by _, with an apostrophe kept inside its word, n before a leading digit, and text when there is no ASCII word.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestPhraseSlugRules
+decisions:
+  - id: phrases-live-in-their-file
+    date: 2026-11-28
+    status: accepted
+    decision: Each generated file declares the phrases it says, keyed <app>.screens.<screen>, <app>.screens.<entity>_crud or <app>.chrome, with a variable prefix per file.
+    rejected:
+      - option: One shared phrases file for the app.
+        why: generate app --add would have to rewrite it to add a screen, and pack could not read a file's text back from that file alone.
+    upholds: [one-phrase-per-text]

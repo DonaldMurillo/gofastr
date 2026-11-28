@@ -7,6 +7,7 @@ func TestValidWindowsFileName(t *testing.T) {
 		"bad<name", "bad>name", "bad:name", `bad"name`, "bad|name",
 		"bad?name", "bad*name", "bad/name", `bad\name`, "bad\nname",
 		"NUL.foo", "NUL .txt", "con.txt", "COM1.exe", "LPT9.log",
+		"PRN", "aux.exe", "CONIN$", "conout$.txt",
 		"COM¹", "COM².txt", "COM³.exe", "LPT¹", "LPT².log", "LPT³",
 		"name.", "name ", ".", "..",
 	} {
