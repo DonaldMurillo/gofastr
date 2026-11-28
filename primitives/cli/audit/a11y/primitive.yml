@@ -69,9 +69,9 @@ decisions:
   - id: sitemap-origin-not-compared
     date: 2026-11-28
     status: accepted
-    decision: "Open finding: discoverA11yPages is not given the --url origin, so a sitemap location or index part on another origin, such as https://other.example/private, is scanned or read as its path on the configured origin."
+    decision: "Open finding, tracked in issue #940: discoverA11yPages is not given the --url origin, so a sitemap location or index part on another origin, such as https://other.example/private, is scanned or read as its path on the configured origin."
     rejected:
       - option: Compare each location's origin with --url and drop or refuse a foreign one.
         why: Not built yet; this sweep changes no behaviour, and the index parts are read the same way.
-    revisit_if: A sitemap that lists another origin's URLs is audited, or the a11y scan is pointed at sitemaps the app does not generate.
+    revisit_if: "Issue #940 is decided, a sitemap that lists another origin's URLs is audited, or the a11y scan is pointed at sitemaps the app does not generate."
     upholds: [sitemap-discovery]
