@@ -125,7 +125,7 @@ func buildChildEnv(cfg SpawnConfig) []string {
 
 func (c *Client) initialize(ctx context.Context) error {
 	params := map[string]any{
-		"protocolVersion": "2024-11-05",
+		"protocolVersion": "2025-06-18",
 		"capabilities":    map[string]any{},
 		"clientInfo": map[string]any{
 			"name":    "gofastr-harness",

@@ -28,6 +28,7 @@ Call `SetServerName(name)` to override only the name, `SetInstructions(text)` (o
 `Server.HandleRequest` handles `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list`, `resources/read`, `resources/templates/list`, `resources/subscribe`, `resources/unsubscribe`, `prompts/list`, and `prompts/get`.
 
 - **Protocol negotiation:** Supports `2025-06-18` (`mcp.LatestProtocolVersion`) and `2025-03-26` (`mcp.SupportedProtocolVersions()`). Unknown or omitted client versions receive `2025-06-18`. JSON-RPC batches return `-32600` (`ErrInvalidRequest`).
+- **`MCP-Protocol-Version` header:** On the HTTP transports (`ServeHTTP` and both `ServeSSE` methods), a request whose `MCP-Protocol-Version` header (`mcp.ProtocolVersionHeader`) names a revision the server does not speak, or that repeats the header, is answered `400` with `-32600` and `error.data` of `{"supported": [...], "requested": "..."}`. An absent header is served, as the spec allows for clients older than `2025-06-18`, and `initialize` is never refused for its header because it negotiates the version itself.
 - **Exported error codes:** `ErrParse` (-32700), `ErrInvalidRequest` (-32600), `ErrMethodNotFound` (-32601), `ErrInvalidParams` (-32602), `ErrInternalError` (-32603), carried on `*RPCError`.
 - **Capabilities:** `initialize` advertises `tools` always, `resources` (with `subscribe: true`) once any resource or template is registered, and `prompts` once any prompt is registered—all with `listChanged: true`.
 

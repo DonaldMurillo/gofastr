@@ -69,6 +69,13 @@ invariants:
     enforced_by:
       - test: core/mcp.TestInitializeNegotiatesVersion
       - test: core/mcp.TestSupportedProtocolVersionsList
+  - id: version-header-checked
+    rule: ServeHTTP and ServeSSE (POST and GET) answer 400 with -32600 under the request id and the SupportedProtocolVersions list in error data when the MCP-Protocol-Version header is repeated or names a revision the server does not speak; an absent header, or any header on initialize, is served.
+    enforced_by:
+      - test: core/mcp.TestVersionHeaderRefusesUnsupported
+      - test: core/mcp.TestVersionHeaderLeavesInitializeToNegotiation
+      - test: core/mcp.TestVersionHeaderRefusesNotification
+      - test: core/mcp.TestVersionHeaderRefusesStream
   - id: capabilities-follow-registries
     rule: initialize always advertises tools, advertises resources (with subscribe) when a resource or a resource template is registered, and prompts only when a prompt is registered.
     enforced_by:
