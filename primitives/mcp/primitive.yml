@@ -5,6 +5,13 @@ code:
 docs:
   - framework/docs/content/mcp.md
 twins:
+  - job: Negotiate the MCP revision on initialize and check the MCP-Protocol-Version header on later HTTP requests.
+    why: Work not yet done; the harness control-plane server answers initialize with a fixed 2024-11-05, a revision older than the header, and its HTTP transport never reads MCP-Protocol-Version, so the two servers disagree on which revisions a client may speak.
+    sites:
+      - path: core/mcp/protocol.go
+        note: negotiateProtocolVersion, and refuseVersionHeader in core/mcp/transport.go.
+      - path: framework/experimental/harness/control/mcpserver/server.go
+        note: handleInitialize, which always answers 2024-11-05; its http.go reads no MCP-Protocol-Version.
   - job: Run an app-supplied gate or callback under a recover guard that logs the scrubbed panic and fails closed.
     why: Work not yet done; each site answers a different shape (a bool for listings and notifications, an RPCError for tools and prompts, a masked sentinel for Gated and resource gates), so one helper would need to return the error and let each caller map it.
     sites:
@@ -88,12 +95,15 @@ invariants:
       - test: core/mcp.TestInitializeNegotiatesVersion
       - test: core/mcp.TestSupportedProtocolVersionsList
   - id: version-header-checked
-    rule: For a request whose params carry no _meta protocolVersion, ServeHTTP and ServeSSE (POST and GET) answer 400 with -32600 under the request id and the SupportedProtocolVersions list in error data when the MCP-Protocol-Version header is repeated or names a revision initialize does not negotiate; an absent header, or any header on initialize, is served.
+    rule: For a request whose params carry no _meta protocolVersion, ServeHTTP and ServeSSE (POST and GET) answer 400 with -32600 and the SupportedProtocolVersions list in error data when the MCP-Protocol-Version header names a revision initialize does not negotiate, or is repeated (then saying "repeated"); the reply carries the request id when it is a string, a number or null, and a null id otherwise. An absent header, a supported one (the GET stream opens and sends its endpoint event), or any header on initialize, is served.
     enforced_by:
       - test: core/mcp.TestVersionHeaderRefusesUnsupported
       - test: core/mcp.TestVersionHeaderLeavesInitializeToNegotiation
       - test: core/mcp.TestVersionHeaderRefusesNotification
       - test: core/mcp.TestVersionHeaderRefusesStream
+      - test: core/mcp.TestVersionHeaderOpensStreamWhenSupported
+      - test: core/mcp.TestVersionHeaderRepeatedSaysRepeated
+      - test: core/mcp.TestVersionHeaderRefusalNullsInvalidID
   - id: transport-refusals-null-invalid-ids
     rule: A refusal the HTTP transports answer before HandleRequest (an unsupported MCP-Protocol-Version header, a modern header mismatch) answers under the request's id when it is a string, a number or null, and under a null id otherwise.
     enforced_by:
