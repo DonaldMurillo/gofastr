@@ -1,6 +1,64 @@
 primitive: cli.dev.watch
-summary: The dev loop's file watch - it reads the build target's package graph with go list, polls the project's source and embedded-asset files every 500ms and reports a change, telling a save from the graph moving files into or out of the walk.
+summary: The dev loops' file watch - it reads the build target's package graph with go list, polls the project's source and embedded-asset files every 500ms and reports a change, telling a save from the graph moving files into or out of the walk.
 code:
   - cmd/gofastr/internal/devcmd/dev_watch.go
 docs:
   - framework/docs/content/cli.md
+invariants:
+  - id: what-the-walk-skips
+    rule: The walk skips vendor and node_modules and every directory whose name starts with a dot at any depth, and dist, gen and tmp at the root only, but always walks the root, whatever its name, and every directory the package graph runs through.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestWatcherSkipsHiddenAndOutput
+      - test: cmd/gofastr/internal/devcmd.TestScanModTimesIgnoresVendorGitNodeModules
+      - test: cmd/gofastr/internal/devcmd.TestWatcherKeepsGenSourcePackages
+      - test: cmd/gofastr/internal/devcmd.TestWatcherWalksPkgGen
+  - id: what-the-walk-watches
+    rule: Scan records .go, .js, .css, .html and .md files, the ones Go embeds as well as source; a symlink to such a file counts by its target's time, a symlink to a directory is not followed, and a symlinked root is resolved on every scan.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestScanModTimesPicksUpAllAssetTypes
+      - test: cmd/gofastr/internal/devcmd.TestScanModTimesPicksUpWatchedExtensions
+      - test: cmd/gofastr/internal/devcmd.TestWatchFollowsFileSymlink
+      - test: cmd/gofastr/internal/devcmd.TestWatchFollowsOnlySourceFiles
+      - test: cmd/gofastr/internal/devcmd.TestWatchFollowsRootSymlink
+      - test: cmd/gofastr/internal/devcmd.TestWatchDetectsRootSymlinkRetarget
+  - id: graph-from-go-list
+    rule: The package graph is the non-standard dependency directories go list -deps reports for the target under the build's environment, plus the target's own directory even when go list fails; a cancelled watch context ends a query in progress.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestWatchUsesBuildEnv
+      - test: cmd/gofastr/internal/devcmd.TestWatchQueryEndsOnCancel
+      - test: cmd/gofastr/internal/devcmd.TestWatcherWalksPkgGen
+  - id: a-failed-query-keeps-the-graph
+    rule: go list runs without -e, so a package that does not load fails the query, and a failed query keeps the graph the watch had; a successful one replaces it, so a dropped import stops keeping its directory.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestWatcherKeepsGraphOnBrokenSave
+      - test: cmd/gofastr/internal/devcmd.TestRefreshDropsRemovedImport
+  - id: newest-graph-wins
+    rule: Refresh calls run one at a time in call order, so a slower older query never stores its graph over a newer one.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestRefreshKeepsNewestGraph
+  - id: graph-change-is-not-a-save
+    rule: When the graph changes, a file it brings into the walk that is not newer than the last change's scan joins the snapshot and a file it drops that is still on disk leaves it, while a newer file or a removed one is still a change.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestRefreshIsNotAChange
+      - test: cmd/gofastr/internal/devcmd.TestRebaseKeepsRealChanges
+  - id: a-graph-move-mid-walk-waits
+    rule: When the graph changes while a scan is walking, that poll reports no change and the next one rescans.
+    judge: Does this change let Poller.Changed compare a scan taken while the graph moved?
+  - id: first-snapshot-keeps-pre-build-times
+    rule: The first snapshot keeps every file and time from the scan before the first build and adds a file only the later scan has when it is not newer than the first scan's start, so a save during the build or the graph read triggers a rebuild.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestFirstSnapshotKeepsPreBuildTimes
+  - id: change-is-add-remove-or-modify
+    rule: Changed is true when a file was added, removed or has another mod time.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestChangedDetectsModifiedFile
+      - test: cmd/gofastr/internal/devcmd.TestChangedDetectsDeletedFile
+decisions:
+  - id: dot-dirs-are-never-the-app
+    date: 2026-11-28
+    status: accepted
+    decision: Every dot-directory below the root is skipped unless the package graph runs through it.
+    rejected:
+      - option: Skip only .git and .gofastr.
+        why: Agent worktrees under .claude/worktrees and editor state saved there restarted the dev server on every save.
+    upholds: [what-the-walk-skips]
