@@ -91,6 +91,7 @@ func TestURLRefusesUnquotableText(t *testing.T) {
 	for _, u := range []string{
 		"http://example.com/x",
 		"https://example.com/it's",
+		"https://example.com/it\u2019s",
 		"https://example.com/$(id)",
 		"https://example.com/`id`",
 		"https://example.com/a b",
@@ -115,15 +116,58 @@ func TestURLRefusesUnquotableText(t *testing.T) {
 	}
 }
 
-func TestEmitterRefusesQuoteInURL(t *testing.T) {
-	v := scriptValues{Name: "app", Version: "1.0.0", BaseURL: "https://x.example/'; rm -rf ~; '", EnvPrefix: "APP"}
-	if err := checkScriptValues(v); err == nil {
-		t.Fatal("a quote in the base URL reached the templates")
+func TestURLRefusalHidesCredentials(t *testing.T) {
+	for _, u := range []string{
+		"https://user:s3cret@example.com/x",
+		"https://s3cret@example.com/x",
+		"https://user:s3cret@example.com/it's",
+		"http://user:s3cret@example.com/x",
+		"https://user:s3cret@/x",
+		"https://user:s3cret@example.com:port/x",
+		"https://user:s3cret@example.com/x?y=1",
+		"https://user:s3/cret@example.com/x",
+	} {
+		_, err := checkBaseURL(u)
+		if err == nil {
+			t.Errorf("%q: accepted", u)
+			continue
+		}
+		if msg := err.Error(); strings.Contains(msg, "s3") || strings.Contains(msg, "cret") || strings.Contains(u, "example.com") && !strings.Contains(msg, "example.com") {
+			t.Errorf("%q: refusal %q shows the credentials or hides the host", u, msg)
+		}
 	}
-	v.BaseURL = "https://x.example/r"
-	v.Unix = []scriptBuild{{Platform: "linux/amd64", Arch: "amd64", File: "a'b.tar.gz", SHA256: strings.Repeat("0", 64)}}
-	if err := checkScriptValues(v); err == nil {
-		t.Fatal("a quote in an archive name reached the templates")
+}
+
+func TestEmitterRefusesQuoteInURL(t *testing.T) {
+	sum := strings.Repeat("0", 64)
+	valid := func() scriptValues {
+		return scriptValues{
+			Name: "app", Version: "1.0.0", BaseURL: "https://x.example/r", EnvPrefix: "APP",
+			Unix:    []scriptBuild{{Platform: "linux/amd64", Arch: "amd64", File: "app-linux-amd64.tar.gz", SHA256: sum}},
+			Windows: []scriptBuild{{Platform: "windows/amd64", Arch: "amd64", File: "app-windows-amd64.zip", SHA256: sum}},
+		}
+	}
+	if err := checkScriptValues(valid()); err != nil {
+		t.Fatalf("valid values refused: %v", err)
+	}
+	for field, bad := range map[string]func(*scriptValues){
+		"name":             func(v *scriptValues) { v.Name = "a'pp" },
+		"version":          func(v *scriptValues) { v.Version = "1.0.0'" },
+		"base URL":         func(v *scriptValues) { v.BaseURL = "https://x.example/'; rm -rf ~; '" },
+		"http base URL":    func(v *scriptValues) { v.BaseURL = "http://x.example/r" },
+		"env prefix":       func(v *scriptValues) { v.EnvPrefix = "APP'" },
+		"archive name":     func(v *scriptValues) { v.Unix[0].File = "a'b.tar.gz" },
+		"hash":             func(v *scriptValues) { v.Unix[0].SHA256 = sum[:63] + "'" },
+		"arch":             func(v *scriptValues) { v.Unix[0].Arch = "amd'64" },
+		"platform":         func(v *scriptValues) { v.Unix[0].Platform = "linux/amd'64" },
+		"windows platform": func(v *scriptValues) { v.Windows[0].Platform = "windowsamd64" },
+		"windows hash":     func(v *scriptValues) { v.Windows[0].SHA256 = "abc" },
+	} {
+		v := valid()
+		bad(&v)
+		if err := checkScriptValues(v); err == nil {
+			t.Errorf("a bad %s reached the templates", field)
+		}
 	}
 }
 

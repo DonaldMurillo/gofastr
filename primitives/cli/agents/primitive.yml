@@ -22,7 +22,7 @@ invariants:
       - test: cmd/gofastr/internal/agentscmd.TestRunAgentsInitExistingExits
       - test: cmd/gofastr/internal/agentscmd.TestAgentsInitRefusesAnAGENTSmdLinkedOutside
   - id: sync-rewrites-only-between-markers
-    rule: RefreshAgentsMD keeps every byte before the start marker and after the end marker, and replaces only the table between them.
+    rule: RefreshAgentsMD keeps every byte before the start marker and after the end marker, apart from the legacy agents/ references that legacy-refs-move-to-dot-agents rewrites, and replaces only the table between them.
     enforced_by:
       - test: cmd/gofastr/internal/agentscmd.TestRefreshAgentsMDPreservesTailAndPreamble
       - test: cmd/gofastr/internal/agentscmd.TestRefreshAgentsMDIsIdempotent

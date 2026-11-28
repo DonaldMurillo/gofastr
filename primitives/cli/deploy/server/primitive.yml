@@ -76,3 +76,11 @@ decisions:
       - option: Leave the environment to the env file.
         why: An env file copied from a laptop often carries GOFASTR_DEV, which would turn on the ungated MCP tools and livereload on a public server.
     upholds: [unit-keeps-the-app-up]
+  - id: home-is-the-state-directory
+    date: 2026-11-28
+    status: accepted
+    decision: The unit sets HOME to /var/lib/<name> and XDG_STATE_HOME to /var/lib/<name>/state.
+    rejected:
+      - option: Leave HOME and XDG_STATE_HOME to the service user's account.
+        why: A user that existed before the first deploy keeps its own home, which ProtectSystem=strict and ProtectHome leave unwritable, so what the app keeps by default, the telemetry files among it, would not land under /var/lib/<name>.
+    upholds: [unit-keeps-the-app-up]

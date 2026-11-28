@@ -90,3 +90,11 @@ decisions:
       - option: Write whatever appToMap returns for every spec.
         why: 'The zero App writes api_prefix: "", which turns the fragment into a whole app that mounts its CRUD API at the root, and the next decode runs the checks a fragment skips.'
     upholds: [defaults-and-derived-values-stay-out]
+  - id: warn-when-the-output-holds-secrets
+    date: 2026-11-28
+    status: accepted
+    decision: pack warns on stderr whenever its output carries a secret recovered from .env.
+    rejected:
+      - option: Rely on the generated .gitignore, as .env does.
+        why: It names .env, not an arbitrary -o path, so nothing keeps the packed file and its secrets out of a commit.
+    upholds: [secret-output-is-owner-only]

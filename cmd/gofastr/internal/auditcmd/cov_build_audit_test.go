@@ -17,7 +17,10 @@ func TestHelpOnUnknownSubcommandExits2(t *testing.T) {
 		{[]string{"lint", "--help"}, 2},
 		{[]string{"nope", "-h"}, 2},
 		{[]string{"--help"}, 0},
+		{[]string{"-h"}, 0},
 		{[]string{"deps", "--help"}, 0},
+		{[]string{"deps", ".", "-h"}, 0},
+		{[]string{}, 2},
 	} {
 		code := clitest.CovT_capExit(t, func() {
 			clitest.CovT_capStdout(t, func() { RunAudit(tc.args) })

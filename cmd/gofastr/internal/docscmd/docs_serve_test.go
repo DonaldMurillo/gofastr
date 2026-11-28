@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
@@ -374,24 +376,34 @@ func TestDocsServeFullRefusesBusyPort(t *testing.T) {
 
 func TestDocsServeFullRechecksThePortAfterInstall(t *testing.T) {
 	envOut, _ := stubGoInstall(t)
-	port := freePort(t)
 	install := goInstallSite
-	goInstallSite = func(ctx context.Context, tag, gobin string) error {
-		ln, err := net.Listen("tcp", loopbackAddr(port))
-		if err != nil {
-			return err
-		}
-		t.Cleanup(func() { _ = ln.Close() })
-		return install(ctx, tag, gobin)
-	}
 	t.Cleanup(func() { goInstallSite = install })
-
-	err := runFullDocsSite(context.Background(), t.TempDir(), "v1.2.3", docsServeOptions{port: port})
-	if err == nil || !strings.Contains(err.Error(), "in use") {
-		t.Fatalf("err = %v, want port in use once the install finished", err)
-	}
-	if _, err := os.Stat(envOut); err == nil {
-		t.Fatal("the site started on a port taken during the install")
+	for attempt := 1; ; attempt++ {
+		port := freePort(t)
+		var took atomic.Bool
+		goInstallSite = func(ctx context.Context, tag, gobin string) error {
+			ln, err := net.Listen("tcp", loopbackAddr(port))
+			if err != nil {
+				return err
+			}
+			took.Store(true)
+			t.Cleanup(func() { _ = ln.Close() })
+			return install(ctx, tag, gobin)
+		}
+		err := runFullDocsSite(context.Background(), t.TempDir(), "v1.2.3", docsServeOptions{port: port})
+		if !took.Load() {
+			if errors.Is(err, syscall.EADDRINUSE) && attempt < 5 {
+				continue
+			}
+			t.Fatalf("the install never took port %d: err = %v", port, err)
+		}
+		if err == nil || !strings.Contains(err.Error(), "in use") {
+			t.Fatalf("err = %v, want port in use once the install finished", err)
+		}
+		if _, err := os.Stat(envOut); err == nil {
+			t.Fatal("the site started on a port taken during the install")
+		}
+		return
 	}
 }
 

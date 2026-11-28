@@ -34,7 +34,7 @@ invariants:
       - test: cmd/gofastr/internal/auditcmd.TestRunAuditDepsListsUnmountedCopies
       - test: cmd/gofastr/internal/auditcmd.TestRunAuditDeps
   - id: help-is-not-a-usage-error
-    rule: audit, audit --help and a help flag anywhere after deps print the usage and exit 0, while no subcommand or an unknown one exits 2 even with a help flag.
+    rule: audit --help, audit -h and a help flag anywhere after deps print the usage and exit 0, while bare audit prints it and exits 2, and an unknown subcommand exits 2 even with a help flag.
     enforced_by:
       - test: cmd/gofastr/internal/auditcmd.TestHelpOnUnknownSubcommandExits2
       - test: cmd/gofastr/internal/auditcmd.TestRunAuditUsageExits
