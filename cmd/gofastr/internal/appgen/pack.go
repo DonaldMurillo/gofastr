@@ -17,11 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// RootReadDirEntries lists the entries of rel (a slash path relative to
-// root, or ".") through the root's own directory handle: unlike
-// os.ReadDir on a joined path, the walk cannot leave root (2026-09-05
-// red-probe round; the walks used to enumerate names and then parse
-// filepath.Join-ed leaves, which follows a symlink out of the project).
+// RootReadDirEntries lists rel (a slash path under root, or ".") through the root, so the walk cannot leave it.
 func RootReadDirEntries(root *os.Root, rel string) ([]os.DirEntry, error) {
 	dir, err := root.Open(rel)
 	if err != nil {
@@ -75,25 +71,15 @@ func FuncBody(file *ast.File, name string) []ast.Stmt {
 	return nil
 }
 
-// PackReadEntities reconstructs the entity declarations from the generated
-// entities package. It supports two layouts:
-//
-//   - Per-entity (current generator): each entities/<name>.go holds a
-//     register<Camel> func whose body calls app.Entity(name, config), plus an
-//     init() that appends registrar{order: N, fn: register<Camel>}.
-//     Declaration order is recovered from the order field.
-//   - Legacy aggregated (older generator): entities/register.go holds a
-//     RegisterAll whose body is the app.Entity calls in declaration order.
-//
-// Returns nil (not an error) when there is no entities package.
+// PackReadEntities reads the entity declarations back from dir/entities, in declaration order, or nil when there is none.
 func PackReadEntities(dir string) ([]framework.EntityDeclaration, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
-		return nil, nil // no project dir
+		return nil, nil
 	}
 	defer root.Close()
 	if _, err := root.Stat("entities"); err != nil {
-		return nil, nil // no entities package
+		return nil, nil
 	}
 	decls, err := packReadPerEntityFiles(root, "entities")
 	if err != nil {
@@ -102,11 +88,6 @@ func PackReadEntities(dir string) ([]framework.EntityDeclaration, error) {
 	if decls != nil {
 		return decls, nil
 	}
-	// Aggregated layout: an inline RegisterAll in register.go (older
-	// generate app output) or in another file of the package, the one
-	// `gofastr init` writes as entities/entities.go. Reading register.go
-	// only left every derived generator answering "no entities package
-	// found" on a fresh init app, run from the directory holding entities/.
 	if decls, err := packReadLegacyRegister(root, "entities/register.go"); err != nil || len(decls) > 0 {
 		return decls, err
 	}
@@ -127,19 +108,11 @@ func PackReadEntities(dir string) ([]framework.EntityDeclaration, error) {
 	return nil, nil
 }
 
-// packReadPerEntityFiles reads the per-entity generated files under the
-// project root and returns the declarations in declaration order. The
-// walk and every leaf read go through the *os.Root, so a symlinked leaf
-// pointing outside the project is skipped, never parsed (2026-09-05
-// red-probe round). Returns (nil, nil) when the package uses the legacy
-// aggregated layout (no per-entity register funcs found), so the caller
-// falls back to register.go.
 func packReadPerEntityFiles(root *os.Root, entRel string) ([]framework.EntityDeclaration, error) {
 	entries, err := RootReadDirEntries(root, entRel)
 	if err != nil {
 		return nil, err
 	}
-	// Fixed package files that never hold an entity registration.
 	skip := map[string]bool{"register.go": true, "shared.go": true, "doc.go": true}
 	type ordered struct {
 		decl  framework.EntityDeclaration
@@ -153,7 +126,7 @@ func packReadPerEntityFiles(root *os.Root, entRel string) ([]framework.EntityDec
 		rel := entRel + "/" + entry.Name()
 		src, rerr := ReadRegularSource(root, rel)
 		if rerr != nil {
-			continue // unreadable leaf (e.g. symlink outside the root): skip
+			continue
 		}
 		file, perr := parser.ParseFile(token.NewFileSet(), rel, src, 0)
 		if perr != nil {
@@ -161,7 +134,7 @@ func packReadPerEntityFiles(root *os.Root, entRel string) ([]framework.EntityDec
 		}
 		call, ok := packFindEntityCall(file)
 		if !ok {
-			continue // not an entity file
+			continue
 		}
 		decl, err := appspec.PackEntityDeclFromCall(call)
 		if err != nil {
@@ -180,9 +153,6 @@ func packReadPerEntityFiles(root *os.Root, entRel string) ([]framework.EntityDec
 	return out, nil
 }
 
-// packFindEntityCall locates the register<Camel> func's app.Entity(name,
-// config) call in a parsed entity file. Returns ok=false if the file has no
-// such registration (e.g. a shared helper or legacy aggregated file).
 func packFindEntityCall(file *ast.File) (*ast.CallExpr, bool) {
 	for _, d := range file.Decls {
 		fn, ok := d.(*ast.FuncDecl)
@@ -208,9 +178,6 @@ func packFindEntityCall(file *ast.File) (*ast.CallExpr, bool) {
 	return nil, false
 }
 
-// packEntityOrder extracts the declaration order from an entity file's
-// init() self-registration: registrar{order: N, ...}. Returns 0 when the
-// marker is absent (treated as first-declared).
 func packEntityOrder(file *ast.File) int {
 	order := 0
 	ast.Inspect(file, func(n ast.Node) bool {
@@ -242,15 +209,10 @@ func packEntityOrder(file *ast.File) int {
 	return order
 }
 
-// packReadLegacyRegister reads the legacy aggregated register.go whose
-// RegisterAll body is the app.Entity calls in declaration order. Reads
-// go through the project *os.Root; a register.go reachable only via a
-// symlink outside the root counts as absent. Returns (nil, nil) when
-// register.go is absent.
 func packReadLegacyRegister(root *os.Root, rel string) ([]framework.EntityDeclaration, error) {
 	src, err := ReadRegularSource(root, rel)
 	if err != nil {
-		return nil, nil // no register.go (or unreachable through the root)
+		return nil, nil
 	}
 	file, err := parser.ParseFile(token.NewFileSet(), rel, src, 0)
 	if err != nil {
@@ -317,8 +279,6 @@ func ScreenRegistrars(file *ast.File) []ScreenRegistrar {
 	return registrars
 }
 
-// packHasPerScreenFiles reports whether dir uses the per-screen layout
-// (≥1 screen_*.go file other than the fixed seam/shared helpers).
 func packHasPerScreenFiles(dir string) bool {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -332,9 +292,6 @@ func packHasPerScreenFiles(dir string) bool {
 	return false
 }
 
-// packHasAggregatedScreens reports whether dir uses the pre-per-screen
-// aggregated layout (a screens.go file with no per-screen files beside it).
-// --add cannot extend that layout and must refuse.
 func packHasAggregatedScreens(dir string) bool {
 	if packHasPerScreenFiles(dir) {
 		return false

@@ -1,7 +1,38 @@
 primitive: appgen.reader
-summary: Reads entity declarations, endpoints and screen registrations back out of a project's Go source, for the derived generators and gofastr pack.
+summary: Reads entity declarations, settings endpoints and screen registrations back out of a project's Go source, statically, for the derived generators and gofastr pack.
 code:
   - cmd/gofastr/internal/appgen/codegen_endpoints.go
   - cmd/gofastr/internal/appgen/pack.go
 docs:
+  - framework/docs/content/endpoints.md
   - framework/docs/content/codegen.md
+invariants:
+  - id: reads-stay-in-the-project
+    rule: Every walk and read of a project's entities and screen files goes through an os.Root, so a leaf symlinked out of the project is skipped and never parsed.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestDirWalksRefuseSymlinkedLeaves
+      - test: cmd/gofastr/internal/appgen.TestEndpointSourceRefusesSymlinkedLeaves
+  - id: three-entity-layouts
+    rule: PackReadEntities reads the per-entity layout in registrar order, else an inline RegisterAll in entities/register.go, else one in any other production file of the package such as the entities/entities.go gofastr init writes, and returns nil with no error when there is no entities package.
+    enforced_by:
+      - test: cmd/gofastr/internal/initcmd.TestInitEntitiesReadByGenerators
+      - test: cmd/gofastr/internal/appgen.TestDirWalksRefuseSymlinkedLeaves
+  - id: endpoint-tags-match-handler-bind
+    rule: An endpoint input field is read as handler.Bind binds it (path from the route, query from the query string, the rest from the JSON body); only the exact json:"-" keeps a field off the body, a body name takes only omitempty or omitzero, a query tag only empty and a path tag no option, and anything else is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/generatecmd.TestEndpointResolverRefusals
+      - test: cmd/gofastr/internal/generatecmd.TestEndpointResolverAcceptsEmptyQueryOption
+  - id: endpoint-names-do-not-fold
+    rule: Two inputs of one endpoint may not share a wire name across path, query and body, nor two wire names derive the same Go parameter, Go field or CLI flag, and two endpoints may not derive the same client call name.
+    enforced_by:
+      - test: cmd/gofastr/internal/generatecmd.TestEndpointResolverRefusals
+      - test: cmd/gofastr/internal/generatecmd.TestEndpointNamesFoldingTogether
+decisions:
+  - id: read-the-source-statically
+    date: 2026-11-28
+    status: accepted
+    decision: The handler's input and output types are read from the entities package's Go source with go/parser.
+    rejected:
+      - option: Build or run the project to reflect on the handlers.
+        why: Generation would need a project that compiles, and would run project code to write its own clients.
+    upholds: [endpoint-tags-match-handler-bind]
