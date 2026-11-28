@@ -135,3 +135,25 @@ func TestNotFoundCodes(t *testing.T) {
 		t.Errorf("unknown resource = %+v, want %d", res.Error, ErrResourceNotFound)
 	}
 }
+
+// Icons are copied deeply at registration, so changing the caller's Sizes afterwards changes nothing the server lists.
+func TestIconSizesAreCopied(t *testing.T) {
+	sizes := []string{"48x48"}
+	s := NewServer()
+	noop := func(context.Context, map[string]any) (any, error) { return "ok", nil }
+	if err := s.RegisterTool("t", "d", map[string]any{"type": "object"}, noop, WithToolIcons(Icon{Src: "https://example.com/i.png", Sizes: sizes})); err != nil {
+		t.Fatal(err)
+	}
+	server := []Icon{{Src: "https://example.com/s.png", Sizes: []string{"16x16"}}}
+	if err := s.SetServerDetails(ServerDetails{Icons: server}); err != nil {
+		t.Fatal(err)
+	}
+	sizes[0] = "1x1"
+	server[0].Sizes[0] = "1x1"
+	if got := listJSON(t, s, "tools/list"); !strings.Contains(got, `"sizes":["48x48"]`) {
+		t.Errorf("tools/list = %s, want the registered 48x48", got)
+	}
+	if got := listJSON(t, s, "initialize"); !strings.Contains(got, `"sizes":["16x16"]`) {
+		t.Errorf("initialize = %s, want the registered 16x16", got)
+	}
+}
