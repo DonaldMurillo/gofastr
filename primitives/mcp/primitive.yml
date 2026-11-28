@@ -5,13 +5,13 @@ code:
 docs:
   - framework/docs/content/mcp.md
 twins:
-  - job: Negotiate the MCP revision on initialize and check the MCP-Protocol-Version header on later HTTP requests.
+  - job: Negotiate the MCP revision on initialize, check the MCP-Protocol-Version header on later HTTP requests, and answer an unknown tool with -32602.
     why: Work not yet done; the harness control-plane server answers initialize with a fixed 2024-11-05, a revision older than the header, and its HTTP transport never reads MCP-Protocol-Version, so the two servers disagree on which revisions a client may speak.
     sites:
       - path: core/mcp/protocol.go
         note: negotiateProtocolVersion, and refuseVersionHeader in core/mcp/transport.go.
       - path: framework/experimental/harness/control/mcpserver/server.go
-        note: handleInitialize, which always answers 2024-11-05; its http.go reads no MCP-Protocol-Version.
+        note: handleInitialize, which always answers 2024-11-05; its http.go reads no MCP-Protocol-Version; an unknown tool still answers -32601.
   - job: Run an app-supplied gate or callback under a recover guard that logs the scrubbed panic and fails closed.
     why: Work not yet done; each site answers a different shape (a bool for listings and notifications, an RPCError for tools and prompts, a masked sentinel for Gated and resource gates), so one helper would need to return the error and let each caller map it.
     sites:
@@ -58,9 +58,10 @@ invariants:
       - test: core/mcp.TestNonScalarIDRefused
       - test: core/mcp.TestInvalidJSONRPCVersion
   - id: args-refusal-is-a-tool-error
-    rule: On the wire, tools/call answers arguments that fail the tool's inputSchema with a result carrying isError true and the reason as its one text block, without running the handler, while CallTool and CallToolFor return an *RPCError with -32602 for the same arguments.
+    rule: On the wire, tools/call answers arguments that fail the tool's inputSchema with a result carrying isError true and the reason as its one text block, without running the handler, while CallTool and CallToolFor return an *RPCError with -32602 for the same arguments; a handler that returns such an RPCError from a nested CallTool answers it as a JSON-RPC error, not as the caller's isError.
     enforced_by:
       - test: core/mcp.TestArgsRefusalIsToolExecutionError
+      - test: core/mcp.TestNestedArgsRefusalIsNotTheCallersToolError
       - test: core/mcp.TestToolCallArgsMatchInputSchema
   - id: not-found-codes
     rule: tools/call answers an unknown or hidden tool with -32602 and resources/read answers an unknown or hidden resource with -32002 (ErrResourceNotFound); -32601 is kept for an unknown method.
