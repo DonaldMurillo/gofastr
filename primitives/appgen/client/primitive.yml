@@ -1,0 +1,8 @@
+primitive: appgen.client
+summary: Renders the typed Go HTTP client for a set of entities, written into an app as entities/client and into the Go SDK.
+code:
+  - cmd/gofastr/internal/appgen/generate_client.go
+  - cmd/gofastr/internal/appgen/generate_client_*.go
+  - cmd/gofastr/internal/appgen/generate_appclient.go
+docs:
+  - framework/docs/content/sdk.md

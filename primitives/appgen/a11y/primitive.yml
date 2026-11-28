@@ -1,0 +1,6 @@
+primitive: appgen.a11y
+summary: gofastr generate screen --from-a11y, which turns an ARIA snapshot into app-spec blocks.
+code:
+  - cmd/gofastr/internal/appgen/a11y_*.go
+docs:
+  - framework/docs/content/app-spec.md

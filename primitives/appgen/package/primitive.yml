@@ -1,0 +1,7 @@
+primitive: appgen.package
+summary: gofastr generate package and unmount, which copy a canonical framework package into a project as owned code.
+code:
+  - cmd/gofastr/internal/appgen/generate_package.go
+  - cmd/gofastr/internal/appgen/unmount.go
+docs:
+  - framework/docs/content/unmount.md

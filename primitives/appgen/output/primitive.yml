@@ -1,0 +1,7 @@
+primitive: appgen.output
+summary: "How generate reports what it did: provenance markers on generated files, edit detection, and the human and --json output."
+code:
+  - cmd/gofastr/internal/appgen/generate_output.go
+  - cmd/gofastr/internal/appgen/provenance.go
+docs:
+  - framework/docs/content/codegen.md

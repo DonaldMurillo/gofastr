@@ -292,6 +292,8 @@ var ownedPackages = []string{
 	"cmd/primitives",
 	"cmd/repolint",
 	"cmd/vettool",
+	// cmd/gofastr group F: the app generator.
+	"cmd/gofastr/internal/appgen",
 }
 
 //gofastr:test-reads primitives/ *.go

@@ -1,0 +1,7 @@
+primitive: appgen.reader
+summary: Reads entity declarations, endpoints and screen registrations back out of a project's Go source, for the derived generators and gofastr pack.
+code:
+  - cmd/gofastr/internal/appgen/codegen_endpoints.go
+  - cmd/gofastr/internal/appgen/pack.go
+docs:
+  - framework/docs/content/codegen.md

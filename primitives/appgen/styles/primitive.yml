@@ -1,0 +1,6 @@
+primitive: appgen.styles
+summary: "gofastr generate styles: typed class methods and token files from a package's owned style sheets."
+code:
+  - cmd/gofastr/internal/appgen/generate_styles.go
+docs:
+  - framework/docs/content/theming.md

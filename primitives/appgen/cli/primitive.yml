@@ -1,0 +1,15 @@
+primitive: appgen.cli
+summary: "gofastr generate cli: a Go command-line client module for a project's entities and endpoints, or for an OpenAPI document."
+code:
+  - cmd/gofastr/internal/appgen/generate_cli.go
+  - cmd/gofastr/internal/appgen/generate_cli_derived.go
+  - cmd/gofastr/internal/appgen/generate_cli_openapi_render.go
+  - cmd/gofastr/internal/appgen/generate_cli_*_test.go
+docs:
+  - framework/docs/content/app-cli.md
+invariants:
+  - id: one-declaration-selection
+    rule: CLI and SDK generation select declarations through the same CLI entity matcher and keep their own error labels.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestRenderCLI_EntityOnlyExclude
+      - test: cmd/gofastr/internal/appgen.TestBuildSDKSpecSelection

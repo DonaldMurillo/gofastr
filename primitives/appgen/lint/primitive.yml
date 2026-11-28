@@ -1,0 +1,16 @@
+primitive: appgen.lint
+summary: "The app-spec warnings gofastr validate and gofastr generate print: routes, forms, nav links, uploads, scoping and module paths."
+code:
+  - cmd/gofastr/internal/appgen/lint_*.go
+  - cmd/gofastr/internal/appgen/common_lint.go
+docs:
+  - framework/docs/content/app-spec.md
+invariants:
+  - id: nav-requires-get
+    rule: Nav lint keeps the registered HTTP method and resolves chrome links with a GET probe.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestNavHrefRequiresGET
+  - id: post-form-probes-mounted-screen
+    rule: POST form lint resolves an escaped action path with the same route matcher and mounted patterns as the generated app.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestPostFormFollowsMountedScreenPatterns

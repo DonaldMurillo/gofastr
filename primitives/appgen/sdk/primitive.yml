@@ -1,0 +1,8 @@
+primitive: appgen.sdk
+summary: "gofastr generate sdk for entity declarations: the Go module with its client and repositories, the JS client with its .d.ts, their READMEs and the manifest."
+code:
+  - cmd/gofastr/internal/appgen/generate_sdk.go
+  - cmd/gofastr/internal/appgen/generate_sdkjs.go
+  - cmd/gofastr/internal/appgen/generate_repo.go
+docs:
+  - framework/docs/content/sdk.md

@@ -1,0 +1,61 @@
+primitive: appgen.app
+summary: "Renders an app spec into a runnable app: main.go, app.go, the screens, their phrases, endpoint stubs, theme assets and the generated axe and E2E tests."
+code:
+  - cmd/gofastr/internal/appgen/appspec.go
+  - cmd/gofastr/internal/appgen/appspec_assets.go
+  - cmd/gofastr/internal/appgen/appspec_controls.go
+  - cmd/gofastr/internal/appgen/appspec_e2e.go
+  - cmd/gofastr/internal/appgen/appspec_endpoints.go
+  - cmd/gofastr/internal/appgen/appspec_phrases.go
+  - cmd/gofastr/internal/appgen/appspec_*_test.go
+  - cmd/gofastr/internal/appgen/project_app.go
+  - cmd/gofastr/internal/appgen/view_stubs.go
+  - cmd/gofastr/internal/appgen/view_stubs_impl.go
+  - cmd/gofastr/internal/appgen/casing.go
+docs:
+  - framework/docs/content/app-spec.md
+  - framework/docs/content/tutorial-app-spec.md
+invariants:
+  - id: route-patterns-follow-screen-router
+    rule: Generated screen mounts and route comparisons use the app router's normalization, including brace-style catch-alls.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestGeneratedCatchAllMountMatchesRouter
+    applies:
+      - core-ui/app/router.go
+  - id: form-relation-keys-stay-exact
+    rule: A generated entity form reads its relation options through the SDK's parseJSON source (jsParseJSON), so an integer key past 2^53 keeps the digits the server sent.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestEntityFormRelationKeepsBigIntKey
+  - id: added-screens-use-the-project-api
+    rule: Screens generate app --add renders post to, read from and invalidate on the project's API prefix, and their auth forms post to the project's auth base path (both AppSpec.RouteApp), not the fragment's empty app section.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestAddedScreenUsesProjectAPIPrefix
+  - id: added-screens-mount-through-the-project-shell
+    rule: A screen generate app --add renders takes the layout, guest redirect, home and login route the project's generated app.go and screens already use (AppSpec.ProjectShell), so its file matches a full generate of the project with the screen in it; one that would mount through an authPolicy or marketingLayout no Go file of the project declares is refused, and a helper declared outside app.go counts.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestAddedScreenMatchesFullGenerate
+      - test: cmd/gofastr/internal/appgen.TestAddRefusesUndeclaredShellHelper
+      - test: cmd/gofastr/internal/appgen.TestAddFindsShellHelperOutsideAppGo
+  - id: add-preserves-distinct-mounted-routes
+    rule: Additive generation rejects equivalent mounted route shapes for new authored or synthesized screens and skips re-added screens.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestAddEquivalentScreenRoutesRefused
+      - test: cmd/gofastr/internal/appgen.TestAddScreenCollidesWithSynthesizedRoute
+      - test: cmd/gofastr/internal/appgen.TestAddSameScreenIsIdempotent
+  - id: create-form-block-identity
+    rule: Each create form binds its mount action and control IDs to its own screen and block path.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestCreateFormsOwnMountActionsAndControlIDs
+  - id: markdown-h1-counts
+    rule: A Markdown H1 suppresses the fallback H1 and lowers the heading of a later entity list.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestMarkdownH1LowersFollowingListHeading
+  - id: subprocess-records-semantic-coverage
+    rule: Generated SQLite and Postgres E2E child servers both receive GOFASTR_SEMANTIC_COVERAGE=1 before their driver-specific environment.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestGeneratedE2ESetsSemanticCoverageEnv
+  - id: one-create-field-eligibility
+    rule: Create form validation and emission use the same field eligibility check, with validation retaining reasons for refused entries.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestFormFieldsEntryMustDraw
+      - test: cmd/gofastr/internal/appgen.TestEntityFormUsesWireNames

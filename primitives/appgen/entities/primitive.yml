@@ -1,0 +1,11 @@
+primitive: appgen.entities
+summary: "Renders the entities package from entity declarations: one file per entity with its model, columns, typed repository and events, the register and events seams, and endpoints.gen.go."
+code:
+  - cmd/gofastr/internal/appgen/generate_entities.go
+  - cmd/gofastr/internal/appgen/generate_typed.go
+  - cmd/gofastr/internal/appgen/generate_keys.go
+  - cmd/gofastr/internal/appgen/generate_endpoints.go
+  - cmd/gofastr/internal/appgen/generated_decls.go
+docs:
+  - framework/docs/content/entity-declarations.md
+  - framework/docs/content/endpoints.md
