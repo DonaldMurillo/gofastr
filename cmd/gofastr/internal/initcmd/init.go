@@ -519,7 +519,7 @@ const (
 func writeMainGo(name, appName, modulePath string, noEntity bool, dbDriver, dbURL string) {
 	var content string
 	if noEntity {
-		content = fmt.Sprintf(mainGoTemplate, modulePath, appName)
+		content = fmt.Sprintf(mainGoTemplate+"\n", modulePath, appName)
 	} else {
 		driverImport := `_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"`
 		migrateDialect := "migrate.DialectSQLite"
@@ -533,7 +533,7 @@ func writeMainGo(name, appName, modulePath string, noEntity bool, dbDriver, dbUR
 		if dsnredact.HasSecret(dbURL) {
 			dsnFallback = ""
 		}
-		content = fmt.Sprintf(mainEntitiesGoTemplate, modulePath, appName, driverImport, sqlDriver, dsnFallback, migrateDialect)
+		content = fmt.Sprintf(mainEntitiesGoTemplate+"\n", modulePath, appName, driverImport, sqlDriver, dsnFallback, migrateDialect)
 	}
 	if err := writeScaffoldFile(name, "main.go", []byte(content+project.GetEnvSource)); err != nil {
 		cli.Fail("Failed to write main.go: %v", err)
