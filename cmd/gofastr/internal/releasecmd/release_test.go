@@ -19,6 +19,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
@@ -462,7 +463,7 @@ func readTarGz(t *testing.T, p string) map[string]int64 {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if h.Uid != 0 || h.Gid != 0 || !h.ModTime.Equal(epoch) {
+		if h.Uid != 0 || h.Gid != 0 || !h.ModTime.Equal(time.Unix(0, 0)) {
 			t.Errorf("%s carries an owner or a timestamp", h.Name)
 		}
 		modes[h.Name] = h.Mode

@@ -17,27 +17,22 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// includeNameRe is an --include file's name inside the archives.
 var includeNameRe = regexp.MustCompile(`^[A-Za-z0-9._+-]+$`)
 
-// artifact is one archive the release wrote.
 type artifact struct {
 	target target
-	file   string // base name in the output directory
+	file   string
 	sha256 string
 }
 
-// result is what a release wrote.
 type result struct {
 	name      string
-	out       string // absolute output directory
+	out       string
 	artifacts []artifact
 	scripts   []string
 	warnings  []string
 }
 
-// archiveName is the download name for one build:
-// <name>_<version>_<os>_<arch>.tar.gz, or .zip on Windows.
 func archiveName(name, version string, t target) string {
 	ext := ".tar.gz"
 	if t.goos == "windows" {
@@ -46,9 +41,6 @@ func archiveName(name, version string, t target) string {
 	return name + "_" + version + "_" + t.goos + "_" + t.goarch + ext
 }
 
-// release builds every target of opts from the module in dir and writes
-// the archives, the install scripts and checksums.txt into opts.out.
-// Progress lines go to log.
 func release(dir string, opts options, log io.Writer) (_ result, err error) {
 	info, err := inspectPackage(dir, opts.pkg, opts.targets)
 	if err != nil {
@@ -56,9 +48,6 @@ func release(dir string, opts options, log io.Writer) (_ result, err error) {
 	}
 	res := result{name: opts.name}
 	if res.name == "" {
-		// .go file arguments list as the synthetic package
-		// command-line-arguments; go build names that binary after the
-		// first file, and nothing here should guess which file that is.
 		if info.importPath == "command-line-arguments" {
 			return result{}, fmt.Errorf("release: --pkg %s names .go files, which give no binary name; pass --name", opts.pkg)
 		}
@@ -99,9 +88,6 @@ func release(dir string, opts options, log io.Writer) (_ result, err error) {
 	}
 	defer func() { _ = r.Close() }()
 	root := &outDir{root: r}
-	// On failure, remove the files this run created, so the next run does
-	// not trip over a partial release. Only those: another release writing
-	// into the same directory keeps its files.
 	defer func() {
 		if err != nil {
 			root.removeCreated()
@@ -134,14 +120,6 @@ func release(dir string, opts options, log io.Writer) (_ result, err error) {
 	return res, nil
 }
 
-// resolveIncludes checks the --include files: regular files (a symlink
-// is refused), with base names distinct from each other and from the
-// binary.
-// Names are compared case-folded, because the archives unpack onto
-// case-insensitive file systems on macOS and Windows, where an include
-// named HELLO would overwrite the binary hello. A name is held to ASCII
-// so the fold is exact, and to the Windows rules when a Windows target
-// is built.
 func resolveIncludes(dir string, names []string, bin string, windows bool) ([]archiveFile, error) {
 	taken := map[string]bool{asciicase.Lower(bin): true, asciicase.Lower(bin + ".exe"): true}
 	var files []archiveFile
@@ -171,9 +149,6 @@ func resolveIncludes(dir string, names []string, bin string, windows bool) ([]ar
 	return files, nil
 }
 
-// prepareOut creates the output directory, or accepts an existing empty
-// one. A directory with files in it is refused, so an old build's
-// archives never sit beside a new checksums.txt.
 func prepareOut(out string) error {
 	//gofastr:allow(worldreadable) release archives and install scripts are public downloads; the directory holds no state or secret
 	if err := os.MkdirAll(out, 0o755); err != nil {
@@ -189,8 +164,6 @@ func prepareOut(out string) error {
 	return nil
 }
 
-// buildTarget cross-compiles one target into staging and writes its
-// archive into root.
 func buildTarget(dir, staging string, root *outDir, opts options, name string, t target, includes []archiveFile) (artifact, error) {
 	bin := name
 	if t.goos == "windows" {
@@ -233,9 +206,6 @@ func buildTarget(dir, staging string, root *outDir, opts options, name string, t
 	return a, nil
 }
 
-// writeChecksums writes checksums.txt in the `sha256sum` format, one
-// line per archive and script, sorted by name, so `sha256sum -c
-// checksums.txt` checks a downloaded set.
 func writeChecksums(root *outDir, res result) error {
 	lines := make([]string, 0, len(res.artifacts)+len(res.scripts))
 	for _, a := range res.artifacts {
@@ -261,7 +231,6 @@ func fileSHA256(root *outDir, name string) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// writeNew creates name under root; an existing file is an error.
 func writeNew(root *outDir, name string, data []byte, mode fs.FileMode) error {
 	f, err := root.create(name, mode)
 	if err != nil {
@@ -277,14 +246,11 @@ func writeNew(root *outDir, name string, data []byte, mode fs.FileMode) error {
 	return nil
 }
 
-// outDir is the output directory, recording the files this run created.
 type outDir struct {
 	root    *os.Root
 	created []string
 }
 
-// create makes name under the directory; an existing file is an error,
-// so a file this run did not create is never recorded as its own.
 func (o *outDir) create(name string, mode fs.FileMode) (*os.File, error) {
 	f, err := o.root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
 	if err != nil {
@@ -294,7 +260,6 @@ func (o *outDir) create(name string, mode fs.FileMode) (*os.File, error) {
 	return f, nil
 }
 
-// removeCreated deletes the files this run created.
 func (o *outDir) removeCreated() {
 	for _, name := range o.created {
 		_ = o.root.Remove(name)

@@ -1,0 +1,77 @@
+primitive: cli.release
+summary: gofastr release - cross-compiles one main package with CGO_ENABLED=0 for each supported OS and CPU, packs each build into a reproducible archive, and writes checksums.txt into an empty output directory; its child writes the install scripts.
+code:
+  - cmd/gofastr/internal/releasecmd/release.go
+  - cmd/gofastr/internal/releasecmd/build.go
+  - cmd/gofastr/internal/releasecmd/archive.go
+  - cmd/gofastr/internal/releasecmd/usage.go
+  - cmd/gofastr/internal/releasecmd/doc.go
+  - cmd/gofastr/internal/releasecmd/release_test.go
+docs:
+  - framework/docs/content/release.md
+on_change:
+  - supportedTargets is the set the install scripts detect, Windows meaning 10 and later; a new target needs both scripts to detect it.
+  - A new flag goes in printUsage and framework/docs/content/release.md.
+invariants:
+  - id: values-the-scripts-can-quote
+    rule: parseOptions refuses a --version that is not full semver without build metadata or is over 64 bytes, a --name that does not start with an ASCII letter or is over 64 bytes, and a --url that is not https:// in its raw text, holds a quote, $, backtick, space or non-ASCII byte, or carries credentials, a query or a fragment, even an empty one.
+    enforced_by:
+      - test: cmd/gofastr/internal/releasecmd.TestOptionsRefuseBadValues
+      - test: cmd/gofastr/internal/releasecmd.TestOptionsAcceptSemverPrerelease
+      - test: cmd/gofastr/internal/releasecmd.TestURLRefusesUnquotableText
+  - id: one-main-package-per-target
+    rule: The package is inspected with go list under each target's GOOS, GOARCH and CGO_ENABLED=0, so a package whose files build only for its targets releases from any host, and anything but one main package is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/releasecmd.TestReleaseBuildsForAnotherOS
+      - test: cmd/gofastr/internal/releasecmd.TestReleaseRefusesLibraryPackage
+  - id: service-on-every-target
+    rule: --service is refused unless battery/service is in the build of every target.
+    enforced_by:
+      - test: cmd/gofastr/internal/releasecmd.TestServiceNeedsEveryTarget
+      - test: cmd/gofastr/internal/releasecmd.TestReleaseRefusesServiceWithoutBattery
+  - id: binary-name
+    rule: Without --name the binary is named as go build names it, skipping a /vN major suffix for N of 2 or more; .go file arguments, a name outside nameRe and a Windows device name when Windows is a target are refused with a pass --name error.
+    enforced_by:
+      - test: cmd/gofastr/internal/releasecmd.TestDefaultNameSkipsMajorSuffix
+      - test: cmd/gofastr/internal/releasecmd.TestReleaseFileArgNeedsName
+      - test: cmd/gofastr/internal/releasecmd.TestReleaseRefusesUnusableDefaultName
+      - test: cmd/gofastr/internal/releasecmd.TestReleaseRefusesWindowsDeviceName
+  - id: includes-cannot-collide
+    rule: An --include must be a regular file, not a symlink or directory, with an ASCII base name that is a valid Windows name when Windows is a target, distinct ignoring case from every other include and from the binary and its .exe.
+    enforced_by:
+      - test: cmd/gofastr/internal/releasecmd.TestIncludeCannotAliasBinary
+      - test: cmd/gofastr/internal/releasecmd.TestIncludeRefusesNonRegularOrOddName
+  - id: output-is-new-or-empty
+    rule: The output directory must be new or empty, files in it are created exclusively, and a failed release removes the files it created and no others.
+    enforced_by:
+      - test: cmd/gofastr/internal/releasecmd.TestReleaseRefusesNonEmptyOut
+      - test: cmd/gofastr/internal/releasecmd.TestFailedReleaseLeavesOutEmpty
+      - test: cmd/gofastr/internal/releasecmd.TestCleanupKeepsOtherFiles
+  - id: archives-are-reproducible
+    rule: Two releases of the same tree write byte-identical files; tar entries carry mode, the Unix epoch as time and no owner, zip entries no time, and every entry sits at the archive root.
+    enforced_by:
+      - test: cmd/gofastr/internal/releasecmd.TestReleaseWritesArchivesAndSums
+  - id: checksums-list-everything
+    rule: checksums.txt holds one sha256sum line for every archive and install script, sorted by file name, and does not list itself.
+    enforced_by:
+      - test: cmd/gofastr/internal/releasecmd.TestReleaseWritesArchivesAndSums
+  - id: usage-errors-exit-two
+    rule: A flag error exits 2 and a failed release exits 1.
+    enforced_by:
+      - test: cmd/gofastr/internal/releasecmd.TestReleaseUsageErrorsExitTwo
+decisions:
+  - id: warnings-follow-direct-imports
+    date: 2026-11-28
+    status: accepted
+    decision: The battery/service and battery/desktop warnings fire only when the main package imports the battery directly, while --service checks the whole build.
+    rejected:
+      - option: Warn when either battery is anywhere in the build.
+        why: A CLI that pulls one in through a library is not a service or a desktop app, and would be told to release itself as one.
+  - id: fold-case-for-includes
+    date: 2026-11-28
+    status: accepted
+    decision: Include names are held to ASCII and compared case-folded.
+    rejected:
+      - option: Compare names as written.
+        why: The archives unpack onto case-insensitive file systems on macOS and Windows, where an include named HELLO overwrites the binary hello.
+    upholds: [includes-cannot-collide]

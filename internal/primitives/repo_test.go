@@ -295,6 +295,7 @@ var ownedPackages = []string{
 	// cmd/gofastr: build and ship
 	"cmd/gofastr/internal/buildcmd",
 	"cmd/gofastr/internal/exportcmd",
+	"cmd/gofastr/internal/releasecmd",
 	"cmd/gofastr/internal/gates",
 }
 
