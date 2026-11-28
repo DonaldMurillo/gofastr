@@ -49,6 +49,10 @@ invariants:
       - test: cmd/gofastr/internal/unmountcmd.TestApplyImportRewireReplacesWhole
       - test: cmd/gofastr/internal/unmountcmd.TestApplyImportRewireRefusesLeafSymlink
       - test: cmd/gofastr/internal/unmountcmd.TestApplyImportRewireCountsFailedFile
+  - id: rewire-keeps-gofmt
+    rule: A file that was gofmt-clean before the import rewire is gofmt-clean after it, and any other file keeps its own formatting.
+    enforced_by:
+      - test: cmd/gofastr/internal/unmountcmd.TestPlanImportRewireKeepsGofmtCleanFilesClean
   - id: failed-rewire-is-put-back
     rule: When a rewire or the settings write fails, unmount and remount rewrite the files already rewired back, and unmount removes the copy, before returning the error.
     judge: Does this change let unmount or remount return after a failed rewire or settings write without putting back the files already rewired, or, for unmount, the copy?

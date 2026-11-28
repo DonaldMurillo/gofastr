@@ -2,6 +2,7 @@ package unmountcmd
 
 import (
 	"context"
+	"go/format"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,6 +66,19 @@ func TestUnmountRefusesATargetInANestedModule(t *testing.T) {
 	out, code := runUnmountCmd(t, RunUnmount, "core/yaml", "--out=nested/yaml")
 	if code != 1 || !strings.Contains(out, "not in this module") {
 		t.Fatalf("exit %d, want a refusal of the nested module:\n%s", code, out)
+	}
+}
+
+func TestPlanImportRewireKeepsGofmtCleanFilesClean(t *testing.T) {
+	dir := t.TempDir()
+	src := "package app\n\nimport (\n\t\"example.com/app/b\"\n\t\"github.com/DonaldMurillo/gofastr/core/yaml\"\n)\n\nvar _, _ = b.X, yaml.Y\n"
+	clitest.WriteFileAll(t, filepath.Join(dir, "app.go"), src)
+	plan, err := planImportRewire(dir, "unmounted", project.GofastrModule+"/core/yaml", "example.com/app/a/yaml")
+	if err != nil || len(plan) != 1 {
+		t.Fatalf("plan = %v, %v", plan, err)
+	}
+	if formatted, err := format.Source([]byte(plan[0].new)); err != nil || string(formatted) != plan[0].new {
+		t.Fatalf("a gofmt-clean file is no longer gofmt-clean after the rewire:\n%s", plan[0].new)
 	}
 }
 
