@@ -36,3 +36,11 @@ decisions:
       - option: Sort keys alphabetically.
         why: name and kind would land in the middle of each entry, and the packed file would read unlike every hand-written gofastr.yml.
     upholds: [orders-name-every-key]
+  - id: colon-list-items-stay-quoted
+    date: 2026-11-28
+    status: accepted
+    decision: writeYAMLListItem double-quotes every string list item that holds a colon, though quoteYAMLString already quotes each one whose meaning a colon would change, so the branch changes the bytes pack writes and never what they decode to.
+    rejected:
+      - option: Delete the branch and let quoteYAMLString decide, as it does for every other scalar.
+        why: Every gofastr.yml packed before would change on its next pack wherever a list item holds a URL, a diff in committed specs with no change in meaning.
+    revisit_if: Pack's output changes for another reason, so the byte change can ride along with it.

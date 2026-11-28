@@ -68,3 +68,11 @@ decisions:
       - option: scp or rsync.
         why: Each is one more program to depend on at both ends, and neither creates the file private by default.
     upholds: [uploads-are-private]
+  - id: name-fits-unit-user-and-directory
+    date: 2026-11-28
+    status: accepted
+    decision: --name is held to nameRe, a lower-case letter then up to 30 lower-case letters, digits or hyphens, because one name is at once the systemd unit, the Unix user and the /opt directory.
+    rejected:
+      - option: Accept any name one of the three accepts.
+        why: A name with a dot, an underscore or a capital letter is fine for one of them and refused or rewritten by another, so the deploy would fail half way on the server.
+    upholds: [values-checked-before-the-server]

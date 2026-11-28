@@ -82,3 +82,11 @@ decisions:
         why: The packed spec would no longer regenerate the app it came from.
     revisit_if: The app spec gains a way to name a secret by environment variable instead of value.
     upholds: [secret-output-is-owner-only, env-read-as-the-app-reads-it]
+  - id: fragment-writes-no-app-section
+    date: 2026-11-28
+    status: accepted
+    decision: appSpecToMap writes no app section for a fragment, even though the decoder gives a fragment a zero App.
+    rejected:
+      - option: Write whatever appToMap returns for every spec.
+        why: 'The zero App writes api_prefix: "", which turns the fragment into a whole app that mounts its CRUD API at the root, and the next decode runs the checks a fragment skips.'
+    upholds: [defaults-and-derived-values-stay-out]
