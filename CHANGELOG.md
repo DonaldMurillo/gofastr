@@ -26,6 +26,9 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Added
 
+- **`mcp.ProtocolVersionHeader`** names the `MCP-Protocol-Version` HTTP
+  header. See [MCP server](framework/docs/content/mcp.md)
+  ([#943](https://github.com/DonaldMurillo/gofastr/pull/943)).
 - **`migrate.DetectDialectStrictContext(ctx, db)`** detects the dialect
   like `DetectDialectStrict` and stops probing, or waiting to retry, when
   `ctx` ends, returning its error. See
@@ -34,6 +37,14 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Changed
 
+- **BREAKING: `core/mcp` refuses an unsupported `MCP-Protocol-Version`
+  header.** `ServeHTTP` and `ServeSSE` answer `400` with `-32600` and
+  `{supported, requested}` when the header names a revision `initialize`
+  does not negotiate, or is repeated. Before, the header was ignored. A
+  client that sends its own newest revision instead of the one `initialize`
+  negotiated now gets `400`; send the negotiated one. An absent header is
+  still served. See [MCP server](framework/docs/content/mcp.md)
+  ([#943](https://github.com/DonaldMurillo/gofastr/pull/943)).
 - **BREAKING: a bare list control key no longer filters a same-named
   column.** `?direction=desc`, `?page=2`, `?sort=...` and the other
   control keys (`q` too, when the entity has `SearchFields`) are read only

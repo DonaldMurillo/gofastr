@@ -126,7 +126,11 @@ func refuseVersionHeader(w http.ResponseWriter, r *http.Request, req Request) bo
 	if len(requested) > maxEchoedVersionBytes {
 		requested = requested[:maxEchoedVersionBytes]
 	}
-	resp := newErrorResponse(replyID(req.ID), ErrInvalidRequest, "unsupported "+ProtocolVersionHeader)
+	msg := "unsupported " + ProtocolVersionHeader
+	if len(values) > 1 {
+		msg = "repeated " + ProtocolVersionHeader
+	}
+	resp := newErrorResponse(replyID(req.ID), ErrInvalidRequest, msg)
 	resp.Error.Data = map[string]any{"supported": SupportedProtocolVersions(), "requested": requested}
 	writeEnvelopeError(w, resp)
 	return true
