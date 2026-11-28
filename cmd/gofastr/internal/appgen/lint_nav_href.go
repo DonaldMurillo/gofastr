@@ -24,19 +24,16 @@ func (f navHrefFinding) Message() string {
 	return fmt.Sprintf("%s %q may point at a path nothing serves: the generated app's strict boot refuses an unserved chrome link; register a route or fix the link", f.Path, f.Href)
 }
 
-// LintNavHrefs estimates served paths, skipping anonymous role-gated chrome.
-// Unlike uihost.strictChromeLinkFindings, validate only warns: owned routes and static inputs are not fully known.
-// projectDir is the project root for static files, or empty when unknown.
+// LintNavHrefs warns on nav links the generated app may not serve; projectDir is where the static dir is read, or empty.
 func LintNavHrefs(bp appspec.AppSpec, projectDir string) []navHrefFinding {
 	if len(bp.Nav) == 0 {
 		return nil
 	}
-	if bp.IsFragment() { // fragments cannot enumerate the project's screens
+	if bp.IsFragment() {
 		return nil
 	}
 	mux := http.NewServeMux()
 	serve := func(pattern string) {
-		// Other checks report malformed or conflicting declarations.
 		defer func() { _ = recover() }()
 		mux.Handle(pattern, http.NotFoundHandler())
 	}
@@ -57,7 +54,6 @@ func LintNavHrefs(bp appspec.AppSpec, projectDir string) []navHrefFinding {
 		serve("GET " + mount + "/_export.csv")
 		serve("POST " + mount + "/_pick")
 	}
-	// Endpoint paths are relative to the same entity API mount.
 	for _, ep := range bp.Endpoints {
 		for _, decl := range bp.Entities {
 			if ep.Entity != decl.Name {
@@ -86,7 +82,6 @@ func LintNavHrefs(bp appspec.AppSpec, projectDir string) []navHrefFinding {
 		if base == "" {
 			base = "/admin"
 		}
-		// Generated apps hand admin a DB, which mounts the audit log.
 		for _, suffix := range []string{"", "/search", "/shortcuts", "/account", "/audit"} {
 			serve(base + suffix)
 		}
@@ -157,8 +152,6 @@ func LintNavHrefs(bp appspec.AppSpec, projectDir string) []navHrefFinding {
 	return findings
 }
 
-// Keep the reference classification in step with uihost's internalRoutePath:
-// query/fragment split before unescaping; only concrete root-relative paths.
 func navInternalPath(href string) (string, bool) {
 	h := strings.SplitN(strings.SplitN(href, "#", 2)[0], "?", 2)[0]
 	if h == "" || !strings.HasPrefix(h, "/") {
@@ -183,7 +176,7 @@ func appSpecScreenProbeRouter(bp appspec.AppSpec) *app.Router {
 	router := app.NewRouter()
 	for _, screen := range bp.Screens {
 		func() {
-			defer func() { _ = recover() }() // route validation owns malformed patterns
+			defer func() { _ = recover() }()
 			router.Screen(&app.Screen{Path: appSpecScreenPattern(bp, screen), Component: screenRouteProbe{route: screen.Route}}, nil)
 		}()
 	}
@@ -212,7 +205,6 @@ func navStaticServes(root *os.Root, path string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// navPathURL retains escaped segment boundaries for ServeMux matching.
 func navPathURL(path string) *url.URL {
 	decoded, err := url.PathUnescape(path)
 	if err != nil {

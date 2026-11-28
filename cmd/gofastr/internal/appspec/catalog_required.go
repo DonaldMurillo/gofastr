@@ -8,30 +8,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 )
 
-// validateCatalogRequired refuses a catalog block missing what its
-// framework/ui component panics without at render: the generator hands
-// the prop straight to the component, so a block that loads here would
-// 500 its whole screen on every request.
-//
-//   - stat_card: ui.StatCard requires Label, and Value unless a source
-//     computes it. The label is props.label; text: (the entity_list
-//     heading key) is accepted on any block and was silently dropped.
-//   - link_button: ui.LinkButton requires Label and Href, and refuses an
-//     unsafe or protocol-relative Href.
-//   - hero: each CTA is a ui.LinkButton, drawn when its text is set, so
-//     cta_text needs cta_href and secondary_text needs secondary_href.
-//   - page_header: headless.PageHeader requires Title.
-//   - markdown: ui.Markdown requires Source, the block's text:.
-//   - callout: headless.Alert requires a Title or a body; ui.Callout
-//     gets props.title and the block's text: as its body, so one of
-//     the two must say something.
-//   - pricing: each plan's CTA is a ui.LinkButton, drawn when cta_text
-//     or cta_href is set, so it needs a safe cta_href. Each plan's text
-//     props and every features entry must be text.
-//
-// These spec checks cannot share code with emitted Go constructors.
-// TestRenderPanicParity in render_parity_test.go keeps their refusals aligned.
-// Text props (catalogTextProps) are checked first, by validateCatalogText.
 func validateCatalogRequired(screenName, kind string, block AppSpecBlock) error {
 	if err := validateCatalogText(screenName, kind, block); err != nil {
 		return err
@@ -92,8 +68,6 @@ func validateCatalogRequired(screenName, kind string, block AppSpecBlock) error 
 					}
 				}
 			}
-			// The generator reads features as a list of text and drops
-			// anything else, so a plan rendered with a feature missing.
 			if v, ok := plan["features"]; ok && v != nil {
 				feats, isList := v.([]any)
 				if !isList {
@@ -125,14 +99,6 @@ func validateCatalogRequired(screenName, kind string, block AppSpecBlock) error 
 	return nil
 }
 
-// catalogTextProps lists, per catalog kind, every prop the generator
-// reads as text (appgen's renderAppSpecCatalogBlock reads each through
-// AppSpecProp, which answers "" for anything but a string). The layout
-// kinds' gap, min, align and justify are left to
-// validateAppSpecLayoutBlock, and a pricing block's plans are checked
-// per plan in validateCatalogRequired. appgen's
-// TestCatalogTextPropsCoverGenerator fails when the generator reads a
-// key this table does not hold.
 var catalogTextProps = map[string][]string{
 	"page_header": {"title", "eyebrow", "subtitle"},
 	"hero":        {"eyebrow", "title", "subtitle", "cta_text", "cta_href", "secondary_text", "secondary_href", "image", "media"},
@@ -146,20 +112,13 @@ var catalogTextProps = map[string][]string{
 	"callout":     {"title"},
 }
 
-// CatalogTextProps returns the props a catalog kind takes as text, the
-// keys validation refuses a number or bool for.
+// CatalogTextProps returns the props a catalog kind takes as text.
 func CatalogTextProps(kind string) []string {
 	return slices.Clone(catalogTextProps[kind])
 }
 
-// validateCatalogText refuses a number or bool where a catalog block
-// takes text. YAML decodes `heading: 2026` as an int64, which the
-// generator reads as "", so the heading, title or label vanishes from
-// the page with no warning: refused with a hint to quote it.
 func validateCatalogText(screenName, kind string, block AppSpecBlock) error {
 	for _, key := range catalogTextProps[kind] {
-		// A sourced stat_card draws its value from the aggregate; the
-		// generator never reads props.value there.
 		if _, sourced := block.Props["source"].(map[string]any); sourced && kind == "stat_card" && key == "value" {
 			continue
 		}

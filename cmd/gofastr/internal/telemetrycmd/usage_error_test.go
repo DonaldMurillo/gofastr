@@ -40,7 +40,7 @@ func TestRunTelemetryMissingSubcommandExitsTwo(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("bare telemetry exited %d, want 2", code)
 	}
-	if !strings.Contains(errOut, "name a subcommand") {
-		t.Fatalf("bare telemetry diagnostic missing on stderr:\n%s", errOut)
+	if !strings.Contains(errOut, "name a subcommand") || !strings.Contains(errOut, "Usage: gofastr telemetry") {
+		t.Fatalf("bare telemetry diagnostic or usage missing on stderr:\n%s", errOut)
 	}
 }

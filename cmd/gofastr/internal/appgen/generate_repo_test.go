@@ -498,3 +498,23 @@ entities:
 		t.Fatalf("generated repo integration failed: %v\n%s", err, out)
 	}
 }
+
+// The repo's write shapes keep a hidden field, which the HTTP client's leave out.
+func TestRepoWriteShapesKeepHiddenFields(t *testing.T) {
+	decl := framework.EntityDeclaration{
+		Name: "notes",
+		Fields: []framework.FieldDeclaration{
+			{Name: "body", Type: "string", Required: true},
+			{Name: "api_secret", Type: "string", Hidden: true},
+		},
+	}
+	shapes := renderEntityWriteShapes(decl, nil)
+	for _, open := range []string{"type NotesInput struct {", "type NotesPatch struct {"} {
+		if body := between(t, shapes, open, "}"); !strings.Contains(body, "ApiSecret *string") {
+			t.Errorf("repo %s dropped the hidden field, so server code could not write it under WithServerWrites:\n%s", open, body)
+		}
+	}
+	if client := renderClientEntity(decl, nil); strings.Contains(client, "ApiSecret") {
+		t.Errorf("the HTTP client names the hidden field:\n%s", client)
+	}
+}

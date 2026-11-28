@@ -15,14 +15,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 )
 
-// The typed calls the generated clients carry for the endpoints
-// gofastr.settings.yml declares (framework.Endpoint.SDK). Each endpoint's
-// InputSchema lists its path values in route order and then the rest;
-// endpointInput splits them back apart. The rest travel in the query
-// string for GET and DELETE and as the JSON body otherwise, the rule the
-// endpoint resolver enforces on the handler's input struct.
-
-// sdkEndpoints lists the endpoints of decl the generated clients carry.
 func sdkEndpoints(decl framework.EntityDeclaration) []framework.Endpoint {
 	var out []framework.Endpoint
 	for _, ep := range decl.Endpoints {
@@ -33,8 +25,6 @@ func sdkEndpoints(decl framework.EntityDeclaration) []framework.Endpoint {
 	return out
 }
 
-// endpointInput splits an endpoint's inputs into its path values and the
-// rest, and says whether the rest go in the query string.
 func endpointInput(ep framework.Endpoint) (pathVals, rest []schema.Field, inQuery bool) {
 	params := map[string]bool{}
 	for _, seg := range strings.Split(ep.Path, "/") {
@@ -52,8 +42,6 @@ func endpointInput(ep framework.Endpoint) (pathVals, rest []schema.Field, inQuer
 	return pathVals, rest, endpointQueryMethods(ep.Method)
 }
 
-// endpointReturnsList splits Returns into the entity and whether it is a
-// list of them.
 func endpointReturnsList(ep framework.Endpoint) (entity string, list bool) {
 	if after, ok := strings.CutPrefix(ep.Returns, "[]"); ok {
 		return after, true
@@ -61,12 +49,8 @@ func endpointReturnsList(ep framework.Endpoint) (entity string, list bool) {
 	return ep.Returns, false
 }
 
-// goEndpointLocals are the names the generated method body uses itself.
 var goEndpointLocals = []string{"c", "ctx", "in", "out", "path", "q", "err", "url", "fmt", "http"}
 
-// goEndpointArg names a path value's parameter in a generated Go method:
-// lowerCamel, with Arg appended when that would be a keyword, a predeclared
-// name or one of the body's own locals.
 func goEndpointArg(name string) string {
 	arg := appspec.ToCamelJSON(name)
 	if token.IsKeyword(arg) || types.Universe.Lookup(arg) != nil || slices.Contains(goEndpointLocals, arg) {
@@ -75,7 +59,6 @@ func goEndpointArg(name string) string {
 	return arg
 }
 
-// goEndpointType is the Go client's type for an endpoint input.
 func goEndpointType(t schema.FieldType) string {
 	switch t {
 	case schema.Int:
@@ -91,8 +74,6 @@ func goEndpointType(t schema.FieldType) string {
 	}
 }
 
-// renderClientEndpoint renders one endpoint's request struct and method.
-// route is the entity's table, path-escaped.
 func renderClientEndpoint(ep framework.Endpoint, route string) string {
 	method := appspec.ToCamelCase(ep.Name)
 	_, rest, inQuery := endpointInput(ep)
@@ -173,16 +154,11 @@ func renderClientEndpoint(ep framework.Endpoint, route string) string {
 	return sb.String()
 }
 
-// endpointRoute is an entity's table reduced to one inert path segment,
-// as renderClientEntity spells it.
 func endpointRoute(decl framework.EntityDeclaration) string {
 	table := declTable(decl)
 	return url.PathEscape(table)
 }
 
-// jsReservedArgs are the names a generated JS arrow function cannot take
-// as a parameter (reserved words, strict-mode bans) or that the binding
-// uses itself (input).
 var jsReservedArgs = []string{
 	"arguments", "await", "break", "case", "catch", "class", "const", "continue",
 	"debugger", "default", "delete", "do", "else", "enum", "eval", "export",
@@ -191,13 +167,9 @@ var jsReservedArgs = []string{
 	"package", "private", "protected", "public", "return", "static", "super",
 	"switch", "this", "throw", "true", "try", "typeof", "var", "void", "while",
 	"with", "yield",
-	// Names the binding itself calls: a parameter spelled like one would
-	// shadow it.
 	"encodeURIComponent", "undefined",
 }
 
-// jsEndpointArg names a path value's parameter in a generated JS binding:
-// lowerCamel, with Arg appended when that is reserved.
 func jsEndpointArg(name string) string {
 	arg := appspec.ToCamelJSON(name)
 	if slices.Contains(jsReservedArgs, arg) {
@@ -206,11 +178,6 @@ func jsEndpointArg(name string) string {
 	return arg
 }
 
-// jsEndpointBinding is the Client constructor line that binds one endpoint
-// as a named method on its table's resource. Every declaration-derived
-// part is a quoted string or a grammar-checked name: the key goes through
-// this[%q] like the move bindings, path literals are snake_case segments
-// the settings check admits, and arguments come from jsEndpointArg.
 func jsEndpointBinding(prop string, ep framework.Endpoint) string {
 	_, rest, _ := endpointInput(ep)
 	var args, parts []string
@@ -240,7 +207,6 @@ func jsEndpointBinding(prop string, ep framework.Endpoint) string {
 	return fmt.Sprintf("    this[%q][%q] = (%s) => %s;", prop, appspec.ToCamelJSON(ep.Name), strings.Join(args, ", "), call)
 }
 
-// tsEndpointType is the d.ts type for an endpoint input.
 func tsEndpointType(t schema.FieldType) string {
 	switch t {
 	case schema.Int, schema.Float:
@@ -254,11 +220,6 @@ func tsEndpointType(t schema.FieldType) string {
 	}
 }
 
-// writeDTSEndpoints declares an entity's endpoint methods in client.d.ts:
-// one <Method>Request interface per endpoint that takes input, keyed by
-// wire name, and the <Struct>Endpoints interface the Client property
-// intersects onto Resource. It writes nothing for an entity without
-// endpoints.
 func writeDTSEndpoints(dts *strings.Builder, decl framework.EntityDeclaration, ent cliEntity) {
 	eps := sdkEndpoints(decl)
 	if len(eps) == 0 {
@@ -307,22 +268,12 @@ func writeDTSEndpoints(dts *strings.Builder, decl framework.EntityDeclaration, e
 	dts.WriteString("}\n\n")
 }
 
-// jsObjectMembers are the Object.prototype names a snake_case endpoint
-// name can reach under camelCase (to_string → toString); binding one on a
-// resource shadows what every caller expects of it.
 var jsObjectMembers = []string{"constructor", "hasOwnProperty", "isPrototypeOf", "propertyIsEnumerable", "toLocaleString", "toString", "valueOf"}
 
-// jsResourceMembers are the names the client.js Resource class defines.
 var jsResourceMembers = []string{"list", "listCursor", "get", "create", "update", "patch", "remove", "batchCreate", "batchUpdate", "batchDelete", "watch", "transition", "client", "table", "columns"}
 
-// goClientFields are the fields of the Go Client struct. An endpoint is a
-// method on Client, and Go refuses a field and a method of one name.
 var goClientFields = []string{"BaseURL", "HTTP", "Token"}
 
-// checkEndpointName refuses an endpoint name whose generated call would
-// take a name the entity's client surface already uses: a Resource member
-// or a move binding in client.js, a verb or move command in the CLI. The
-// resolver runs it for every endpoint, so one name works in every client.
 func checkEndpointName(decl framework.EntityDeclaration, name string) error {
 	js := appspec.ToCamelJSON(name)
 	cmd := strings.ReplaceAll(name, "_", "-")
@@ -344,9 +295,6 @@ func checkEndpointName(decl framework.EntityDeclaration, name string) error {
 	return nil
 }
 
-// checkEndpointReturns refuses an endpoint that returns an entity the
-// generated selection leaves out: the client would name a type it does
-// not declare.
 func checkEndpointReturns(decls []framework.EntityDeclaration) error {
 	selected := map[string]bool{}
 	for _, d := range decls {

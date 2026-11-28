@@ -9,12 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 )
 
-// ValidateAppSpecEndpoints checks each endpoint's shape the way the
-// settings decoder does (an app spec built in Go never passed through it),
-// then what the decoder cannot: the entity is declared, and no two
-// endpoints link one handler, since generate app writes one stub per
-// handler. Each entity's complete, shape-valid endpoint group is checked
-// together against its generated routes and sibling patterns.
+// ValidateAppSpecEndpoints checks each endpoint's shape and its fit with the rest of the spec.
 func ValidateAppSpecEndpoints(bp AppSpec) error {
 	entities := map[string]framework.EntityDeclaration{}
 	for _, d := range bp.Entities {
@@ -67,8 +62,6 @@ func ValidateAppSpecEndpoints(bp AppSpec) error {
 		if !EntityDeclarationCRUDEnabled(decl) {
 			ownMount = ""
 		}
-		// Generated apps always enable EntityUI. "llm.md" is not a legal
-		// endpoint segment, so NoLLMMD cannot change the result.
 		if err := framework.ValidateEntityEndpointRoutes(ownMount, crud.CrudRouteOptions{NoLLMMD: false, States: cfg.States, Key: cfg.PrimaryKey}, true, routes); err != nil {
 			var routeErr *framework.EndpointRouteError
 			if errors.As(err, &routeErr) {

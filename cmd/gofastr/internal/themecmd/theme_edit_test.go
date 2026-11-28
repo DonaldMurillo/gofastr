@@ -1,6 +1,7 @@
 package themecmd
 
 import (
+	"encoding/hex"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -158,6 +159,24 @@ func TestThemeEditWritebackProducesParseableGo(t *testing.T) {
 	// without naming every token manually.
 	if !strings.Contains(string(src), "style.AutoFillNames(&App)") {
 		t.Error("emitted file missing the AutoFillNames init guard")
+	}
+}
+
+func TestThemeEditWritebackIsByteStable(t *testing.T) {
+	th := uitheme.Default()
+	th.DarkCode, th.Components, th.Knobs = map[string]string{}, map[string]string{}, map[string]string{}
+	for i := range 16 {
+		k := "key" + strconv.Itoa(i)
+		th.DarkCode[k], th.Components[k], th.Knobs[k] = "a", "b", "c"
+	}
+	first, err := emitThemeGoSource(th, "theme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 8 {
+		if again, _ := emitThemeGoSource(th, "theme"); string(again) != string(first) {
+			t.Fatal("two emissions of one theme differ")
+		}
 	}
 }
 
@@ -389,6 +408,7 @@ func TestTokenControlType(t *testing.T) {
 		{"dark.color-primary", "color"},
 		{"color-text-muted", "color"},
 		{"z-modal", "number"},
+		{"font-weight-bold", "number"},
 		{"spacing-md", "number-px"},
 		{"radii-lg", "number-px"},
 		{"breakpoint-md", "number-px"},
@@ -538,6 +558,16 @@ func TestThemeEditWritebackHTTP(t *testing.T) {
 	}
 	if _, err := os.Stat(srv.OutPath); err != nil {
 		t.Errorf("writeback did not create %s: %v", srv.OutPath, err)
+	}
+}
+
+func TestThemeEditTokenIs32RandomBytes(t *testing.T) {
+	tok, err := NewThemeEditToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw, err := hex.DecodeString(tok); err != nil || len(raw) != 32 {
+		t.Fatalf("token %q is not 32 hex-encoded bytes (err %v)", tok, err)
 	}
 }
 
@@ -856,6 +886,22 @@ func TestThemeEditApplyMalformedBody(t *testing.T) {
 	}
 }
 
+func TestThemeEditApplyCapsTheBody(t *testing.T) {
+	if maxThemeEditBody != 64<<10 {
+		t.Fatalf("maxThemeEditBody = %d, the rule says 64 KiB", maxThemeEditBody)
+	}
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	body := `{"key":"color-primary","value":"` + strings.Repeat("a", maxThemeEditBody) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/__theme/apply", strings.NewReader(body))
+	req.Host = "127.0.0.1:0"
+	req.Header.Set("Authorization", "Bearer "+srv.Token)
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("apply past the body cap: status %d, want 400", rec.Code)
+	}
+}
+
 // An apply with an invalid value surfaces the ApplyTokens error as JSON.
 func TestThemeEditApplyInvalidValueJSON(t *testing.T) {
 	srv := newTestServer(t)
@@ -1007,8 +1053,8 @@ func TestThemeEditControlsPageShowsTheWorkingTheme(t *testing.T) {
 	if got := rec.Header().Get("X-Frame-Options"); got != "DENY" {
 		t.Errorf("X-Frame-Options = %q, want DENY — otherwise any page the developer has open can clickjack Write", got)
 	}
-	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'none'") {
-		t.Errorf("Content-Security-Policy = %q, want frame-ancestors 'none'", csp)
+	if csp := rec.Header().Get("Content-Security-Policy"); csp != "frame-ancestors 'none'; base-uri 'none'" {
+		t.Errorf("Content-Security-Policy = %q, want exactly frame-ancestors 'none'; base-uri 'none'", csp)
 	}
 }
 
@@ -1239,6 +1285,24 @@ func TestThemeSelectorsHandleQuotes(t *testing.T) {
 	}
 	if !strings.Contains(themeEditChromeJS, "getAttribute(attr) === key") {
 		t.Fatal("theme script does not match author-supplied token keys as attribute values")
+	}
+}
+
+func TestContrastFillsUseTheirOwnInk(t *testing.T) {
+	want := map[string]string{
+		"danger-fg|danger":   "var(--color-danger-fg)",
+		"success-fg|success": "var(--color-primary-fg)",
+	}
+	for _, p := range contrastPairs {
+		if ink, ok := want[p.name]; ok {
+			if p.fg != ink {
+				t.Errorf("%s measures %s, want %s", p.name, p.fg, ink)
+			}
+			delete(want, p.name)
+		}
+	}
+	if len(want) > 0 {
+		t.Errorf("pairs missing: %v", want)
 	}
 }
 

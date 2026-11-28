@@ -8,13 +8,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// The control catalog: app spec block kinds for plain form controls,
-// static tables, and lists, each emitted as a framework/ui (or core-ui/html
-// list or nav) call. They exist so a screen can carry a form that is not
-// bound to an entity, which is what `gofastr generate screen --from-a11y`
-// maps a captured page onto. The names avoid the raw node kinds (button,
-// form, select, list, table, nav), which render as uinode trees and keep
-// their meaning.
 var appSpecControlKinds = map[string]bool{
 	"action_button": true, "custom_form": true, "text_field": true,
 	"number_field": true, "checkbox": true, "switch": true,
@@ -26,14 +19,12 @@ func AppSpecControlKind(kind string) bool {
 	return appSpecControlKinds[strings.ToLower(strings.TrimSpace(kind))]
 }
 
-// appSpecChoice is one select or radio option.
 type appSpecChoice struct {
 	Label, Value string
 	On           bool
 }
 
-// AppSpecChoices reads an options prop: a list of plain strings, or of
-// {label, value, selected|checked} maps. A missing value is the label.
+// AppSpecChoices reads an options prop: a list of strings or of {label, value, selected|checked} maps.
 func AppSpecChoices(b AppSpecBlock) ([]appSpecChoice, error) {
 	raw, ok := b.Props["options"]
 	if !ok {
@@ -124,11 +115,6 @@ func AppSpecTableRows(b AppSpecBlock) ([][]string, error) {
 	return out, nil
 }
 
-// These spec checks cannot share code with emitted Go constructors.
-// TestRenderPanicParity in render_parity_test.go keeps their refusals aligned.
-// validateAppSpecControlBlock enforces the props each control's
-// framework/ui component refuses to render without: a missing label or
-// name would otherwise ship as a panic on the generated screen.
 func validateAppSpecControlBlock(screenName, kind string, b AppSpecBlock) error {
 	fail := func(format string, args ...any) error {
 		return fmt.Errorf("app spec: screen %q %s %s", screenName, kind, fmt.Sprintf(format, args...))
@@ -183,8 +169,6 @@ func validateAppSpecControlBlock(screenName, kind string, b AppSpecBlock) error 
 		if err := need("action"); err != nil {
 			return err
 		}
-		// The same predicate login_form/signup_form apply, so validate and
-		// render cannot disagree about a safe form action.
 		if action := AppSpecProp(b, "action"); !urlsafe.OK(action, urlsafe.Anchor) {
 			return fail("action %q is not a safe form action: use an http(s) or root-relative URL", action)
 		}
@@ -200,7 +184,6 @@ func validateAppSpecControlBlock(screenName, kind string, b AppSpecBlock) error 
 		if len(columns) == 0 {
 			return fail("requires columns")
 		}
-		// ui.DataTable refuses a hidden caption that is not there.
 		if AppSpecBoolProp(b, "caption_hidden") && strings.TrimSpace(AppSpecProp(b, "caption")) == "" {
 			return fail("caption_hidden needs a caption: the caption names the table for assistive technology")
 		}
@@ -214,7 +197,6 @@ func validateAppSpecControlBlock(screenName, kind string, b AppSpecBlock) error 
 			}
 		}
 	case "nav_links":
-		// html.Nav refuses an unlabelled landmark.
 		return need("label")
 	}
 	return nil
@@ -246,8 +228,6 @@ func normalizeControlProps(kind string, props map[string]any) map[string]any {
 	return props
 }
 
-// appSpecBlocksHaveCustomForm reports whether a custom_form sits anywhere
-// in blocks: its emitted ui.Form reads the request ctx.
 func appSpecBlocksHaveCustomForm(blocks []AppSpecBlock) bool {
 	for _, b := range blocks {
 		if strings.EqualFold(strings.TrimSpace(b.Kind), "custom_form") || appSpecBlocksHaveCustomForm(b.Children) {

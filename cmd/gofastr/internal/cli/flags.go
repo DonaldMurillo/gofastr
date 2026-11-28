@@ -1,22 +1,13 @@
 package cli
 
 import (
+	"flag"
 	"fmt"
+	"slices"
 	"strings"
 )
 
-// ParseFlags reads hand-rolled flags in both the --name=value and the
-// --name value form. valued maps a flag to where its value goes and bare
-// maps a flag that takes none to the bool it sets; it returns the flags
-// it saw.
-//
-// It refuses what a typo or a missing value would otherwise turn into a
-// silent default: an unknown flag, an argument that is not a flag, a bare
-// flag given =value, and a valued flag whose next argument is the next
-// flag (`--addr --no-a11y` took "--no-a11y" as the address and dropped
-// the a11y skip). A value that starts with a dash is written
-// --name=<value>; a lone "-" (codesign's ad-hoc identity) is a value.
-// Each validator checks every supplied value before the parser stores it.
+// ParseFlags reads --name=value and --name value flags and returns those it saw.
 func ParseFlags(args []string, valued map[string]*string, bare map[string]*bool, validators ...func(name, value string) error) (map[string]bool, error) {
 	seen := map[string]bool{}
 	for i := 0; i < len(args); i++ {
@@ -54,14 +45,52 @@ func ParseFlags(args []string, valued map[string]*string, bare map[string]*bool,
 	return seen, nil
 }
 
-// IsFlagToken reports whether s reads as a flag rather than a value: it
-// starts with a dash and is not a lone "-" (the stdin marker, and
-// codesign's ad-hoc identity). A hand-rolled `--name value` parser checks
-// it before taking the next argument as the value.
+// IsFlagToken reports whether s starts with a dash and is not a lone "-".
 func IsFlagToken(s string) bool { return len(s) > 1 && s[0] == '-' }
 
-// NeedsValue is the refusal for a valued flag with no value after it, or
-// with the next flag where its value belongs.
+// NeedsValue is the refusal for a valued flag with no value after it.
 func NeedsValue(name string) error {
 	return fmt.Errorf("%s needs a value (write %s=<value> for one that starts with a dash)", name, name)
+}
+
+// ParsePositionals parses args through fs and returns the non-flag arguments.
+func ParsePositionals(fs *flag.FlagSet, args []string) ([]string, error) {
+	var positional []string
+	for len(args) > 0 {
+		if err := fs.Parse(args); err != nil {
+			return nil, err
+		}
+		args = fs.Args()
+		if len(args) > 0 {
+			positional = append(positional, args[0])
+			args = args[1:]
+		}
+	}
+	return positional, nil
+}
+
+// HasHelpFlag reports whether --help or -h appears anywhere in args.
+func HasHelpFlag(args []string) bool {
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			return true
+		}
+	}
+	return false
+}
+
+// HasHelpFlagBeforeTerminator is HasHelpFlag over the arguments before the first "--".
+func HasHelpFlagBeforeTerminator(args []string) bool {
+	if end := slices.Index(args, "--"); end >= 0 {
+		args = args[:end]
+	}
+	return HasHelpFlag(args)
+}
+
+// HasFlagBeforeTerminator reports whether flag appears in args before the first "--".
+func HasFlagBeforeTerminator(args []string, flag string) bool {
+	if end := slices.Index(args, "--"); end >= 0 {
+		args = args[:end]
+	}
+	return slices.Contains(args, flag)
 }

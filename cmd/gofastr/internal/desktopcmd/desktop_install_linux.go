@@ -21,8 +21,6 @@ const linuxInstallReceiptName = linuxbundle.ReceiptName
 
 type linuxInstallPaths struct{ data, bin, apps, applications string }
 
-// Install only a verified fixed-format bundle. Checksums are integrity checks,
-// not authenticity: the user must trust the executable's publisher separately.
 func installLinuxBundle(source string) error {
 	bundle, err := openLinuxInstallBundle(source, false, true)
 	if err != nil {
@@ -68,8 +66,6 @@ func installVerifiedLinuxBundle(bundle *linuxbundle.Bundle, paths linuxInstallPa
 			return fmt.Errorf("installation target %q already exists; refusing replacement (uninstall the unchanged installation first)", target.name)
 		}
 	}
-	// Mkdir and O_EXCL reserve new destinations; rollback touches only objects
-	// created by this attempt. This is not a cross-directory crash transaction.
 	if err = apps.Mkdir(id, 0700); err != nil {
 		return err
 	}
@@ -145,9 +141,6 @@ func uninstallLinuxBundle(id string) error {
 		return err
 	}
 	defer bin.Close()
-	// An update of the app holds this lock while it swaps the installation;
-	// uninstall holds it until every file is gone, so neither runs while
-	// the other is part way through.
 	lock, err := apps.OpenFile(linuxbundle.LockName(id), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return err
@@ -161,9 +154,6 @@ func uninstallLinuxBundle(id string) error {
 	name := id
 	bundle, receipt, err := linuxbundle.OpenInstalled(filepath.Join(paths.apps, id), id)
 	if _, lerr := apps.Lstat(id); err != nil && errors.Is(lerr, fs.ErrNotExist) {
-		// An update stopped between moving the installation aside and moving
-		// its replacement in leaves only <id>~old: uninstall that, when it is
-		// an unchanged installation the external files below also vouch for.
 		old := id + linuxbundle.SideSep + "old"
 		if b, r, oerr := linuxbundle.OpenInstalled(filepath.Join(paths.apps, old), id); oerr == nil {
 			bundle, receipt, err, name = b, r, nil, old
@@ -194,8 +184,6 @@ func uninstallLinuxBundle(id string) error {
 	if receipt.LauncherSHA256 != linuxInstallDigest(launcher) || receipt.DesktopSHA256 != linuxInstallDigest(desktopEntry) {
 		return fmt.Errorf("refusing uninstall: launcher or desktop entry was modified; all files were retained")
 	}
-	// Every payload and both external files have been checked before deletion.
-	// Remove only the fixed inventory: never RemoveAll an installation directory.
 	if err = applications.Remove(id + ".desktop"); err != nil {
 		return err
 	}
@@ -212,8 +200,6 @@ func uninstallLinuxBundle(id string) error {
 	return nil
 }
 
-// removeLinuxInstallation removes an opened installation's fixed
-// inventory, then its directory under apps; never RemoveAll.
 func removeLinuxInstallation(apps *os.Root, name string, bundle *linuxbundle.Bundle) error {
 	for _, entry := range bundle.Manifest.Files {
 		if err := bundle.Root.Remove(entry.Path); err != nil {
@@ -228,9 +214,6 @@ func removeLinuxInstallation(apps *os.Root, name string, bundle *linuxbundle.Bun
 	return apps.Remove(name)
 }
 
-// removeLinuxUpdateLeftovers removes the copies an update keeps beside
-// the installation at dir, <id>~old and <id>~new, each only when it is
-// an installation of id; anything else there is reported and kept.
 func removeLinuxUpdateLeftovers(apps *os.Root, dir, id string) {
 	for _, side := range []string{"old", "new"} {
 		name := id + linuxbundle.SideSep + side
@@ -256,7 +239,6 @@ func linuxUserInstallPaths() (linuxInstallPaths, error) {
 		return linuxInstallPaths{}, err
 	}
 	data := os.Getenv("XDG_DATA_HOME")
-	// The XDG specification says relative values are invalid and ignored.
 	if data == "" || !filepath.IsAbs(data) {
 		data = filepath.Join(home, ".local", "share")
 	}

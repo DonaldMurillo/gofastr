@@ -12,19 +12,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/secrets"
 )
 
-// loadRepoSecrets loads the provider keys a repository's
-// .harness-secrets/env supplies, but only with the operator's consent:
-// an approval remembered for this directory and key set, the
-// --allow-repo-secrets flag (allow), or a yes to the prompt when the
-// run is interactive, which is remembered. A run with nobody to ask
-// refuses the keys and says how to allow them. Keys the environment
-// already holds are never asked about: the shell always wins.
-//
-// A key that is not an environment variable name never reaches the
-// prompt or the environment: the secrets package's own
-// isProviderCredentialKey checks the whole name at the source (#669).
-// Every value printed here (key names, the file's path, the repository
-// directory) is scrubbed too (cli.Fprintf).
 func loadRepoSecrets(xdgConfig string, allow, interactive bool, in io.Reader, out io.Writer) {
 	wd, err := os.Getwd()
 	if err != nil {

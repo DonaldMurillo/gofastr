@@ -1,0 +1,78 @@
+primitive: cli.audit.a11y
+summary: gofastr audit a11y - the static accessibility lint over a source tree, or with --url an axe-core scan of a running app under both color schemes in headless Chrome, either one exiting 1 on any finding.
+code:
+  - cmd/gofastr/internal/auditcmd/audit_a11y.go
+  - cmd/gofastr/internal/auditcmd/audit_a11y_axe.go
+docs:
+  - framework/docs/content/cli.md
+invariants:
+  - id: flag-forms
+    rule: --url, --pages, --email and --password take a value as --flag=value or --flag value, a value that is empty or is the next flag is refused, and only the first argument error is reported, each exiting 2.
+    enforced_by:
+      - test: cmd/gofastr/internal/auditcmd.TestParseA11yArgsSpaceAndEqualsForms
+      - test: cmd/gofastr/internal/auditcmd.TestA11yValueFlagRefusesNextFlag
+      - test: cmd/gofastr/internal/auditcmd.TestA11yEmptyValueRefused
+      - test: cmd/gofastr/internal/auditcmd.TestA11yFirstArgErrorWins
+      - test: cmd/gofastr/internal/auditcmd.TestParseA11yArgsRootAndBadFlag
+  - id: credentials-together-with-url
+    rule: --email and --password are given together and only with an absolute http or https --url, or the run exits 2 before reading any secret.
+    enforced_by:
+      - test: cmd/gofastr/internal/auditcmd.TestA11yEmailAndPasswordComeTogether
+      - test: cmd/gofastr/internal/auditcmd.TestAuditA11yReadsPasswordOnlyForValidatedRuntime
+  - id: password-off-argv
+    rule: --password - takes the secret from GOFASTR_AUDIT_PASSWORD when set, else from stdin, never the dash itself; a literal value is used but warns on stderr that ps shows it.
+    enforced_by:
+      - test: cmd/gofastr/internal/auditcmd.TestAuditA11yRedPasswordEnv
+      - test: cmd/gofastr/internal/auditcmd.TestAuditA11yRedPasswordStdin
+      - test: cmd/gofastr/internal/auditcmd.TestA11yLiteralPasswordWarns
+      - test: cmd/gofastr/internal/auditcmd.TestParseA11yArgsLeavesPasswordUnresolved
+  - id: coverage-gaps-fail
+    rule: A page whose scan ends on another path is recorded as unreachable and scanned no further, and a run with an unreachable page, or whose only page is /login, is incomplete, never reported clean, and exits 1.
+    enforced_by:
+      - test: cmd/gofastr/internal/auditcmd.TestAuditA11yURLCountsRedirectsAsUnreachable
+      - test: cmd/gofastr/internal/auditcmd.TestAxeReportShowsCoverage
+      - test: cmd/gofastr/internal/auditcmd.TestAxeReportFlagsLoginOnly
+  - id: sitemap-discovery
+    rule: With no --pages, pages come from /sitemap.xml, a URL set or an index whose parts are each read once and must be URL sets, and each page location, an http or https URL with a host or a root-relative path, is reduced to its path whatever its origin; a missing sitemap means /, while any other read failure, a redirected sitemap, or a sitemap with no page location fails the run.
+    enforced_by:
+      - test: cmd/gofastr/internal/auditcmd.TestA11ySitemapDiscoversURLSet
+      - test: cmd/gofastr/internal/auditcmd.TestA11ySitemapFallsBackToRoot
+      - test: cmd/gofastr/internal/auditcmd.TestA11ySitemapRootFailuresFailDiscovery
+      - test: cmd/gofastr/internal/auditcmd.TestA11ySitemapRejectsNonPageLocations
+      - test: cmd/gofastr/internal/auditcmd.TestA11ySitemapReadsAnotherOriginAsALocalPath
+      - test: cmd/gofastr/internal/auditcmd.TestA11ySitemapIndexDoesNotScanPartURLs
+      - test: cmd/gofastr/internal/auditcmd.TestA11ySitemapMissingPartFailsDiscovery
+      - test: cmd/gofastr/internal/auditcmd.TestA11ySitemapIndexReadsEachPartOnce
+      - test: cmd/gofastr/internal/auditcmd.TestA11ySitemapPartMustBeAURLSet
+      - test: cmd/gofastr/internal/auditcmd.TestAuditA11yURLCountsRedirectsAsUnreachable
+  - id: report-names-the-fix
+    rule: The axe report gives each violation its impact, rule id, help text, help URL and DOM targets.
+    enforced_by:
+      - test: cmd/gofastr/internal/auditcmd.TestAuditA11yURLFindsImageAltViolation
+decisions:
+  - id: login-clicks-the-real-button
+    date: 2026-11-28
+    status: accepted
+    decision: The login step clicks the form's submit button and waits a fixed 750ms before reading the location.
+    rejected:
+      - option: chromedp.Submit on the form.
+        why: It does not dispatch the form's submit event, so the app's own login path, its cookie and redirect, never runs.
+      - option: Poll the location from page JavaScript.
+        why: The poll lives in the pre-submit document and fails as soon as the successful redirect replaces it.
+  - id: coverage-apart-from-violations
+    date: 2026-11-28
+    status: accepted
+    decision: A run records unreachable pages apart from its violations.
+    rejected:
+      - option: Count a redirected page as a scanned page with no violations.
+        why: A login redirect would then read as a clean page, and an audit of a signed-out app would pass.
+    upholds: [coverage-gaps-fail]
+  - id: sitemap-locations-read-as-paths
+    date: 2026-11-28
+    status: accepted
+    decision: A sitemap location or index part on any origin is read as its path on the --url origin.
+    rejected:
+      - option: Compare each location's origin with --url and drop or refuse a foreign one.
+        why: uihost writes every location with the app's production BaseURL while the audit usually runs against a local server, so every local audit of an app with a sitemap would find no page; nothing is fetched from another origin either way.
+    revisit_if: The audit is pointed at sitemaps the app does not generate, uihost writes locations relative to the request, or a static export's BaseURL carries a mount path, whose prefix the audit keeps and joins onto --url.
+    upholds: [sitemap-discovery]

@@ -1,0 +1,127 @@
+primitive: appgen.app
+summary: "Renders an app spec into a runnable app: main.go, app.go, the screens, their phrases, endpoint stubs, theme assets and the generated axe and E2E tests."
+code:
+  - cmd/gofastr/internal/appgen/appspec.go
+  - cmd/gofastr/internal/appgen/appspec_assets.go
+  - cmd/gofastr/internal/appgen/appspec_controls.go
+  - cmd/gofastr/internal/appgen/appspec_e2e.go
+  - cmd/gofastr/internal/appgen/appspec_endpoints.go
+  - cmd/gofastr/internal/appgen/appspec_phrases.go
+  - cmd/gofastr/internal/appgen/appspec_test.go
+  - cmd/gofastr/internal/appgen/appspec_*_test.go
+  - cmd/gofastr/internal/appgen/project_app.go
+  - cmd/gofastr/internal/appgen/view_stubs.go
+  - cmd/gofastr/internal/appgen/view_stubs_impl.go
+  - cmd/gofastr/internal/appgen/casing.go
+docs:
+  - framework/docs/content/app-spec.md
+  - framework/docs/content/tutorial-app-spec.md
+invariants:
+  - id: route-patterns-follow-screen-router
+    rule: Generated screen mounts and route comparisons use the app router's normalization, including brace-style catch-alls.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestGeneratedCatchAllMountMatchesRouter
+    applies:
+      - core-ui/app/router.go
+  - id: form-relation-keys-stay-exact
+    rule: A generated entity form reads its relation options through the SDK's parseJSON source (jsParseJSON), so an integer key past 2^53 keeps the digits the server sent.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestEntityFormRelationKeepsBigIntKey
+  - id: added-screens-use-the-project-api
+    rule: Screens generate app --add renders post to, read from and invalidate on the project's API prefix, and their auth forms post to the project's auth base path (both AppSpec.RouteApp), not the fragment's empty app section.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestAddedScreenUsesProjectAPIPrefix
+  - id: added-screens-mount-through-the-project-shell
+    rule: A screen generate app --add renders takes the layout, guest redirect, home and login route the project's generated app.go and screens already use (AppSpec.ProjectShell), so its file matches a full generate of the project with the screen in it; one that would mount through an authPolicy or marketingLayout no Go file of the project declares is refused, and a helper declared outside app.go counts.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestAddedScreenMatchesFullGenerate
+      - test: cmd/gofastr/internal/appgen.TestAddRefusesUndeclaredShellHelper
+      - test: cmd/gofastr/internal/appgen.TestAddFindsShellHelperOutsideAppGo
+  - id: add-preserves-distinct-mounted-routes
+    rule: Additive generation rejects equivalent mounted route shapes for new authored or synthesized screens and skips re-added screens.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestAddEquivalentScreenRoutesRefused
+      - test: cmd/gofastr/internal/appgen.TestAddScreenCollidesWithSynthesizedRoute
+      - test: cmd/gofastr/internal/appgen.TestAddSameScreenIsIdempotent
+  - id: create-form-block-identity
+    rule: Each create form binds its mount action and control IDs to its own screen and block path.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestCreateFormsOwnMountActionsAndControlIDs
+  - id: markdown-h1-counts
+    rule: A Markdown H1 suppresses the fallback H1 and lowers the heading of a later entity list.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestMarkdownH1LowersFollowingListHeading
+  - id: subprocess-records-semantic-coverage
+    rule: Generated SQLite and Postgres E2E child servers both receive GOFASTR_SEMANTIC_COVERAGE=1 before their driver-specific environment.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestGeneratedE2ESetsSemanticCoverageEnv
+  - id: one-create-field-eligibility
+    rule: Create form validation and emission use the same field eligibility check, with validation retaining reasons for refused entries.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestFormFieldsEntryMustDraw
+      - test: cmd/gofastr/internal/appgen.TestEntityFormUsesWireNames
+  - id: theme-text-cannot-inject-css
+    rule: A theme font family reaches the emitted CSS reduced to letters, digits, space, dash and underscore, and a theme color that fails style.ValidateColorValue is dropped for the default with a comment that does not quote it.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestFontFamilyCannotInjectCSS
+      - test: cmd/gofastr/internal/appgen.TestThemeValueCannotInjectCSS
+      - test: cmd/gofastr/internal/appgen.TestEmitterDropsUnsafeThemeColor
+  - id: font-fetch-trusts-only-gstatic
+    rule: Generation fetches a font only from an https URL whose host is exactly fonts.gstatic.com and whose path ends in .woff2, whatever the css2 response names, and follows no redirect that leaves https or the host it asked.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestFontFetchRefusesARedirectOffTheHost
+      - test: cmd/gofastr/internal/appgen.TestFontFetchOnlyTrustsGstatic
+      - test: cmd/gofastr/internal/appgen.TestFontFetchChecksThePathNotTheQuery
+  - id: font-fetch-failure-is-soft
+    rule: A theme font whose fetch fails, offline or because the css2 answer names no fonts.gstatic.com woff2, is left out of the files and reported missing, and the app still renders.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestFontsOfflineReportedMissing
+      - test: cmd/gofastr/internal/appgen.TestFontFromAMovedCDNIsReportedMissing
+  - id: pwa-follows-the-app
+    rule: A PWA app gets a static dir for its icons, and its deny list carries a custom api_prefix and auth base path so the service worker never caches or intercepts the API.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestPWAAppGetsAStaticDirAndItsMountsDenied
+      - test: cmd/gofastr/internal/appgen.TestAuthBaseReachesPWAAndAxe
+  - id: e2e-boots-a-seeded-app
+    rule: The generated e2e test loads .env for ADMIN_SEED_PASSWORD whenever the app seeds an admin, with or without a gated screen to log in to, and expects 403 on a screen whose role the admin lacks.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestE2ELoadsTheSeedPasswordWithoutGatedScreens
+      - test: cmd/gofastr/internal/appgen.TestE2EExpects403ForRoleAdminLacks
+  - id: phrase-scopes-are-distinct
+    rule: Every screen and crud file gets its own phrase key scope, a lower-cased repeat numbered in spec order, so i18n.Define never sees one key with two texts.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestPhraseScopesNeverFold
+  - id: add-merges-endpoints-project-first
+    rule: Under --add the settings endpoints section is the project's entries plus the fragment's new names, a name the project has keeping the project's entry.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestMergeEndpointsKeepsTheProjectsEntry
+  - id: view-stubs-ship-verbatim
+    rule: view_stubs_impl.go is embedded and written into every generated app as is, so its source, comments included, is generated output.
+    judge: Does this change edit view_stubs_impl.go, including its comments, without accepting that every generated app's view_stubs.go changes with it?
+decisions:
+  - id: fonts-through-the-design-system
+    date: 2026-11-28
+    status: accepted
+    decision: The generated app declares fontFaceCSS as a call to style.FontFaceCSS, emitted even with no fonts since main.go reads it.
+    rejected:
+      - option: Emit the @font-face rules as a CSS string.
+        why: The generator, and then every generated app, would own a second styling surface that gofastr verify flags (hard rule 7).
+  - id: e2e-boots-the-declared-driver
+    date: 2026-11-28
+    status: accepted
+    decision: The generated e2e test boots the app on the spec's declared driver, provisioning a throwaway database for a Postgres spec and skipping when Postgres is unreachable.
+    rejected:
+      - option: Boot every generated e2e test on SQLite, since the generated app links both drivers and DB_DRIVER can switch.
+        why: The declared engine is the one the spec ships against, so a SQLite run would not test it.
+      - option: Fail when Postgres is unreachable.
+        why: CI with no Postgres would fail every Postgres spec's test; it stays green by skipping.
+  - id: missing-font-is-a-warning
+    date: 2026-11-28
+    status: accepted
+    decision: A theme font that cannot be fetched is a warning from gofastr generate, and the generated app falls back to system fonts until the woff2 is supplied.
+    rejected:
+      - option: Fail generation when a font cannot be fetched.
+        why: An offline run, or Google moving its font CDN away from fonts.gstatic.com, would stop every app with a theme font from generating.
+      - option: Fetch the woff2 from whatever host the css2 answer names.
+        why: The answer is network input, and font-fetch-trusts-only-gstatic keeps generation from fetching anywhere else.
+    upholds: [font-fetch-failure-is-soft, font-fetch-trusts-only-gstatic]

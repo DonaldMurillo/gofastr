@@ -1,0 +1,64 @@
+package entities
+
+import (
+	"github.com/DonaldMurillo/gofastr/core/migrate"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+)
+
+// RegisterAll registers all entity definitions with the app.
+func RegisterAll(app *framework.App) {
+	app.Entity("posts", entity.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "title", Type: schema.String, Required: true, Max: ptrFloat(200)},
+			{Name: "body", Type: schema.Text},
+			{Name: "published", Type: schema.Bool},
+		},
+		// MCP: true registers posts_list/get/create/update/delete as MCP tools
+		// at /mcp (see framework.WithMCP in main.go). The tools reuse the CRUD
+		// handlers and this same Exposure, so they are gated exactly like the
+		// REST routes: an unauthenticated tools/call gets the same 401, never
+		// a bypass.
+		//
+		// Secure by default: CRUD requires a signed-in session, which
+		// battery/auth (wired in main.go) issues at /login. Add
+		// Public: true for anonymous access (gofastr docs auth).
+		Exposure: &entity.ExposureConfig{CRUD: boolPtr(true), MCP: true},
+	})
+}
+
+// RegisterMigrations registers all entity migrations.
+//
+// This migration is deliberately redundant with the entity declaration above:
+// App.Start auto-migrates from EntityConfig, so adding a field to Fields is
+// enough for the column to appear on the next boot; you do NOT have to edit
+// this file to change the schema.
+//
+// It is scaffolded anyway because versioned migrations are what a real
+// deployment reviews and rolls back, and auto-migrate only applies additive
+// changes. Keep both and let auto-migrate handle development, run
+// "gofastr migrate generate" to turn the current declaration into an explicit
+// migration before a deploy, or delete this function and pass
+// framework.WithoutAutoMigrate() to require explicit migrations for everything.
+func RegisterMigrations(m *migrate.Migrator) {
+	if err := m.Register(migrate.Migration{
+		Version: 1,
+		Name:    "create_posts",
+		Up: `CREATE TABLE IF NOT EXISTS posts (
+			id TEXT PRIMARY KEY NOT NULL,
+			title TEXT NOT NULL,
+			body TEXT DEFAULT '',
+			published BOOLEAN DEFAULT FALSE,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		Down: `DROP TABLE IF EXISTS posts`,
+	}); err != nil {
+		panic(err)
+	}
+}
+
+func ptrFloat(f float64) *float64 { return &f }
+
+func boolPtr(b bool) *bool { return &b }

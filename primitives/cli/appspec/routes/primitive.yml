@@ -1,0 +1,41 @@
+primitive: cli.appspec.routes
+summary: Screen routes in an app spec, how their parameters read as the router reads them and which routes a screen may not take because a browser cannot reach them or the app's entity API or framework already serves them.
+code:
+  - cmd/gofastr/internal/appspec/routes.go
+  - cmd/gofastr/internal/appspec/screenroute.go
+docs:
+  - framework/docs/content/app-spec.md
+on_change:
+  - A route the generated main mounts through a new framework option is added to frameworkRoutes with the setting that turns it on, and TestFrameworkRoutePatternsMatchRegistrations covers it.
+invariants:
+  - id: params-read-as-the-router-reads-them
+    rule: RouteParamNames reads {name}, {name...}, {name:constraint}, :name, :name* and :name:constraint segments as the parameter name, and RouteShape erases names but keeps constraints and catch-all markers, so two routes differing only in parameter names share a shape and are refused together.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestRouteParamNamesReadBothSyntaxes
+      - test: cmd/gofastr/internal/appspec.TestRouteShapeKeepsConstraintsAndCatchAll
+      - test: cmd/gofastr/internal/appspec.TestRoutesDifferingOnlyInParamRefused
+      - test: cmd/gofastr/internal/appspec.TestRoutesWithDistinctShapesAllowed
+  - id: screen-param-is-id-or-the-last
+    rule: ScreenParamName is id when the route declares it, else the route's last parameter, else id.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestScreenParamNamePrefersIDThenTheLastParam
+  - id: a-route-is-a-browser-path
+    rule: "A screen route starts with /, holds no space, control byte, ?, # or backslash, has no empty, . or .. segment, and names no parameter twice."
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestScreenRoutesRefused
+  - id: screens-stay-off-the-entity-api
+    rule: A screen route at or under a CRUD-enabled entity's API mount is refused, and a fragment with no app section is not judged unless its project's app settings were read.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestScreenRoutesRefused
+      - test: cmd/gofastr/internal/appspec.TestScreenRouteEntityAPICheckNeedsTheAppSection
+      - test: cmd/gofastr/internal/appspec.TestScreenMayTakeACrudlessEntitysRoute
+  - id: screens-stay-off-framework-routes
+    rule: A screen route at a route the generated app's framework serves (health, readiness, robots, sitemap, favicon, MCP, well-known, runtime assets, OpenAPI and API docs with entities, PWA files with pwa, llm.md pages with llm_md, the admin back office at or under its path, the auth battery's me route) is refused, each only when the setting that mounts it is on.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestScreenAtFrameworkRouteRefused
+      - test: cmd/gofastr/internal/appspec.TestEntityLLMMDFreesIndexScreenRoute
+      - test: cmd/gofastr/internal/appspec.TestScreenRefusesAuthMeRoute
+  - id: framework-patterns-are-what-mounts
+    rule: AppSpecFrameworkRoutePatterns lists the patterns the generated app registers, the served patterns of a reserved tree rather than the tree, so a lint never credits an arbitrary child of a reserved path.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestFrameworkRoutePatternsMatchRegistrations

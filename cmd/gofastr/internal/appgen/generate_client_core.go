@@ -1,9 +1,5 @@
 package appgen
 
-// clientCore is the doc text that differs between the generated client
-// packages: the entity SDK (renderClient) and the --from-openapi CLI's
-// self-contained client (renderCLISelfClient). Each field is a whole
-// comment block, "// " lines ending in a newline.
 type clientCore struct {
 	ClientDoc    string
 	NewClientDoc string
@@ -13,9 +9,6 @@ type clientCore struct {
 	Timeout string
 }
 
-// render emits the Client type, NewClient and APIError. The default
-// client both packages build refuses redirects: every request carries the
-// token, and a 3xx would re-send it to whatever origin the response names.
 func (c clientCore) render() string {
 	newClient := "\t\t//gofastr:allow(clienttimeout) requests carry the caller's context (http.NewRequestWithContext); a Client.Timeout would kill Watch's long-lived SSE stream mid-subscription\n" +
 		"\t\thttpClient = &http.Client{\n"

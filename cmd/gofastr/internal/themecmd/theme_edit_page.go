@@ -1,15 +1,7 @@
 // check-csp:ignore-file
 //
-// This file emits the local theme editor's inline bootstrap script. The
-// editor's JS genuinely has nowhere else to live: it is per-session glue
-// between the controls page and the preview iframe, and a separate asset
-// pipeline for ~100 lines of bootstrap would cost more than it saved. The
-// check-csp:ignore-file marker above is the CSP linter's exemption for that
-// inline <script>; cmd/gofastr/internal/harnesscmd/harness_http.go carries the same marker for
-// the same reason. Everything else in this file, the chrome's structural
-// markup and its styling, composes framework/ui + core-ui components and
-// links /__gofastr/app.css for the framework's default theme. No bespoke
-// CSS ships here.
+// The editor's per-session bootstrap script (themeEditChromeJS) is inlined
+// in the controls page; nothing else in this file ships script or CSS.
 
 package themecmd
 
@@ -29,31 +21,14 @@ import (
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
-// ServeControlsPage renders the editor chrome: the token controls (left),
-// the live preview iframe (right), the scheme toggle, the write button, and
-// the contrast report. The page embeds the bearer token in a <meta> tag so
-// the inline JS can authenticate POSTs without a query string.
+// ServeControlsPage renders the editor chrome over the working theme, with the
+// session's bearer token in a meta tag.
 func (s *ThemeEditServer) ServeControlsPage(w http.ResponseWriter, r *http.Request) {
-	// The WORKING theme, not the base one. Rendering the base meant a browser
-	// refresh mid-session showed the original values in every swatch while the
-	// server held the edited ones, and Write then emitted values the operator
-	// could not see. The JSON endpoint always read `working`; only the HTML
-	// render disagreed.
 	controls := renderTokenControls(s.currentTokens())
 
 	page := themeEditPageHTML(s.Token, controls, s.OutPath, s.previewThemeKey())
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	// The one page that carries the bearer token was the one page with no
-	// defensive headers: everything else the tool serves inherits them from the
-	// UIHost, and / and /__theme/* bypass it. Loopback binding and Host pinning
-	// stop DNS rebinding; neither stops FRAMING, so any page the developer has
-	// open could iframe this one and clickjack the Write button into
-	// overwriting their theme file.
-	// frame-ancestors and base-uri only. The page carries one inline
-	// <script> (the editor's bootstrap glue; see the file header), so a
-	// default-src policy would break the tool rather than protect it. Framing
-	// is the threat that was actually open.
 	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'; base-uri 'none'")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "no-referrer")
@@ -61,7 +36,6 @@ func (s *ThemeEditServer) ServeControlsPage(w http.ResponseWriter, r *http.Reque
 	_, _ = w.Write([]byte(page))
 }
 
-// tokenGroupEntry is one category bucket of token controls.
 type tokenGroupEntry struct {
 	Name   string
 	Order  int
@@ -72,10 +46,6 @@ type tokenControl struct {
 	Key, Value, Type string
 }
 
-// renderTokenControls emits the grouped controls HTML from a flat token map.
-// Tokens are grouped by key prefix (Colors, Spacing, …) with light/dark
-// split, in a stable display order. Each group is a ui.Collapsible; each
-// control is a ui-form-field-shaped row (see renderOneControl).
 func renderTokenControls(tokens map[string]string) string {
 	groups := groupTokenControls(tokens)
 	parts := make([]render.HTML, 0, len(groups))
@@ -84,9 +54,6 @@ func renderTokenControls(tokens map[string]string) string {
 		for _, t := range g.Tokens {
 			rows = append(rows, renderOneControl(t))
 		}
-		// Open the two most-edited groups by default; collapse the rest.
-		// Carrying the count in the summary text keeps the chrome clear of
-		// bespoke badge markup: the count is what the operator scans for.
 		parts = append(parts, ui.Collapsible(ui.CollapsibleConfig{
 			Summary: fmt.Sprintf("%s (%d)", g.Name, len(g.Tokens)),
 			Open:    g.Name == "Colors" || g.Name == "Colors (dark)" || g.Name == "Component options",
@@ -128,8 +95,6 @@ func groupTokenControls(tokens map[string]string) []tokenGroupEntry {
 		ge.Tokens = append(ge.Tokens, tokenControl{Key: k, Value: v, Type: tokenControlType(k)})
 	}
 	out := make([]tokenGroupEntry, 0, len(groupMap))
-	// Component options follow the catalogue's order (density, then the
-	// button family, then the field family); every other group is by key.
 	catalogue := map[string]int{}
 	for i, o := range uitheme.Options() {
 		catalogue["component."+o.Key] = i
@@ -191,26 +156,7 @@ func tokenGroupName(key string) string {
 	return group
 }
 
-// renderOneControl emits the labelled input(s) for a single token. Colour
-// tokens get a colour-picker swatch alongside the text input (the text
-// input is the source of truth; the picker is a convenience that writes
-// hex back to it). Integer-px tokens strip the "px" suffix for display and
-// the JS re-appends it on submit.
-//
-// Each row is a ui.FormField with ReserveError: the field renders an
-// empty error paragraph (id <control-id>-error, already wired into the
-// control's aria-describedby, and taken out of the grid by the
-// stylesheet while it is empty) that the editor's JS fills on apply
-// failure — no re-render, no bespoke data-err-for lookup. The token key rides on
-// data-token (so the editor JS finds each control by key) and
-// data-field on the wrapper (so the JS can flip the error state
-// without selecting on a bespoke class).
 func renderOneControl(t tokenControl) render.HTML {
-	// Component options render as ui.Select rather than a FormField row:
-	// Select composes its own headless.Field with a readable label, and
-	// its members are a closed list the catalogue owns. A component key
-	// the catalogue does not know falls through to the text control
-	// below — an unrecognised prefix is never hidden.
 	if t.Type == "select" {
 		if opt, ok := componentOptionCatalogue[t.Key]; ok {
 			return componentOptionSelect(t, opt)
@@ -225,29 +171,16 @@ func renderOneControl(t tokenControl) render.HTML {
 	buildInput := func(c headless.FieldControl) render.HTML {
 		switch t.Type {
 		case "color":
-			// ui.ColorField is the design system's swatch + hex-input
-			// affix shell, bound by the headless behaviour module: the
-			// module keeps the swatch and the hex one value in both
-			// directions and marks the shell when the text holds
-			// something the picker cannot show. Both inputs carry
-			// data-token so the editor's JS finds the control by key;
-			// the hex input is the source of truth.
 			return ui.ColorField(ui.ColorFieldConfig{
 				Name:        t.Key,
 				Value:       t.Value,
 				Field:       c,
 				SwatchLabel: t.Key + " colour swatch",
-				// Matches the visible <label> text below, so the announced name and
-				// the seen name are the same string.
-				TextLabel: t.Key,
+				TextLabel:   t.Key,
 				SwatchAttrs: map[string]string{
 					"data-token": t.Key,
 					"data-type":  "color-swatch",
 				},
-				// The field's wiring rides Field above, which is the
-				// typed seam; an aria-describedby here would be a
-				// second source for the same fact, and the component
-				// drops it as its own anyway.
 				TextAttrs: map[string]string{
 					"data-token": t.Key,
 					"data-type":  t.Type,
@@ -259,9 +192,6 @@ func renderOneControl(t tokenControl) render.HTML {
 				ExtraAttrs: map[string]string{"data-token": t.Key, "data-type": t.Type},
 			})
 		default:
-			// Name is the token key: these controls live outside any
-			// form (nothing submits), and the name says what the value
-			// is the moment one ever wraps them.
 			return ui.Control(ui.ControlConfig{
 				Field: c, Type: "text", Name: t.Key, Value: t.Value,
 				ExtraAttrs: map[string]string{"data-token": t.Key, "data-type": t.Type},
@@ -281,10 +211,6 @@ func renderOneControl(t tokenControl) render.HTML {
 	})
 }
 
-// controlInputID derives a stable, HTML-legal id from a token key. Used as
-// the <input id> the label's for= points at; the design system's form-field
-// stylesheet doesn't require it, but label association is a basic
-// accessibility contract.
 func controlInputID(key string) string {
 	var b strings.Builder
 	for _, r := range key {
@@ -298,9 +224,6 @@ func controlInputID(key string) string {
 	return "te-input-" + b.String()
 }
 
-// componentOptionCatalogue indexes the option catalogue by flattened
-// token key ("component.button.treatment"), the shape the controls map
-// carries. Built once: the catalogue is static for the process life.
 var componentOptionCatalogue = func() map[string]uitheme.Option {
 	m := make(map[string]uitheme.Option, len(uitheme.Options()))
 	for _, o := range uitheme.Options() {
@@ -309,12 +232,6 @@ var componentOptionCatalogue = func() map[string]uitheme.Option {
 	return m
 }()
 
-// componentOptionSelect renders one component option as a ui.Select: the
-// design system's labelled native select, its options the catalogue's
-// members in declaration order with the current value selected. The key
-// rides data-token exactly as every other control does, so the editor's
-// JS applies a change the same way it applies a typed value; the label
-// is the readable form of the key.
 func componentOptionSelect(t tokenControl, opt uitheme.Option) render.HTML {
 	options := make([]ui.SelectOption, 0, len(opt.Members))
 	matched := false
@@ -322,9 +239,6 @@ func componentOptionSelect(t tokenControl, opt uitheme.Option) render.HTML {
 		options = append(options, ui.SelectOption{Value: m, Text: m, Selected: m == t.Value})
 		matched = matched || m == t.Value
 	}
-	// A value no member matches would otherwise show as the first member
-	// while the theme holds something else: say what the theme holds.
-	// Picking it again is refused by the apply path like any non-member.
 	if !matched {
 		options = append([]ui.SelectOption{{Value: t.Value, Text: t.Value, Selected: true}}, options...)
 	}
@@ -340,9 +254,6 @@ func componentOptionSelect(t tokenControl, opt uitheme.Option) render.HTML {
 	})
 }
 
-// componentOptionLabel renders a component option key as the label its
-// select shows: "component.button.treatment" → "Button treatment".
-// Derived from the key, not a second list: the option's name is its key.
 func componentOptionLabel(key string) string {
 	base := strings.TrimPrefix(key, "component.")
 	if base == "" {
@@ -352,28 +263,7 @@ func componentOptionLabel(key string) string {
 	return strings.ToUpper(words[:1]) + words[1:]
 }
 
-// themeEditPageHTML composes the editor chrome from design-system primitives
-// (ui.Stack, ui.Cluster, ui.Button, the fui-callout variant surface) plus the
-// framework's ui.Workbench inspector shell. The chrome
-// LINKS /__gofastr/app.css with no ?t= query, so it renders against the
-// host app's DEFAULT theme, pinning the controls to known-good tokens even
-// when the operator has set --color-text: transparent in the working theme.
-// The working theme only lives in the preview iframe, which swaps to
-// /__gofastr/app.css?t=<hash> via swapPreviewCSS.
-//
-// Every visual treatment comes from the design system: the structural
-// The ui-* classes are framework-owned and styled by app.css; the
-// chrome ships no bespoke stylesheet of its own. The inline <script> is the
-// one exception and carries the check-csp:ignore-file exemption at the top
-// of this file.
 func themeEditPageHTML(token, controls, outPath, previewKey string) string {
-	// Sidebar header: title + action buttons. ui.Cluster with justify-between
-	// pushes the actions to the trailing edge; the title leads. The h1
-	// carries no class: fui-page-header__title is scoped under the
-	// PageHeader marker and styles nothing outside one, and no
-	// design-system class styles a workbench rail heading — the old
-	// ui-pageheader__title named nothing, so the heading's rendering is
-	// the browser's own h1 either way.
 	title := render.Tag("h1", nil, render.Text("theme edit"))
 	schemeBtn := ui.Button(ui.ButtonConfig{
 		Label:   "◐ Light",
@@ -392,9 +282,6 @@ func themeEditPageHTML(token, controls, outPath, previewKey string) string {
 		Justify: ui.JustifyBetween,
 	}, title, ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM}, schemeBtn, writeBtn))
 
-	// Status line: a Callout the JS updates by swapping its variant class.
-	// fui-callout--<success|danger|warning|info|neutral> recolours the leading
-	// glyph via the --color-* tokens, so the chrome needs no per-status CSS.
 	statusBox := render.Tag("div", map[string]string{
 		"id":            "te-status",
 		"role":          "status",
@@ -403,8 +290,6 @@ func themeEditPageHTML(token, controls, outPath, previewKey string) string {
 		"data-cui-comp": "ui-callout",
 	}, render.Tag("div", map[string]string{"class": "fui-callout__body"}, render.Text("")))
 
-	// Contrast panel: JS fills this. Same Callout shape; the JS swaps to
-	// fui-callout--warning when findings exist, hidden when none.
 	contrastBox := render.Tag("div", map[string]string{
 		"id":            "te-contrast",
 		"role":          "alert",
@@ -413,9 +298,6 @@ func themeEditPageHTML(token, controls, outPath, previewKey string) string {
 		"data-cui-comp": "ui-callout",
 	})
 
-	// The controls themselves are renderTokenControls output (ui.Collapsible
-	// groups of ui-form-field rows). The wrapping div carries data-controls
-	// so the JS can target it without selecting on a bespoke class.
 	controlsBox := render.Tag("div", map[string]string{
 		"data-controls": "",
 	}, render.HTML(controls))
@@ -429,12 +311,6 @@ func themeEditPageHTML(token, controls, outPath, previewKey string) string {
 		"title": "Theme preview",
 	})
 
-	// ui.Workbench is the design system's two-pane inspector shell: a rail
-	// that scrolls on its own beside a pane that fills the rest, with an
-	// iframe in the pane filling it edge to edge. It was added for this: the
-	// alternative was a rail with no scroll (a 2300px page) beside a preview
-	// collapsed to the iframe's default ~300x150 box, which is what deleting
-	// the old bespoke stylesheet without an upstream replacement produced.
 	bodyInner := ui.Workbench(ui.WorkbenchConfig{
 		Rail: sidebarInner,
 		Pane: iframe,
@@ -443,13 +319,6 @@ func themeEditPageHTML(token, controls, outPath, previewKey string) string {
 		},
 	})
 
-	// The chrome renders OUTSIDE the UIHost render pipeline (it is a
-	// hand-assembled page, not a registered screen), so the host never learns
-	// which components it used and app.css carries none of their CSS. Scan the
-	// rendered markup for component markers and link the host's own bundle
-	// endpoint for exactly those, the same endpoint a screen's <link> uses.
-	// Without this the chrome renders as unstyled HTML: no split, no scroll,
-	// an iframe collapsed to its default box.
 	used := registry.Scan(string(bodyInner))
 	sort.Strings(used)
 	head := []render.HTML{
@@ -467,12 +336,6 @@ func themeEditPageHTML(token, controls, outPath, previewKey string) string {
 		}))
 	}
 
-	// The chrome ships the runtime too: the colour controls bind
-	// through the headless behaviour module (data-hui-color), so the
-	// kernel has to be on the page to load it. The behaviours block
-	// in the head is the same inert JSON a host page embeds (the
-	// kernel reads it at boot), and runtime.js loads before the
-	// chrome's own script, the order host scripts keep.
 	behaviors := runtime.BehaviorsJSON()
 	if len(behaviors) > 0 {
 		head = append(head,

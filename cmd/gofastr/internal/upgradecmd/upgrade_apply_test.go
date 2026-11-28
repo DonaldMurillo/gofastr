@@ -181,3 +181,18 @@ func stubRunStep(t *testing.T, fn func() error) {
 	}
 	t.Cleanup(func() { runStep = old })
 }
+
+func TestUpgradeDowngradeFromPastTheRegistryWarns(t *testing.T) {
+	stubRegistry(t)
+	stubScan(t, func(string, []*upgrade.Note, upgrade.MarkerSinks) (*scan.Result, error) {
+		return &scan.Result{TypeChecked: true}, nil
+	})
+	dir := t.TempDir()
+	clitest.WriteFileAll(t, dir+"/go.mod", "module app\n\ngo 1.27\n\nrequire "+project.GofastrModule+" v0.90.0\n")
+	out := clitest.CovT_capStdout(t, func() {
+		clitest.CovT_capExit(t, func() { RunUpgrade([]string{dir, "--to", "v0.85.0"}) })
+	})
+	if !strings.Contains(out, "registry is complete through v0.86.0") {
+		t.Fatalf("a range reaching past the registry must say so:\n%s", out)
+	}
+}

@@ -22,9 +22,6 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
-// validateScaffoldName rejects names that would escape the project root.
-// Scaffolding commands accept a short identifier (e.g. "User", "Post") and
-// must never accept path traversal, absolute paths, or directory separators.
 func validateScaffoldName(name string) error {
 	if name == "" {
 		return fmt.Errorf("name must not be empty")
@@ -44,7 +41,6 @@ func validateScaffoldName(name string) error {
 	return nil
 }
 
-// newUsage prints the resource list for `gofastr new`.
 func newUsage() {
 	fmt.Println("Usage: gofastr new <resource> <name> [flags]")
 	fmt.Println("Resources:")
@@ -57,10 +53,8 @@ func newUsage() {
 	fmt.Println("  -h, --help   Show this help")
 }
 
-// RunNew handles the `gofastr new` subcommand, a lower-level scaffolding
-// alternative to kiln's visual builder.
+// RunNew implements `gofastr new handler` and `gofastr new route`.
 func RunNew(args []string) {
-	// `gofastr new -h` / `gofastr new --help` exits 0 with help.
 	for _, a := range args {
 		if a == "-h" || a == "--help" {
 			newUsage()
@@ -76,7 +70,6 @@ func RunNew(args []string) {
 	resource := args[0]
 	rest := args[1:]
 
-	// Strip -overwrite from rest, leaving the resource-specific args.
 	overwrite, rest := extractOverwriteFlag(rest)
 
 	switch resource {
@@ -95,8 +88,6 @@ func RunNew(args []string) {
 	}
 }
 
-// extractOverwriteFlag scans args for -overwrite / --overwrite and returns
-// (true, argsWithoutFlag) if present.
 func extractOverwriteFlag(args []string) (bool, []string) {
 	out := args[:0:0]
 	overwrite := false
@@ -110,7 +101,6 @@ func extractOverwriteFlag(args []string) (bool, []string) {
 	return overwrite, out
 }
 
-// runNewHandler is the CLI wrapper around scaffoldHandler.
 func runNewHandler(args []string, overwrite bool) {
 	if len(args) == 0 {
 		cli.UsageFail("Usage: gofastr new handler <Name> --method <GET|POST> --path <path>")
@@ -119,8 +109,6 @@ func runNewHandler(args []string, overwrite bool) {
 	name := args[0]
 	method := "GET"
 	path := "/" + strings.ToLower(name)
-	// Both --method POST and --method=POST: the usage line shows the
-	// space form, which this loop once ignored, scaffolding GET /<name>.
 	if _, err := cli.ParseFlags(args[1:], map[string]*string{"--method": &method, "--path": &path}, nil); err != nil {
 		cli.UsageFail("%v", err)
 		return
@@ -138,7 +126,6 @@ func runNewHandler(args []string, overwrite bool) {
 	cli.Success("Scaffolded handler %q (%s %s)", name, method, path)
 }
 
-// runNewRoute is the CLI wrapper that prints a route registration snippet.
 func runNewRoute(args []string) {
 	if len(args) == 0 {
 		cli.UsageFail("Usage: gofastr new route <path> --method <GET|POST> --handler <name>")
@@ -157,9 +144,6 @@ func runNewRoute(args []string) {
 		cli.OsExit(1)
 		return
 	}
-	// The handler lands at an expression slot of the printed Go line: a
-	// name that is not an identifier, or a selector of them (h.List),
-	// prints a line that does not compile.
 	if err := checkRouteHandler(handler); err != nil {
 		cli.Fail("%v", err)
 		cli.OsExit(1)
@@ -178,25 +162,16 @@ func runNewRoute(args []string) {
 
 	cli.Info("Add this to your app setup:")
 	cli.Printf("\n  %s\n\n", routeSnippet(method, path, handler))
-	// Router.Handle takes an http.Handler. new handler scaffolds a plain
-	// func, which needs the conversion; a handler value does not, and the
-	// command cannot tell which the name is.
 	cli.Info("If %s is a func(http.ResponseWriter, *http.Request), such as one new handler wrote, pass http.HandlerFunc(%s).", handler, handler)
 }
 
 func normalizeRouteMethod(method string) (string, error) {
-	// Validate before case folding, which maps some non-ASCII letters to ASCII.
 	if !httpguts.ValidHeaderFieldName(method) {
 		return "", fmt.Errorf("invalid method %q: must be an HTTP method such as GET or PROPFIND", method)
 	}
 	return strings.ToUpper(method), nil
 }
 
-// checkRouteHandler refuses a --handler that is not a Go identifier or a
-// selector chain of them (h.List, handlers.Things). The handler is the
-// host's own Go name, so any identifier the Go spec allows passes, Unicode
-// letters included. A bare name gets new handler's guard too: a keyword,
-// main, init, _ or a predeclared name is no handler.
 func checkRouteHandler(handler string) error {
 	parts := strings.Split(handler, ".")
 	for _, p := range parts {
@@ -221,51 +196,28 @@ func checkRouteHandler(handler string) error {
 	return nil
 }
 
-// routeSnippet returns the canonical app.Router().Handle(...) line for
-// the given route. Pure helper; used by both runNewRoute and golden tests.
 func routeSnippet(method, path, handler string) string {
 	return fmt.Sprintf("app.Router().Handle(%q, %q, %s)", method, path, handler)
 }
 
-// scaffoldHandler writes an HTTP handler file at <baseDir>/<name>_handler.go.
-// Returns an error when the file already exists and overwrite is false.
 func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) error {
 	if err := validateScaffoldName(rawName); err != nil {
 		return fmt.Errorf("invalid handler name: %w", err)
 	}
-	// The name lands in `func %s(...)` at identifier position and in the
-	// file name + leading comment: it must be a bare Go identifier, the
-	// same guard every generate-side sibling carries
-	// (TestScaffoldNameGuardedByValidate, TestHookHandlerMustDeriveIdentifier).
 	if !project.IsGoIdentifier(rawName) {
 		return fmt.Errorf("invalid handler name %q: must be a Go identifier (letters, digits, underscores, starting with a letter)", rawName)
 	}
-	// method+path ride the `// %s handles %s %s.` comment slot. A newline
-	// or control/bidi byte closes the comment and lands the rest at
-	// declaration position (a smuggled init() compiled and ran in the
-	// round-5 probe): refuse rather than render inert, the file names the
-	// command that supplied the bytes.
 	if textsafe.ContainsUnsafe(method) || textsafe.ContainsUnsafe(path) {
 		return fmt.Errorf("handler method %q or path %q carries control, invisible, or bidi bytes: they ride a // comment slot and cannot be scaffolded safely", method, path)
 	}
-	// A keyword does not parse at `func %s(`; main and init redeclare the
-	// package's entry points; a predeclared name (string, len, error)
-	// shadows it for every other file of the package; _ cannot be called.
 	if reason := unusableFuncName(rawName); reason != "" {
 		return fmt.Errorf("invalid handler name %q: %s; pick another name", rawName, reason)
 	}
 	name := rawName
-	// Resolve the base dir before joining: a symlinked component would
-	// otherwise redirect the scaffolded file outside it undetected
-	// (lexical containment cannot see symlinks).
 	realDir, err := filepath.EvalSymlinks(baseDir)
 	if err != nil {
 		return fmt.Errorf("resolve base dir: %w", err)
 	}
-	// The file itself goes through an os.Root on that directory
-	// (projectfs): a <name>_handler.go linked out of it, dangling or not,
-	// is refused, never written through. Lstat, not Stat, so a dangling
-	// link counts as a file that is already there.
 	leaf := strings.ToLower(name) + "_handler.go"
 	filename := filepath.Join(realDir, leaf)
 	root, err := os.OpenRoot(realDir)
@@ -279,10 +231,6 @@ func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) erro
 		}
 	}
 
-	// The file joins the package already in the directory (package main
-	// beside main.go, package entities under entities/); writing package
-	// main everywhere broke the build with "found packages entities and
-	// main". A name that package already declares would be redeclared.
 	const handlerTemplate = `// %s handler: scaffolded by gofastr new handler.
 package %s
 
@@ -317,8 +265,6 @@ func %s(w http.ResponseWriter, r *http.Request) {
 	return nil
 }
 
-// unusableFuncName says why name, a Go identifier, cannot be the
-// scaffolded handler's function name, or "" when it can.
 func unusableFuncName(name string) string {
 	switch {
 	case token.IsKeyword(name):
@@ -333,11 +279,6 @@ func unusableFuncName(name string) string {
 	return ""
 }
 
-// dirPackage selects the package from non-test files (falling back to the
-// scaffold target's package clause, then main) and collects declarations
-// and imports, including in-package tests. External tests, unparseable
-// files, files go build ignores (leading "." or "_") and skip (the
-// overwrite target) are omitted.
 func dirPackage(root *os.Root, skip string, generated ...*ast.File) (string, map[string]bool, map[string]string) {
 	dir := root.Name()
 	pkg := ""

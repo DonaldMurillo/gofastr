@@ -1,0 +1,24 @@
+primitive: cli.agents.skill
+summary: gofastr agents skill and gofastr init's skill step - write the embedded gofastr-host Claude Code skill into a project's .claude/skills/gofastr-host/SKILL.md.
+code:
+  - cmd/gofastr/internal/agentscmd/skill.go
+  - cmd/gofastr/internal/agentscmd/embedded/gofastr-host-skill.md
+docs:
+  - framework/docs/content/cli.md
+on_change:
+  - Edit .claude/skills/gofastr-host/SKILL.md in this repository and copy it over embedded/gofastr-host-skill.md; the repository file is the source.
+invariants:
+  - id: embedded-copy-matches-repo
+    rule: embedded/gofastr-host-skill.md is byte for byte the repository's .claude/skills/gofastr-host/SKILL.md.
+    enforced_by:
+      - test: cmd/gofastr/internal/agentscmd.TestEmbeddedHostSkillMatchesRepo
+  - id: hand-written-skill-is-refused
+    rule: WriteHostSkill refuses to replace a SKILL.md whose frontmatter does not open with the generated header unless force is set, and replaces one that does, CRLF line endings included.
+    enforced_by:
+      - test: cmd/gofastr/internal/agentscmd.TestWriteHostSkillRefusesHandWritten
+      - test: cmd/gofastr/internal/agentscmd.TestWriteHostSkillRefreshesGeneratedCopy
+      - test: cmd/gofastr/internal/agentscmd.TestWriteHostSkillRefreshesCRLFCopy
+  - id: forced-write-stays-in-the-project
+    rule: With force set, WriteHostSkill still refuses a SKILL.md or .claude path that links out of the project.
+    enforced_by:
+      - test: cmd/gofastr/internal/agentscmd.TestAgentFilesStayInsideTheProject

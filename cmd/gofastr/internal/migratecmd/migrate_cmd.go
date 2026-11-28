@@ -21,17 +21,12 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
+// RunMigrate implements `gofastr migrate`, up when no subcommand is given.
 func RunMigrate(args []string) {
 	if cli.HasHelpFlag(args) {
 		printMigrateUsage()
 		return
 	}
-	// The subcommand is optional (see printHelp: "migrate (m) [up|down|…]"),
-	// so a bare `gofastr migrate` must default to "up" without slicing past
-	// the end of an empty arg vector (which panicked with slice bounds [1:0]).
-	// A leading flag is the default subcommand's: `gofastr migrate
-	// --db-url=<url>` is up with a flag, not a subcommand named
-	// "--db-url=<url>".
 	subcmd := "up"
 	rest := args
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
@@ -58,15 +53,8 @@ func RunMigrate(args []string) {
 	case "status":
 		runMigrateStatus(rest)
 	case "diff":
-		// Removed: `migrate diff` *applied* an app spec onto a live DB,
-		// reconciling the running database to the app spec, i.e. treating
-		// the app spec as authoritative over the world. Schema migration is a
-		// separate concern from code generation: emit a reviewable, versioned
-		// migration instead. See framework/ARCHITECTURE.md.
 		cli.Fail("`gofastr migrate diff` has been removed.")
 		cli.Info("It applied an app spec directly onto a live DB. Use `gofastr migrate generate <name>` to emit a reviewable migration, then `gofastr migrate up`. See `gofastr docs migrations`.")
-		// Exit non-zero: a deploy script that still runs `migrate diff`
-		// must stop here, not carry on as if the schema were reconciled.
 		cli.OsExit(1)
 	case "generate":
 		runMigrateGenerate(rest)
@@ -79,10 +67,6 @@ func RunMigrate(args []string) {
 	}
 }
 
-// migrateFlags names the flags each subcommand reads: valued ones take
-// --name=<value>, bare ones nothing. The readers match by prefix and
-// skip the rest, so a typo was dropped in silence: --db-ur=<url> ran
-// against DATABASE_URL, and --db-url <url> (the space form) did too.
 var migrateFlags = map[string]struct{ valued, bare []string }{
 	"up":       {[]string{"--db-url", "--db", "--driver", "--group"}, []string{"--create-db"}},
 	"down":     {[]string{"--db-url", "--db", "--driver", "--group"}, nil},
@@ -92,16 +76,10 @@ var migrateFlags = map[string]struct{ valued, bare []string }{
 	"generate": {[]string{"--db", "--driver", "--from", "--group", "--migrations", "--snapshot"}, nil},
 }
 
-// migratePositional is how many positional arguments each subcommand
-// takes. up, status and repair take none, so `migrate up 3` read like
-// "apply three" and applied everything; generate takes its one name and
-// dropped a second. down and force check their own value as well.
 var migratePositional = map[string]int{
 	"up": 0, "status": 0, "repair": 0, "down": 1, "force": 1, "generate": 1,
 }
 
-// migratePositionalError refuses more positional arguments than the
-// subcommand takes. It runs before anything opens the database.
 func migratePositionalError(subcmd string, args []string) error {
 	limit, ok := migratePositional[subcmd]
 	if !ok {
@@ -127,8 +105,6 @@ func migratePositionalError(subcmd string, args []string) error {
 	return fmt.Errorf("migrate %s takes one argument, got extra %q", subcmd, extra)
 }
 
-// migrateFlagsError refuses a flag the subcommand does not read, a valued
-// flag written without =<value>, and a bare flag given one.
 func migrateFlagsError(subcmd string, args []string) error {
 	known, ok := migrateFlags[subcmd]
 	if !ok {
@@ -155,18 +131,7 @@ func migrateFlagsError(subcmd string, args []string) error {
 	return nil
 }
 
-// runMigrateForce reconciles the tracking table by hand: the recovery path out
-// of a dirty state and the baseline path for adopting an existing database.
-//
-//	gofastr migrate force <version> [--not-applied]
-//
-// By default the version is marked cleanly applied (clearing any dirty flag and
-// recording a baseline without running its Up SQL). With --not-applied the
-// version is removed from the tracking table so it becomes pending again.
 func runMigrateForce(args []string) {
-	// Exactly one version, parsed whole. Sscanf read "1x" as 1, and with
-	// two versions the last one won, so a typo marked a migration applied
-	// without running its SQL.
 	applied := true
 	var version uint64
 	haveVersion := false
@@ -175,7 +140,6 @@ func runMigrateForce(args []string) {
 		case a == "--not-applied":
 			applied = false
 		case strings.HasPrefix(a, "--"):
-			// flag consumed elsewhere (e.g. --db-url): skip
 		default:
 			v, err := strconv.ParseUint(a, 10, 64)
 			if err != nil || haveVersion {
@@ -206,18 +170,6 @@ func runMigrateForce(args []string) {
 	cli.Success("Tracking table reconciled for version %d", version)
 }
 
-// runMigrateRepair reports — and with --apply rebuilds — SQLite tables still
-// carrying the pre-v0.67 foreign key on an entity's owner column.
-//
-//	gofastr migrate repair --from=<gofastr.yml> [--apply]
-//
-// The scan needs each entity's owner column, so it reads the app spec the
-// same way `migrate generate` does. Without --apply it prints each finding
-// and exits non-zero (0 when the database is clean), so a release check can
-// gate on it. With --apply it names every table it is about to rebuild
-// before rewriting anything, repairs, then re-scans to confirm the database
-// is clean — a repair that reports success while leaving a key behind is
-// worse than no repair, because the operator stops looking.
 func runMigrateRepair(args []string) {
 	fmt.Printf("\n  %s\n\n", cli.Bold("Scanning for stale owner-column foreign keys..."))
 
@@ -288,7 +240,7 @@ func runMigrateRepair(args []string) {
 	for _, s := range stale {
 		cli.Printf("    "+cli.Yellow("→")+" rewriting %s without the stale key\n", s.Table)
 	}
-	if err := fwmigrate.RepairStaleOwnerForeignKeys(context.Background(), db, stale); err != nil {
+	if err := repairStaleOwnerKeys(context.Background(), db, stale); err != nil {
 		cli.Fail("Repair failed: %v", err)
 		cli.OsExit(1)
 	}
@@ -304,13 +256,12 @@ func runMigrateRepair(args []string) {
 	cli.Success("Rebuilt %d table(s); re-scan clean", len(stale))
 }
 
+var repairStaleOwnerKeys = fwmigrate.RepairStaleOwnerForeignKeys
+
 func runMigrateUp(args []string) {
 	fmt.Printf("\n  %s\n\n", cli.Bold("Running migrations..."))
 
-	// --create-db: create the target database first if it doesn't exist.
 	if hasFlag(args, "--create-db") {
-		// Check the arguments first: a run refused after the create left
-		// an empty database behind.
 		if err := migrateArgsError(args); err != nil {
 			cli.Fail("%v", err)
 			cli.OsExit(1)
@@ -347,10 +298,6 @@ func runMigrateUp(args []string) {
 }
 
 func runMigrateDown(args []string) {
-	// The count is a positive integer or absent. Sscanf read "all" as no
-	// number and "3x" as 3, so a typo rolled back one or three. With two
-	// counts the last one won, so `down 1 3` dropped three tables: one
-	// count at most, as force takes one version.
 	n := 1
 	haveCount := false
 	for _, a := range args {
@@ -398,8 +345,6 @@ func runMigrateStatus(args []string) {
 		cli.OsExit(1)
 	}
 
-	// Show the group column only when a non-default group is present, so the
-	// common all-default output stays byte-identical.
 	showGroup := false
 	for _, rec := range status.Applied {
 		if rec.Group != "" {
@@ -428,10 +373,6 @@ func runMigrateStatus(args []string) {
 	for _, rec := range status.Applied {
 		if rec.Dirty {
 			if showGroup {
-				// groupLabel maps the default group to "default", which the
-				// CLI accepts as its alias; the printed command is runnable
-				// verbatim for every group (a raw "" would render --group=,
-				// which getGroups rejects).
 				cli.Printf("    "+cli.Yellow("⚠")+" %d %s [%s]: DIRTY (failed mid-apply; run `gofastr migrate force %d --group=%s` after reconciling)\n",
 					rec.Version, rec.Name, groupLabel(rec.Group), rec.Version, groupLabel(rec.Group))
 			} else {
@@ -440,8 +381,6 @@ func runMigrateStatus(args []string) {
 			}
 		}
 	}
-	// The drift up and down refuse on: without these lines status read
-	// clean while both refused.
 	label := func(rec migrate.MigrationRecord) string {
 		if showGroup {
 			return fmt.Sprintf("%d %s [%s]", rec.Version, rec.Name, groupLabel(rec.Group))
@@ -458,8 +397,6 @@ func runMigrateStatus(args []string) {
 	}
 }
 
-// migrateArgsError is what migratorFromArgs refuses before it opens
-// anything: no migrations directory, or no database URL.
 func migrateArgsError(args []string) error {
 	if _, err := os.Stat("migrations"); os.IsNotExist(err) {
 		return fmt.Errorf("directory 'migrations/' not found.\n" +
@@ -476,10 +413,6 @@ func migrateArgsError(args []string) error {
 	return ensureDriverRegistered(driver)
 }
 
-// hasMigrationDialect reports whether the runner has SQL for driver.
-// dialectForDriver maps everything that is not SQLite to Postgres, so a
-// MySQL driver linked into a custom build would have run Postgres SQL
-// (placeholders, advisory lock) against MySQL.
 func hasMigrationDialect(driver string) bool {
 	switch driver {
 	case "sqlite", "sqlite3", "postgres", "pgx":
@@ -507,11 +440,6 @@ func migratorFromArgs(args []string) (*migrate.Migrator, func(), error) {
 	return migrator, func() { _ = db.Close() }, nil
 }
 
-// dialectForDriver maps a database/sql driver name to a migration dialect.
-// Both the CGO mattn/go-sqlite3 driver ("sqlite3") and the pure-Go engine
-// ("sqlite", registered by core/sqlite) are SQLite. Matching on "sqlite3"
-// alone left the pure-Go driver defaulting to the Postgres dialect, so
-// `migrate up` silently ran Postgres SQL against a SQLite database.
 func dialectForDriver(driver string) migrate.Dialect {
 	if driver == "sqlite" || driver == "sqlite3" {
 		return migrate.DialectSQLite
@@ -555,22 +483,9 @@ func getMigrateDBURL(args []string) string {
 			return strings.TrimPrefix(a, "--db-url=")
 		}
 	}
-	// The exported env var is the 12-factor path the docs promise.
-	// Precedence follows the framework's dotenv rule: the process
-	// environment always beats file values.
 	if v := os.Getenv("DATABASE_URL"); v != "" {
 		return v
 	}
-	// Check the .env files via the shared parser: handles quoted values,
-	// escapes, and the `export` prefix that the prior ad-hoc 1-key
-	// scanner mishandled.
-	//
-	// framework.DefaultDotEnvPaths() rather than ".env" alone: that is the same set
-	// and order NewApp loads, and Load resolves conflicts earliest-file-wins.
-	// Reading ".env" alone ignored .env.local, the HIGHEST-precedence file,
-	// and the documented place to override a local database, so `gofastr
-	// migrate` migrated a different database than the app it was migrating
-	// for would open.
 	if vals, err := dotenv.Load(framework.DefaultDotEnvPaths()...); err == nil {
 		if v, ok := vals["DATABASE_URL"]; ok {
 			return v
@@ -579,10 +494,6 @@ func getMigrateDBURL(args []string) string {
 	return ""
 }
 
-// ensureDriverRegistered fails fast with a useful message if the requested
-// database/sql driver is not blank-imported into the binary. The CLI links
-// the SQLite and Postgres drivers, the two the runner has a dialect for
-// (hasMigrationDialect refuses the rest first).
 func ensureDriverRegistered(driver string) error {
 	for _, registered := range sql.Drivers() {
 		if registered == driver {
@@ -601,16 +512,6 @@ func hasFlag(args []string, flag string) bool {
 	return false
 }
 
-// getMigrateDriver resolves the driver from --db= (the spelling
-// `gofastr migrate --help` and `gofastr init` use) or its older alias
-// --driver=, through canonicalDBDriver. Before --db= was read here,
-// `migrate --db=postgres` fell through to the sqlite3 default and
-// created a SQLite file named after the Postgres URL.
-//
-// With no flag, a database URL that starts with postgres:// or
-// postgresql:// picks the postgres driver: a Postgres DATABASE_URL with
-// no --db opened the URL as a SQLite file name and failed with a SQLite
-// error that never said the driver was the problem.
 func getMigrateDriver(args []string) string {
 	for _, a := range args {
 		if v, ok := migrateDriverFlag(a); ok {
@@ -623,7 +524,6 @@ func getMigrateDriver(args []string) string {
 	return "sqlite3"
 }
 
-// isPostgresURL reports whether url names a Postgres server by scheme.
 func isPostgresURL(url string) bool {
 	scheme, _, ok := strings.Cut(url, "://")
 	if !ok {
@@ -636,7 +536,6 @@ func isPostgresURL(url string) bool {
 	return false
 }
 
-// migrateDriverFlag reports the value of a --db= or --driver= argument.
 func migrateDriverFlag(arg string) (string, bool) {
 	if v, ok := strings.CutPrefix(arg, "--db="); ok {
 		return v, true
@@ -644,9 +543,6 @@ func migrateDriverFlag(arg string) (string, bool) {
 	return strings.CutPrefix(arg, "--driver=")
 }
 
-// getGroups extracts repeatable --group=<name> flags from args. Returns nil
-// when no --group is present (the no-args "all groups" default for up/down/
-// status, and the "default group" target for force).
 func getGroups(args []string) []string {
 	var groups []string
 	for _, a := range args {
@@ -662,8 +558,6 @@ func getGroups(args []string) []string {
 	return groups
 }
 
-// groupLabel renders a group name for status output, showing "default" for the
-// empty (default) group.
 func groupLabel(g string) string {
 	if g == "" {
 		return "default"

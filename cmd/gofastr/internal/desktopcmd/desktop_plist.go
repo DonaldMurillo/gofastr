@@ -6,19 +6,12 @@ import (
 	"strings"
 )
 
-// ── Info.plist ────────────────────────────────────────────────────────
-
 type infoPlistValues struct {
 	Name, DisplayName, Identifier, Executable string
 	ShortVersion, Version                     string
-	// Scheme, when set, is emitted as CFBundleURLTypes: the custom
-	// URL scheme the built app claims (`gofastr desktop build
-	// --scheme notes`). Empty emits no URL types.
-	Scheme string
+	Scheme                                    string
 }
 
-// xmlEscape escapes s for an XML text node (every plist value goes
-// through it; a --name like "Notes & Co" must not corrupt the plist).
 func xmlEscape(s string) string {
 	var b bytes.Buffer
 	_ = xml.EscapeText(&b, []byte(s))
@@ -49,8 +42,6 @@ func renderInfoPlist(v infoPlistValues) []byte {
 	b.WriteString("\t</dict>\n")
 	pair("LSApplicationCategoryType", "public.app-category.productivity")
 	if v.Scheme != "" {
-		// The deep-link registration LaunchServices reads: one URL
-		// type, named after the bundle, claiming the one scheme.
 		b.WriteString("\t<key>CFBundleURLTypes</key>\n\t<array>\n\t\t<dict>\n")
 		b.WriteString("\t\t\t<key>CFBundleURLName</key>\n\t\t\t<string>" + xmlEscape(v.Identifier) + "</string>\n")
 		b.WriteString("\t\t\t<key>CFBundleURLSchemes</key>\n\t\t\t<array>\n")

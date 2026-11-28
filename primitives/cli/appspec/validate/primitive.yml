@@ -1,0 +1,214 @@
+primitive: cli.appspec.validate
+summary: The checks a whole app spec must pass before anything renders from it, so a spec that would generate an app which fails to compile, panics at boot or quietly misbehaves is refused at generate time with an error naming the spec line.
+code:
+  - cmd/gofastr/internal/appspec/validate.go
+  - cmd/gofastr/internal/appspec/appspec_authform.go
+  - cmd/gofastr/internal/appspec/appspec_endpoints.go
+  - cmd/gofastr/internal/appspec/ownerkey.go
+  - cmd/gofastr/internal/appspec/sqlident.go
+  - cmd/gofastr/internal/appspec/staticdir.go
+docs:
+  - framework/docs/content/app-spec.md
+on_change:
+  - A new refusal goes into ValidateAppSpec through schemaErrors so one run reports every problem, and gets a case in TestValidateRefusals or a test of its own.
+  - A new directory gofastr generate writes Go into is added to generatedSourceDirs, and a new battery table to appSpecBatteryTables.
+twins:
+  - job: The closed set of hook lifecycle points a spec or a kiln world may name.
+    why: The generator needs each point's framework constant as Go source text while kiln's live preview needs the constant's value, and nothing yet holds both in one table both packages can import.
+    sites:
+      - path: cmd/gofastr/internal/appspec/validate.go
+        note: AppSpecHookTypes, the names and constants generate app emits.
+      - path: kiln/render/render.go
+        note: mapHookType, the preview's mapping to framework.HookType.
+      - path: kiln/world/validate.go
+        note: HookEvents, the set kiln authoring admits.
+invariants:
+  - id: every-problem-in-one-run
+    rule: ValidateAppSpec reports every finding of a spec in one error, a single finding unchanged and several joined under their count.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestValidateReportsAllSchemaErrors
+      - test: cmd/gofastr/internal/appspec.TestSeedErrorsReportEveryField
+      - test: cmd/gofastr/internal/appspec.TestRenameErrorsInSortedOrder
+  - id: production-auth-has-a-key
+    rule: app.auth enabled with dev_mode false and no jwt_secret is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestValidateProdAuthNeedsJWTSecret
+  - id: mount-paths-are-clean
+    rule: app.auth.base_path and app.admin.path are one or more /segment of letters, digits, -, _ and . with no segment starting with a dot and no trailing slash, so / alone is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAuthBasePathMustBeClean
+      - test: cmd/gofastr/internal/appspec.TestAdminPathMustBeClean
+  - id: static-dir-serves-no-app-file
+    rule: app.static_dir is refused when it is the app root or above it, inside a directory the generator writes Go into, at, under or above app.output_dir, holding the SQLite file app.db.url names, or, wherever it points, with a directory whose name starts with a dot, such as .git; otherwise an absolute path or one outside the app is left to the deployer, and a backslash reads as a slash.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestStaticDirRefusesProjectFiles
+      - test: cmd/gofastr/internal/appspec.TestStaticDirRefusesOutputDir
+      - test: cmd/gofastr/internal/appspec.TestStaticDirReadsBackslashesAsSlashes
+      - test: cmd/gofastr/internal/appspec.TestStaticDirRefusesEveryCanonicalPackage
+      - test: cmd/gofastr/internal/appspec.TestStaticDirRefusesDotDirectories
+  - id: base-url-is-an-origin
+    rule: app.base_url is a bare http or https origin with no path, query or fragment.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestBaseURLMustBeHTTPOrigin
+      - test: cmd/gofastr/internal/appspec.TestBaseURLRefusalUsesAppSpecWording
+  - id: no-generated-multi-tenant
+    rule: An entity with multi_tenant true is refused, since the generator emits no tenant resolver.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestMultiTenantRefusedWithoutResolver
+  - id: one-list-per-entity-per-screen
+    rule: A screen lists one entity at most once, at any depth; lists of different entities may share a screen.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAppSpecRejectsDuplicateListPerScreen
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
+  - id: create-routes-are-not-shared
+    rule: Two entities whose create-flagged lists share a home list screen are refused, and an authored screen at a home list's /create route is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAppSpecRejectsSharedCreateRoute
+      - test: cmd/gofastr/internal/appspec.TestAuthoredCreateScreenRefused
+  - id: detail-sits-under-its-list
+    rule: An entity_detail screen of an entity that has a list screen sits at exactly that list's route plus /{id}; an entity_detail or edit-mode entity_form screen route has an {id} parameter; a composite-key record screen names no other parameter after a key column.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestDetailRouteMustSitUnderList
+      - test: cmd/gofastr/internal/appspec.TestDetailScreenMustSitUnderList
+      - test: cmd/gofastr/internal/appspec.TestEntityDetailRequiresIDInRoute
+      - test: cmd/gofastr/internal/appspec.TestEntityFormEditRequiresIDInRoute
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
+  - id: auth-form-posts-to-the-battery
+    rule: An explicit login_form or signup_form action is the auth battery's mounted login or register route under the app's (or a fragment's project's) base path, a query string allowed, and an absolute one must name app.base_url's scheme and host with no userinfo and is refused when base_url is unset.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAuthFormActionFollowsBasePath
+      - test: cmd/gofastr/internal/appspec.TestAuthFormAbsoluteActionNeedsBaseURL
+      - test: cmd/gofastr/internal/appspec.TestFragmentAuthFormUsesProjectBase
+      - test: cmd/gofastr/internal/appspec.TestAuthFormAbsoluteActionCarriesNoUserinfo
+  - id: pwa-settings-are-valid
+    rule: With app.pwa enabled, display is a web-app-manifest display mode and start_url and scope start with /.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAppSpecRejectsBadPWADisplay
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
+  - id: theme-values-pass-the-style-grammar
+    rule: Every app.theme color and every app.theme.dark value passes style.ValidateColorValue, every theme key is a known color token or font_body, font_heading or font_display, and every dark key is a color token, reported in sorted key order.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestValidateAppSpecBadThemeToken
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
+  - id: names-reach-go-and-sql-safely
+    rule: Entity, field, relation, screen, hook handler, middleware, plugin and helper names produce Go identifiers; a declared table is letters, digits and underscores; an enum value holds no quote, backtick, backslash, newline, C1 control or invisible rune; no two fields fold to one Go field or Postgres column; a field is declared once; and a relation name collides with no field or other relation.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAppSpecSpecCannotEscapeGoLiteral
+      - test: cmd/gofastr/internal/appspec.TestScaffoldNameGuardedByValidate
+      - test: cmd/gofastr/internal/appspec.TestAppSpecAcceptsNamesTheRepoCanWrite
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusesDuplicateField
+      - test: cmd/gofastr/internal/appspec.TestValidateAppSpecErrors
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
+  - id: sql-names-fit-every-engine
+    rule: Each table part, field column and index name is a safe SQL identifier of at most query.MaxIdentBytes bytes, and no two entities and no entity and a battery share a table, compared folded and with the public or main schema dropped.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAppSpecSQLNamesRefused
+      - test: cmd/gofastr/internal/appspec.TestAppSpecSQLNamesAllowed
+      - test: cmd/gofastr/internal/appspec.TestSQLKeywordsWorkAsNames
+  - id: framework-checks-run-at-load
+    rule: Each entity's exposure, display block and field defaults pass the framework's own registration checks at validate time.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestMCPRequiresCRUD
+      - test: cmd/gofastr/internal/appspec.TestDisplayCheckedAtValidate
+      - test: cmd/gofastr/internal/appspec.TestFieldDefaultCheckedAtValidate
+      - test: cmd/gofastr/internal/appspec.TestBootRefusalParity
+  - id: references-resolve
+    rule: A relation field's to and a relation's entity name a declared entity, and a relation names its target.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestRelationFieldMissingTo
+      - test: cmd/gofastr/internal/appspec.TestRelationFieldUnknownEntity
+      - test: cmd/gofastr/internal/appspec.TestValidateAppSpecErrors
+  - id: renames-fire
+    rule: Both sides of a rename are safe column names, a rename is not to itself, its target is a declared field and its source is no longer one.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestRenamesRejectUnsafeIdentifier
+      - test: cmd/gofastr/internal/appspec.TestRenamesTargetMustBeDeclared
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
+  - id: indices-cover-real-columns
+    rule: An index names at least one column, none twice, each a column the entity's table has.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestIndexRefusesUndeclaredColumn
+      - test: cmd/gofastr/internal/appspec.TestIndexRefusesIDUnderNaturalKey
+  - id: owner-scoped-keys-hold-the-owner
+    rule: An owner-scoped entity's primary_key holds the owner column or a server-generated column, and an owner-scoped entity keyed on id declares no id field without auto_generate.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestOwnerScopedKeyNeedsOwner
+  - id: one-writer-per-generated-file
+    rule: No two screens, an entity's CRUD screens or a synthesized create screen included, write one screen file or generate one Go type.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAppSpecRejectsCollidingScreenFiles
+  - id: layout-is-known
+    rule: A screen's layout is empty, app or marketing.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
+  - id: hooks-can-fire
+    rule: A hook names a declared entity, a lifecycle point in AppSpecHookTypes and a handler that is a Go identifier no other hook uses.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestHookTargetEntityAndWhenMustBeKnown
+      - test: cmd/gofastr/internal/appspec.TestHookHandlerMustDeriveIdentifier
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
+  - id: hook-points-match-kiln
+    rule: AppSpecHookTypes names exactly the hook events a kiln world admits, and maps each to the framework hook constant that fires on that event.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestHookTypesMatchKiln
+      - test: cmd/gofastr/internal/appspec.TestHookTypesNameTheirConstant
+  - id: nav-icons-carry-no-markup
+    rule: A nav icon at any depth holds no angle bracket, ampersand, double or single quote, backtick, backslash or control character below U+0020 or U+007F, since the sidebar renders it as raw HTML.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
+  - id: endpoints-checked-against-the-spec
+    rule: ValidateAppSpecEndpoints refuses an endpoint whose shape Endpoint.Validate refuses, a repeated name, an undeclared entity, a handler two endpoints share, and a route that clashes with its entity's generated routes.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAppSpecValidationFailures
+      - test: cmd/gofastr/internal/appspec.TestEndpointGroupRoutes
+      - test: cmd/gofastr/internal/appspec.TestEndpointOwnRoutes
+      - test: cmd/gofastr/internal/appspec.TestEndpointNamesDifferInAGoBuiltSpec
+decisions:
+  - id: refuse-multi-tenant
+    date: 2026-11-28
+    status: accepted
+    decision: generate refuses multi_tenant entities and points at wiring a tenant resolver by hand.
+    rejected:
+      - option: Generate the entity with no resolver.
+        why: ApplyTenantScope fails closed, so the app would read nothing and stamp an empty tenant on every write while looking secure.
+    upholds: [no-generated-multi-tenant]
+  - id: one-color-grammar
+    date: 2026-11-28
+    status: accepted
+    decision: Theme values are checked with style.ValidateColorValue, the grammar ApplyTokens uses.
+    rejected:
+      - option: A second color check in the app spec.
+        why: The emitter assigns theme values directly to the stylesheet tokens, bypassing ApplyTokens, so the two grammars would have to agree by hand, and a ; or } in a value closes :root.
+    upholds: [theme-values-pass-the-style-grammar]
+  - id: font-values-skip-the-color-grammar
+    date: 2026-11-28
+    status: accepted
+    decision: The font_body, font_heading and font_display theme values are not checked with the color grammar.
+    rejected:
+      - option: Run them through style.ValidateColorValue too.
+        why: A font stack is no color, and the emitter reduces each with appSpecFontFamilyName to the first family's letters, digits, spaces, - and _, so no character that could close a declaration reaches the stylesheet.
+    upholds: [theme-values-pass-the-style-grammar]
+  - id: identifiers-fit-postgres
+    date: 2026-11-28
+    status: accepted
+    decision: A table part, column or index name longer than query.MaxIdentBytes is refused at validate time.
+    rejected:
+      - option: Accept any length the SQL grammar allows.
+        why: Postgres silently cuts a name to its first 63 bytes, so two long names that share those bytes become one table or column with no error.
+    upholds: [sql-names-fit-every-engine]
+  - id: fail-at-generate-not-boot
+    date: 2026-11-28
+    status: accepted
+    decision: Every check a generated app would hit at boot or first request (auth key, display, defaults, relation targets, indices, seed rows) runs again at validate time with the spec's own wording.
+    rejected:
+      - option: Leave them to the generated app.
+        why: The app then compiles and dies at boot, the least discoverable point, after the author has done everything the tool asked.
+    upholds: [production-auth-has-a-key, framework-checks-run-at-load, references-resolve, indices-cover-real-columns]
+  - id: owner-key-error-not-warning
+    date: 2026-11-28
+    status: accepted
+    decision: An owner-scoped primary_key without the owner column is refused, while a unique field without it only warns (LintOwnerScopedUnique).
+    rejected:
+      - option: Warn on the key too.
+        why: The key is the row's address, so a key shared across accounts answers 409 for a row the caller cannot see and tells them it exists; a global unique value such as a public handle can be deliberate.
+    upholds: [owner-scoped-keys-hold-the-owner]

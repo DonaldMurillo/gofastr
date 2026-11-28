@@ -1,4 +1,2 @@
-// Package cli is the CLI's shared process plumbing: version info, the exit
-// indirection tests swap, terminal color and status-line helpers, and the
-// help-flag check every subcommand uses.
+// Package cli is the CLI's shared plumbing: output, JSON mode, flags and exit.
 package cli

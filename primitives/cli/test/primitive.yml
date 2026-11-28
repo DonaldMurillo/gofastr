@@ -1,0 +1,43 @@
+primitive: cli.test
+summary: "`gofastr test`, which maps its flags onto go test -v, runs it with GOFASTR_TEST=1 and prints the output scrubbed, coloured and tallied."
+code:
+  - cmd/gofastr/internal/testcmd/
+docs:
+  - framework/docs/content/cli.md
+invariants:
+  - id: flags-map-onto-go-test
+    rule: goTestArgs passes --run, --bench and --timeout with a value given as --flag=v or --flag v and --race, --cover and --short bare, refuses any other argument starting with a dash and a valued flag with no value, and runs ./... when no package is named.
+    enforced_by:
+      - test: cmd/gofastr/internal/testcmd.TestTestArgsKeepPackagesAndRefuseUnknown
+  - id: usage-error-exits-two
+    rule: An argument goTestArgs refuses ends gofastr test with exit 2 before go test starts.
+    enforced_by:
+      - test: cmd/gofastr/internal/testcmd.TestRunTestUnknownFlagExitsTwo
+  - id: child-runs-under-gofastr-test
+    rule: The go test child gets GOFASTR_TEST=1 on top of this process's environment.
+    enforced_by:
+      - test: cmd/gofastr/internal/testcmd.TestRunTestPassingModule
+  - id: child-output-is-scrubbed
+    rule: Every line of the child's stdout and stderr, and an unterminated stderr tail, reaches the terminal through textsafe.ScrubTerminal.
+    enforced_by:
+      - test: cmd/gofastr/internal/testcmd.TestRunTestScrubsChildStdout
+      - test: cmd/gofastr/internal/testcmd.TestRunTestScrubsChildStderr
+      - test: cmd/gofastr/internal/testcmd.TestRunTestFlushesUnterminatedChildStderr
+  - id: result-lines-are-tallied
+    rule: Each "--- PASS" and "--- FAIL" line counts one test and is printed with a mark in place of its prefix.
+    enforced_by:
+      - test: cmd/gofastr/internal/testcmd.TestColorizeTestLineAllBranches
+      - test: cmd/gofastr/internal/testcmd.TestColorizeTestLineDropsTheResultPrefix
+  - id: truncated-output-is-a-failure
+    rule: When reading the child's stdout fails, the child is killed and gofastr test exits 1 saying the output was truncated, instead of printing a tally of part of the run.
+    enforced_by:
+      - test: cmd/gofastr/internal/testcmd.TestRunTestStopsOnTruncatedOutput
+  - id: inherited-pipes-do-not-hang
+    rule: A descendant of go test that keeps stdout or stderr open after go test exits holds gofastr test for at most its WaitDelay, and the tally is still printed.
+    enforced_by:
+      - test: cmd/gofastr/internal/testcmd.TestRunTestBoundsWaitForInheritedStderr
+      - test: cmd/gofastr/internal/testcmd.TestRunTestBoundsWaitForInheritedStdout
+  - id: failing-run-exits-one
+    rule: A go test run that exits non-zero ends gofastr test with exit 1.
+    enforced_by:
+      - test: cmd/gofastr/internal/testcmd.TestRunTestFailingModuleExits

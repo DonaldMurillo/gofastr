@@ -59,15 +59,12 @@ func RunTest(args []string) {
 		}
 		scanDone <- scanner.Err()
 	}()
-	// exec owns both child pipes, so WaitDelay can close either after exit.
 	waitErr := cmd.Wait()
 	_ = output.Close()
 	scanErr := <-scanDone
 	stderrErr := stderr.flush()
 
 	if scanErr != nil {
-		// Output stopped early, so the tally below counted only part of
-		// the run. Saying so beats printing a confident wrong number.
 		fmt.Println()
 		cli.Fail("test output truncated after %d passed / %d failed: %v", passed, failed, scanErr)
 		cli.OsExit(1)
@@ -86,10 +83,6 @@ func RunTest(args []string) {
 	cli.Success("All tests passed! (%d passed, %d failed)", passed, failed)
 }
 
-// colorizeTestLine adds color to go test -v output lines. The line is
-// the project's test output (test names, t.Log text, panics quoting
-// data), so it is scrubbed before the colour goes on and the caller
-// prints the result raw.
 func colorizeTestLine(line string, passed, failed *int) string {
 	line = textsafe.ScrubTerminal(line)
 	switch {
@@ -112,8 +105,6 @@ func colorizeTestLine(line string, passed, failed *int) string {
 	}
 }
 
-// scrubWriter writes each whole line through the terminal scrub, so
-// child output reaches out without raw control bytes.
 type scrubWriter struct {
 	out io.Writer
 	buf []byte
@@ -145,9 +136,6 @@ func (w *scrubWriter) flush() error {
 	return err
 }
 
-// goTestArgs maps gofastr test's arguments onto go test's. A flag takes
-// its value as --flag=v or --flag v; any other argument starting with a
-// dash is refused, and the rest are package patterns (./... when none).
 func goTestArgs(args []string) ([]string, error) {
 	valued := map[string]string{"--run": "-run", "--bench": "-bench", "--timeout": "-timeout"}
 	bare := map[string]string{"--race": "-race", "--cover": "-cover", "--short": "-short"}

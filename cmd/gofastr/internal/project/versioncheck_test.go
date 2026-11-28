@@ -47,9 +47,10 @@ func TestVersionMismatchQuiet(t *testing.T) {
 	replaced := writeGoMod(t, "module example.com/app\n\nrequire github.com/DonaldMurillo/gofastr v0.90.0\n\nreplace github.com/DonaldMurillo/gofastr => ../gofastr\n")
 	other := writeGoMod(t, "module example.com/app\n\nrequire example.com/x v1.0.0\n")
 	self := writeGoMod(t, "module github.com/DonaldMurillo/gofastr\n")
+	submodule := writeGoMod(t, "module github.com/DonaldMurillo/gofastr/sqlite\n\nrequire github.com/DonaldMurillo/gofastr v0.90.0\n")
 
 	withCLIVersion(t, "v0.95.0")
-	for name, dir := range map[string]string{"same version": same, "replace": replaced, "no gofastr": other, "the framework itself": self} {
+	for name, dir := range map[string]string{"same version": same, "replace": replaced, "no gofastr": other, "the framework itself": self, "a framework submodule": submodule} {
 		if got := VersionMismatch(dir); got != "" {
 			t.Errorf("%s: VersionMismatch = %q; want quiet", name, got)
 		}

@@ -10,24 +10,17 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/bom"
 )
 
-// ariaNode is one entry of a Playwright aria snapshot: the YAML-shaped
-// accessibility tree that `locator.ariaSnapshot()` returns and Playwright
-// MCP's browser_snapshot prints. A line reads
-// `- role "accessible name" [attr] [attr=value]: inline text`, with
-// children indented under an entry that ends in a colon, and
-// `- /url: …`-style lines carrying a property of their parent.
 type ariaNode struct {
 	Role     string
 	Name     string
 	Attrs    map[string]string
-	Text     string            // inline value after the colon
-	Props    map[string]string // "/url", "/placeholder", … (slash dropped)
+	Text     string
+	Props    map[string]string
 	Children []*ariaNode
 	Line     int
 }
 
-// Label is the text a sighted user reads for the node: its accessible
-// name, else its inline text.
+// Label is the text a sighted user reads for the node: its accessible name, else its inline text.
 func (n *ariaNode) Label() string {
 	if n.Name != "" {
 		return n.Name
@@ -35,24 +28,15 @@ func (n *ariaNode) Label() string {
 	return n.Text
 }
 
-// ariaSnapshotMaxDepth bounds nesting. The parser is iterative, so depth
-// costs no stack, but the mapper that walks the tree recurses.
 const ariaSnapshotMaxDepth = 128
 
-// ariaSnapshotMaxNodes bounds the tree a single snapshot may describe.
-// Real page snapshots run to a few thousand entries.
 const ariaSnapshotMaxNodes = 50000
 
-// parseAriaSnapshot parses a Playwright aria snapshot into its top-level
-// entries. It is a line parser for the snapshot grammar rather than a
-// YAML decode: entries are YAML-shaped, but a key such as
-// `link "a: b"` or `heading /Wel+come/` holds colons and slashes a
-// general YAML subset splits wrongly.
 func parseAriaSnapshot(src string) ([]*ariaNode, error) {
 	type frame struct {
 		indent int
-		node   *ariaNode // nil for the root
-		open   bool      // entry ended in a bare colon: children may follow
+		node   *ariaNode
+		open   bool
 	}
 	root := &ariaNode{}
 	stack := []frame{{indent: -1, node: root, open: true}}
@@ -92,7 +76,6 @@ func parseAriaSnapshot(src string) ([]*ariaNode, error) {
 			return nil, fmt.Errorf("line %d: %w", lineNo, err)
 		}
 		if strings.HasPrefix(key, "/") {
-			// A property line (`- /url: /home`) annotates its parent.
 			if parent.node == root {
 				return nil, fmt.Errorf("line %d: property %s has no parent entry", lineNo, ariaQuote(key))
 			}
@@ -114,11 +97,6 @@ func parseAriaSnapshot(src string) ([]*ariaNode, error) {
 	return root.Children, nil
 }
 
-// splitAriaEntry splits an entry into its key and inline value. The key
-// may be a YAML-quoted scalar (Playwright quotes a key that would not
-// survive as plain YAML); otherwise the split is the first colon that sits
-// outside a quoted name, a /regex/ name, and an [attr] list, and is
-// followed by a space or the end of the line.
 func splitAriaEntry(entry string) (key, value string, hasColon bool, err error) {
 	if entry == "" {
 		return "", "", false, fmt.Errorf("empty entry")
@@ -170,7 +148,6 @@ func splitAriaEntry(entry string) (key, value string, hasColon bool, err error) 
 	return entry, "", false, nil
 }
 
-// ariaValue reads an inline value: a quoted YAML scalar or plain text.
 func ariaValue(v string) (string, error) {
 	if v == "" || (v[0] != '"' && v[0] != '\'') {
 		return v, nil
@@ -185,9 +162,6 @@ func ariaValue(v string) (string, error) {
 	return s, nil
 }
 
-// unquoteYAMLScalar reads one quoted scalar from the start of s and
-// returns it with the remainder. Double quotes take JSON escapes (what
-// Playwright writes); single quotes double an embedded quote.
 func unquoteYAMLScalar(s string) (string, string, error) {
 	quote := s[0]
 	for i := 1; i < len(s); i++ {
@@ -210,7 +184,6 @@ func unquoteYAMLScalar(s string) (string, string, error) {
 	return "", "", fmt.Errorf("unterminated quoted string: %s", ariaQuote(s))
 }
 
-// parseAriaTemplate reads `role "name" [attr] [attr=value]`.
 func parseAriaTemplate(key string) (*ariaNode, error) {
 	i := 0
 	for i < len(key) && (isASCIILetter(key[i]) || (i > 0 && (key[i] == '-' || key[i] == '_'))) {
@@ -230,8 +203,6 @@ func parseAriaTemplate(key string) (*ariaNode, error) {
 		node.Name = cleanAriaText(name)
 		rest = strings.TrimSpace(after)
 	case strings.HasPrefix(rest, "/"):
-		// A /regex/ name matches a family of names. The regex source is
-		// the closest readable label there is.
 		end := 1
 		for end < len(rest) && rest[end] != '/' {
 			if rest[end] == '\\' {
@@ -269,16 +240,10 @@ func parseAriaTemplate(key string) (*ariaNode, error) {
 
 func isASCIILetter(c byte) bool { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') }
 
-// cleanAriaText drops control and invisible characters. Names and text
-// flow into generated source, rendered pages, and terminal warnings, so a
-// bidi override or escape sequence in a captured page stops here.
 func cleanAriaText(s string) string {
 	return strings.TrimSpace(textsafe.StripUnsafe(s))
 }
 
-// ariaQuote quotes a piece of snapshot input for an error message: Go
-// quoting escapes control and bidi bytes, so a hostile line cannot drive
-// the terminal, and the cut keeps a multi-megabyte line out of the output.
 func ariaQuote(s string) string {
 	const max = 60
 	if r := []rune(s); len(r) > max {

@@ -1,17 +1,8 @@
 package clitest
 
-// CliGateSpecDoc builds one fixture OpenAPI document with the given
-// operation summary: a GET with query and header parameters, a POST with
-// a path parameter and a JSON body, a PUT with an optional binary body
-// under its own bearer security, apiKey security, and a server entry —
-// enough surface to exercise the self-client, operations.go, and the
-// shared scaffold both generation modes emit. A PATCH under /odd carries
-// the hostile spellings spec build accepts as data: a path template, a
-// summary, a description and a binary content type parameter holding
-// quotes, backticks, backslashes and a comment closer, a dotted joined
-// array query name and a spaced boolean one, so every literal those
-// strings reach in the emitted code is proved quoted by the build and
-// the vettool.
+// CliGateSpecDoc is an OpenAPI document whose operations carry summary,
+// with a PATCH under /odd spelling every name and string with quotes,
+// backticks, backslashes and a comment closer.
 func CliGateSpecDoc(summary string) map[string]any {
 	return map[string]any{
 		"openapi": "3.0.3",

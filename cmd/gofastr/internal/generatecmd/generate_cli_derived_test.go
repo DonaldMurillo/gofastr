@@ -281,6 +281,12 @@ func TestWatchHashFollowsEntitiesOnly(t *testing.T) {
 	if hashGenerateInputs(appgen.GenerateOptions{}) != before {
 		t.Fatal("rewriting entities/client moved the watch hash: --watch would loop on its own output")
 	}
+	if err := os.WriteFile(filepath.Join(dir, "entities", "NOTES.md"), []byte("notes\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if hashGenerateInputs(appgen.GenerateOptions{}) != before {
+		t.Fatal("a non-Go file in entities/ moved the watch hash")
+	}
 	addPostsField(t, dir)
 	if hashGenerateInputs(appgen.GenerateOptions{}) == before {
 		t.Fatal("editing an entity did not move the watch hash")

@@ -14,10 +14,7 @@ var sharedVettool struct {
 	err  error
 }
 
-// RepoVettool returns the path of the repo's vettool (cmd/vettool), built
-// on the first call and shared by every test in the package after it: the
-// gates that vet generated code with the repo's analyzers each linked
-// their own copy. It lives under the temp root Main removes.
+// RepoVettool returns the repo's cmd/vettool, built on the first call.
 func RepoVettool() (string, error) {
 	sharedVettool.once.Do(func() {
 		if moduleRoot == "" {

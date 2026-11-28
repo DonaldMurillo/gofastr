@@ -169,7 +169,7 @@ func TestWriteAgentDetailFilesIncludeAutoGenHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read battery-admin.md: %v", err)
 	}
-	s := string(body)
+	s, _, _ := strings.Cut(string(body), "\n")
 	if !strings.HasPrefix(s, "<!--") {
 		t.Fatalf("detail file must start with an HTML comment header so the warning is the first thing a reader sees; got:\n%s", s[:100])
 	}
@@ -191,7 +191,8 @@ func TestExtractUseWhenStripsBoilerplate(t *testing.T) {
 		"**Use this when** the prompt mentions: foo, bar, baz.\n\nnext para": "foo, bar, baz",
 		"**Use this when** the prompt mentions: just one\n\n":                "just one",
 		"**Use this when** anything goes here\n\n":                           "anything goes here",
-		"no use-when line": "—",
+		"no use-when line":            "—",
+		"**Use this when** a | b\n\n": `a \| b`,
 		// Multi-line paragraph. Markdown wraps the trigger list across
 		// lines; the TOC must show all of them, rather than only the first wrap.
 		"**Use this when** the prompt mentions: a, b,\nc, d, e\n\nrest": "a, b, c, d, e",
@@ -343,6 +344,13 @@ tail
 	}
 	if !strings.Contains(err.Error(), "exactly one") {
 		t.Fatalf("error doesn't mention 'exactly one' (saw: %v)", err)
+	}
+}
+
+func TestRefreshAgentsMDRefusesEndBeforeStart(t *testing.T) {
+	swapped := []byte("# AGENTS.md\n" + agentsAutoEnd + "\nmine\n" + agentsAutoStart + "\n")
+	if _, _, err := RefreshAgentsMD(swapped); err == nil || !strings.Contains(err.Error(), "before start") {
+		t.Fatalf("RefreshAgentsMD with the end marker first = %v, want a refusal naming the order", err)
 	}
 }
 

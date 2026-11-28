@@ -14,6 +14,8 @@ gofastr generate app specs/ --dry-run --json
 
 Passing a directory (`specs/`) loads every `.yml`/`.yaml`/`.json` file in alphabetical order, concatenates list sections, and merges `app:` key by key (duplicate keys across two files are a hard error).
 
+In a `.json` spec, a key that takes a single value (an access permission, a role, `app.db.driver`, `read_scope.unrestricted`) refuses `{}`; leave the key out for blank.
+
 ## What the app generator writes vs. what you hand-write
 
 | Area | Generated from `gofastr.yml` | Hand-written Go |
@@ -77,6 +79,7 @@ app:
 ### API prefix and route ownership
 
 - `app.api_prefix` defaults to `"api"`, mounting entity JSON APIs at `/api/<table>` so bare `/<table>` paths stay free for HTML screens. MCP tools, OpenAPI, and generated `entityui` screens follow the prefix automatically.
+- `app.static_dir` names a directory the app serves as static files. `gofastr validate` refuses the app root or a directory above it, a directory the generator writes Go into or `app.output_dir`, one holding the SQLite file, and any path with a directory whose name starts with a dot, such as `.git`.
 - With `app.auth.enabled: true`, screens cannot claim `{base_path}/me` (default `/auth/me`) because the auth JSON API owns that `GET` route.
 
 ### Theme and self-hosted fonts

@@ -7,14 +7,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 )
 
-// screenRouteProblem says why a browser cannot reach a screen mounted at
-// route, or returns "". A route is a path: it starts with "/", has no
-// empty, "." or ".." segment (a browser folds those away before asking,
-// and "//host" in a link is protocol-relative), and carries none of the
-// characters a URL spends on something else (? starts the query, # the
-// fragment, a backslash is a slash to a browser) or that a sitemap and
-// llm.md cannot list raw (spaces and control bytes). A param named twice
-// keeps only one of its values.
 func screenRouteProblem(route string) string {
 	if !strings.HasPrefix(route, "/") {
 		return "must start with /"
@@ -55,17 +47,8 @@ func screenRouteProblem(route string) string {
 	return ""
 }
 
-// screenRouteOnEntityAPI returns the CRUD mount path of the entity whose
-// routes a screen at route would take, or "": the mount itself, where
-// App.Mount panics at boot (entityScreenCollisionMessage), or any path
-// under it, where the CRUD routes shadow the screen. Trailing slashes are
-// trimmed, as the framework compares.
 func screenRouteOnEntityAPI(bp AppSpec, route string) string {
 	if bp.appless && bp.projectApp == nil {
-		// A fragment with no app: section (generate app --add, generate
-		// screen) does not say the project's api_prefix, so unless the
-		// project's settings were read (SetProjectApp) it cannot say
-		// where the CRUD routes mount.
 		return ""
 	}
 	base := ""
@@ -77,10 +60,6 @@ func screenRouteOnEntityAPI(bp AppSpec, route string) string {
 			continue
 		}
 		mount := base + "/" + entityTable(decl)
-		// At the mount App.Mount panics; under it, CRUD's GET patterns
-		// ({id}, a composite key's segments, llm.md, _events) are
-		// registered routes and win over a screen UIHost serves from
-		// its catch-all, so the page is never shown.
 		if r := strings.TrimRight(route, "/"); r == mount || strings.HasPrefix(r, mount+"/") {
 			return mount
 		}
@@ -88,17 +67,6 @@ func screenRouteOnEntityAPI(bp AppSpec, route string) string {
 	return ""
 }
 
-// frameworkRoutes are the GET routes a generated app's framework serves
-// itself, each with what serves it and the app spec setting that makes
-// the generated main mount it. A screen at one never renders (the
-// registered route answers) or, where the framework's route answers only
-// some callers, takes it over: a screen at /openapi.json served HTML to
-// anonymous callers in place of the gated schema. The list follows the
-// options the generated main passes (appgen's main.go emission:
-// uihost.WithSitemap, WithRobots, WithAppIcon, WithPWA, WithPublicLLMMD,
-// framework.WithMCP) and the routes those mount (framework/app.go
-// finalizeRoutes, framework/uihost/uihost.go). Opt-in routes the
-// generated main never enables (/metrics, /auth.md, /llms.txt) stay free.
 var frameworkRoutes = []struct {
 	path   string
 	match  int // routeExact, routeAtOrUnder or routeUnder: screen reservations
@@ -140,11 +108,6 @@ const (
 
 func appSpecHasEntities(bp AppSpec) bool { return len(bp.Entities) > 0 }
 
-// screenRouteOnFrameworkRoute says which framework-served route a screen
-// at route would collide with, or returns "". Besides frameworkRoutes,
-// with app.llm_md a last segment of llm.md is a page's markdown doc, and
-// with app.admin the back-office owns its whole path, the
-// <path>/e/<table> entity pages included.
 func screenRouteOnFrameworkRoute(bp AppSpec, route string) string {
 	r := strings.TrimRight(route, "/")
 	if r == "" {
@@ -175,9 +138,7 @@ func screenRouteOnFrameworkRoute(bp AppSpec, route string) string {
 	return ""
 }
 
-// AppSpecFrameworkRoutePatterns returns the path patterns generated apps
-// mount, using frameworkRoutes without its broader screen-reservation rules.
-// Lints must not credit arbitrary children of reserved infrastructure paths.
+// AppSpecFrameworkRoutePatterns returns the path patterns a generated app's framework mounts for bp.
 func AppSpecFrameworkRoutePatterns(bp AppSpec) []string {
 	var paths []string
 	for _, fr := range frameworkRoutes {

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -54,6 +55,26 @@ func TestResolve(t *testing.T) {
 		if err != nil || got != tc.want {
 			t.Errorf("Resolve(%q) = %q, %v; want %q", tc.in, got, err, tc.want)
 		}
+	}
+}
+
+// Resolve follows a chain of 40 links, as Linux does, and refuses one of 41.
+func TestResolveFollowsFortyLinks(t *testing.T) {
+	dir := t.TempDir()
+	mustSymlink(t, "target", filepath.Join(dir, "l0"))
+	for i := 1; i <= 41; i++ {
+		mustSymlink(t, "l"+strconv.Itoa(i-1), filepath.Join(dir, "l"+strconv.Itoa(i)))
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if got, err := Resolve(root, "l39"); err != nil || got != "target" {
+		t.Errorf("Resolve through 40 links = %q, %v; want target", got, err)
+	}
+	if got, err := Resolve(root, "l40"); err == nil || !strings.Contains(err.Error(), "too many levels") {
+		t.Errorf("Resolve through 41 links = %q, %v; want too many levels of symbolic links", got, err)
 	}
 }
 
