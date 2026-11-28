@@ -1,13 +1,51 @@
 package clitest
 
 import (
+	"fmt"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
+// FreeAddr returns a loopback host:port that was free a moment ago.
+func FreeAddr(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().String()
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return addr
+}
+
+// WaitForHTTP polls url for 30 seconds until it answers below 500, then
+// fails the test with output, which must be safe to read while a child
+// process writes it (a SyncBuffer).
+func WaitForHTTP(t *testing.T, url string, output fmt.Stringer) {
+	t.Helper()
+	client := &http.Client{Timeout: 5 * time.Second}
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode < 500 {
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("server did not become ready at %s\n%s", url, output.String())
+}
+
+// NextE2EPort returns a loopback port that was free a moment ago.
 func NextE2EPort(t *testing.T) string {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -21,28 +59,17 @@ func NextE2EPort(t *testing.T) string {
 	return strconv.Itoa(port)
 }
 
-// DevTempEnv points a spawned `gofastr dev` at a temp root the test
-// owns. The dev server builds its binary under os.MkdirTemp and removes
-// that dir only on a clean shutdown; the harnesses SIGKILL it, so the
-// dir would outlive every run. Under t.TempDir it goes with the test.
-// Call it before registering the kill cleanup: cleanups run last-in
-// first-out, so the process is dead before its dir is removed.
-//
-// It also gives the child an empty axe-coverage root. Strict mode checks
-// the manifest only under `gofastr dev`, and every example shares the
-// module root's manifest (or the one cmd/affected points outside the
-// module): one example's axe scans, or a run that failed midway, leave a
-// manifest missing another example's screens, and that example's strict
-// boot panics in a test about the dev loop. No manifest is the warn
-// posture.
+// DevTempEnv is the environment for a spawned `gofastr dev`: temp
+// directories under the test's own, and an empty axe-coverage root. Call it
+// before registering the cleanup that kills the process: cleanups run last-in
+// first-out, so the process is killed before its temp directories are removed.
 func DevTempEnv(t *testing.T) []string {
 	t.Helper()
 	dir := t.TempDir()
 	return []string{"TMPDIR=" + dir, "TMP=" + dir, "TEMP=" + dir, "GOFASTR_AXE_COVERAGE_DIR=" + t.TempDir()}
 }
 
-// BuildGofastrBinary returns the package-wide shared gofastr binary
-// (testbin_test.go); the name is kept for the e2e call sites.
+// BuildGofastrBinary returns GofastrTestBinary's path, failing the test on error.
 func BuildGofastrBinary(t *testing.T) string {
 	t.Helper()
 	bin, err := GofastrTestBinary()
@@ -52,6 +79,7 @@ func BuildGofastrBinary(t *testing.T) string {
 	return bin
 }
 
+// Truncate cuts s to n bytes and marks the cut.
 func Truncate(s string, n int) string {
 	if len(s) > n {
 		return s[:n] + "..."
@@ -59,9 +87,7 @@ func Truncate(s string, n int) string {
 	return s
 }
 
-// SyncBuffer is a mutex-guarded writer for capturing live child-process
-// output: os/exec's copy goroutine writes while the test goroutine reads on
-// failure paths, which races on a bare strings.Builder under -race.
+// SyncBuffer is a writer a child process may write while the test reads it.
 type SyncBuffer struct {
 	mu sync.Mutex
 	b  strings.Builder

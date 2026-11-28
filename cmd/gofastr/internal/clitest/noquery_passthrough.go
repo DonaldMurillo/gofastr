@@ -1,9 +1,6 @@
 package clitest
 
-// AppSpecWithNoQuery is a minimal app whose one entity has a masked column,
-// used to drive the generator end to end. No fixture in the repo declares
-// no_query, so without this the whole emission path was covered only by unit
-// tests on individual render functions.
+// AppSpecWithNoQuery is an app spec whose one entity has a no_query column.
 const AppSpecWithNoQuery = `
 app:
   name: cards

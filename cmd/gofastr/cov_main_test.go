@@ -70,6 +70,20 @@ func TestDispatchUnknownCmdSuggests(t *testing.T) {
 	if !strings.Contains(out, "Did you mean") {
 		t.Fatalf("expected suggestion, got %s", out)
 	}
+
+	isolatePluginEnv(t)
+	for name, want := range map[string]string{"vresion": "gofastr version?", "bxxxd": "", "vxxxion": ""} {
+		out, _, code := runDispatch(t, name)
+		if code != 2 {
+			t.Fatalf("%s: exit %d, want 2", name, code)
+		}
+		if want == "" && strings.Contains(out, "Did you mean") {
+			t.Fatalf("%s is distance 3 from a built-in and must get no suggestion, got %s", name, out)
+		}
+		if want != "" && !strings.Contains(out, "Did you mean: "+want) {
+			t.Fatalf("%s is distance 2 from version and must be offered it, got %s", name, out)
+		}
+	}
 }
 
 func TestColorHelpersTTYBranch(t *testing.T) {

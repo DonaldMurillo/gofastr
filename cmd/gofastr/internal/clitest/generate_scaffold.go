@@ -15,8 +15,7 @@ func BuildGenerated(t *testing.T, dir string) {
 	}
 }
 
-// ScaffoldEmptyDir sets up a temp dir with a go.mod (no app spec) and chdirs
-// into it, the starting point for scaffolding into an empty project.
+// ScaffoldEmptyDir chdirs into a new module with no app spec and returns it.
 func ScaffoldEmptyDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

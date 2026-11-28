@@ -1,0 +1,27 @@
+primitive: cli.chrome.sitefooter
+summary: sitefooter, the app's colophon - the name linking home, a tagline, the language switcher, titled link columns and a bottom note - drawn from html elements with its own owned sheet.
+code:
+  - cmd/gofastr/packages/sitefooter/
+docs:
+  - framework/docs/content/ui-composition-recipes.md
+invariants:
+  - id: contentinfo-in-its-own-scope
+    rule: Render draws one footer with role contentinfo whose root carries data-cui-scope="sitefooter", the name links home, and each column is a level-2 title over a list of its links.
+    enforced_by:
+      - test: cmd/gofastr/packages/sitefooter.TestRenderFooterLandmarks
+  - id: optional-lines-draw-nothing
+    rule: An empty Tagline, Language or Note draws no element at all, and a set one draws its own.
+    enforced_by:
+      - test: cmd/gofastr/packages/sitefooter.TestRenderTaglineAndNoteOptional
+  - id: columns-beside-the-lead
+    rule: In Chrome the link columns lay out side by side to the right of the lead on a wide screen in both colour schemes, and on a phone the lead stacks over them with no sideways scroll.
+    enforced_by:
+      - test: cmd/gofastr/packages/sitefooter.TestFooterLayoutPromises
+  - id: footer-on-the-page-column
+    rule: In Chrome the footer's content spans main's ContainerPage column.
+    enforced_by:
+      - test: cmd/gofastr/packages/sitefooter.TestFooterLayoutPromises
+  - id: rule-rides-the-theme
+    rule: In Chrome the footer's top rule is a 1px line in the theme's border colour, which differs between the light and dark schemes.
+    enforced_by:
+      - test: cmd/gofastr/packages/sitefooter.TestFooterLayoutPromises
