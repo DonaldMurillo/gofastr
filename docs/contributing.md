@@ -46,6 +46,15 @@ expose them to agents connected to a live app.**
 
 The registry paragraph that opened this list is still in `AGENTS.md`.
 
+### Changes to shared rules
+
+Before editing, run `go run ./cmd/primitives for <path>` for the file you
+plan to change and for the related sites it lists. Read the rules that
+apply at those sites and test related inputs against the shared rule.
+Fix reproducible violations of that rule as part of the change. Include
+regression tests for the fixes and for valid behavior that must still
+work. In the change summary, explain why any listed site needs no change.
+
 ## Common operations
 
 - **Build / run the example website**: `./scripts/dev-watch.sh` (auto-rebuild + livereload, port `:8082`). Dev-watch writes to `/tmp/` because the watched tree must stay clean.

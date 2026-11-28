@@ -22,6 +22,7 @@ func TestCommands(t *testing.T) {
 	}{
 		{nil, 0, "crud: "},
 		{[]string{"for", "framework/crud/nested_filter.go"}, 0, "crud.relations.nested-filter: "},
+		{[]string{"for", "core-ui/registry/inject.go"}, 0, "Probe related inputs against the shared rule"},
 		{[]string{"for", "go.mod"}, 0, "no primitive owns this path yet"},
 		{[]string{"show", "crud"}, 0, "child crud.scope: "},
 		{[]string{"show", "crud.read-hooks"}, 0, "rejected Match by position: "},
@@ -103,7 +104,13 @@ func TestHook(t *testing.T) {
 	}
 	change("b/b.go")
 	got := fire(event)
-	for _, want := range []string{`"hookEventName":"PostToolUse"`, "You changed b/b.go", "a/a.go: first", "not finished until every site has it"} {
+	for _, want := range []string{
+		`"hookEventName":"PostToolUse"`,
+		"You changed b/b.go",
+		"a/a.go: first",
+		"Fix reproducible violations in this change",
+		"cover valid behavior with regression tests",
+	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the notice lacks %q: %s", want, got)
 		}

@@ -116,7 +116,8 @@ and its `why` says what keeps them apart: often nothing but work not yet
 done, rarely a real reason code cannot be shared. `primitives lint`
 prints how many are left. Until a twin is merged, `primitives for` on
 any of its sites prints every other site. A site need not be owned by
-the primitive that lists it.
+the primitive that lists it. Follow the [shared-rule workflow](../docs/contributing.md#changes-to-shared-rules)
+to check the listed implementations before editing.
 
 ## What the harness enforces
 
