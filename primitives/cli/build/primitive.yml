@@ -1,0 +1,85 @@
+primitive: cli.build
+summary: gofastr build - codegen, go vet, the accessibility, .ui.go sandbox, embed and contract gates, then go build of the app's main package.
+code:
+  - cmd/gofastr/internal/buildcmd/
+docs:
+  - framework/docs/content/cli.md
+on_change:
+  - A new step or skip flag goes in printBuildUsage and framework/docs/content/cli.md, and runs before go build so a failing gate never leaves a binary.
+  - buildEmbedGate shares embedcheck.CheckAll with cmd/check-embed; the verdict is still written in both, so a change to what fails one changes the other (the tools.check-embed twin).
+invariants:
+  - id: gates-run-before-compile
+    rule: A failing sandbox or embed gate makes gofastr build exit 1 before go build runs, so no binary is written.
+    enforced_by:
+      - test: cmd/gofastr/internal/buildcmd.TestRunBuildCallsEmbedGate
+      - test: cmd/gofastr/internal/buildcmd.TestNoA11yStillRunsTheSandboxGate
+  - id: sandbox-gate-has-no-skip
+    rule: --no-a11y skips only the accessibility gate; the .ui.go sandbox gate runs on every build and no flag turns it off.
+    enforced_by:
+      - test: cmd/gofastr/internal/buildcmd.TestNoA11yStillRunsTheSandboxGate
+  - id: embed-gate-verdict
+    rule: buildEmbedGate prints every note, fails on a finding whatever --allow-unverified-embeds says, fails on a blocking note unless --allow-unverified-embeds is set, and passes an advisory note.
+    enforced_by:
+      - test: cmd/gofastr/internal/buildcmd.TestBuildEmbedGateFailsOnlyOnBlockingNotes
+      - test: cmd/gofastr/internal/buildcmd.TestBuildEmbedGateFailsOnFinding
+      - test: cmd/gofastr/internal/buildcmd.TestAllowUnverifiedStillFailsOnFinding
+  - id: contracts-gate-verdict
+    rule: buildContractsGate fails on a finding at the configured fail-on severity and on a run that cannot finish, honours the baseline gofastr verify --baseline-write recorded, and passes warnings after printing the verify report.
+    enforced_by:
+      - test: cmd/gofastr/internal/buildcmd.TestBuildContractsGateBlocksAnErrorFinding
+      - test: cmd/gofastr/internal/buildcmd.TestBuildContractsGateBlocksZeroSourceFiles
+      - test: cmd/gofastr/internal/buildcmd.TestBuildContractsGateHonoursTheBaseline
+      - test: cmd/gofastr/internal/buildcmd.TestBuildContractsGateStillBlocksNewFindings
+      - test: cmd/gofastr/internal/buildcmd.TestBuildContractsGatePassesWarnings
+  - id: command-extension-refusal-is-pasteable
+    rule: When codegen refuses a discovered config's command extension, build names GOFASTR_CODEGEN_ALLOW_COMMANDS=1 and gofastr generate --config <path> then gofastr build --no-generate, with the path shell-quoted unless it is one plain word.
+    enforced_by:
+      - test: cmd/gofastr/internal/buildcmd.TestBuildExtRefusalOffersRealRemedy
+      - test: cmd/gofastr/internal/buildcmd.TestBuildExtRefusalQuotesPath
+  - id: strict-flags
+    rule: build refuses an unknown flag, a positional argument, an empty --pkg or --output, and a --pkg value that starts with a dash.
+    enforced_by:
+      - test: cmd/gofastr/internal/buildcmd.TestBuildRejectsUnknownFlag
+      - test: cmd/gofastr/internal/buildcmd.TestBuildRejectsUnexpectedPositionalArgument
+      - test: cmd/gofastr/internal/buildcmd.TestBuildRejectsOptionLikePackageValue
+      - test: cmd/gofastr/internal/buildcmd.TestBuildRejectsEmptyFlagValues
+decisions:
+  - id: fail-on-blocking-notes-only
+    date: 2026-11-28
+    status: accepted
+    decision: The embed gate fails on findings and on notes for a child built inside Render from another package, the one shape neither it nor the uihost boot walk can check, and prints the other notes as advice.
+    rejected:
+      - option: Fail on every note.
+        why: It rejected clean island surfaces, which the app generator emits for every island block, interface-typed fields the analyzer had resolved, and wrappers, for which holding the child in a field is impossible, so there was no remedy.
+    upholds: [embed-gate-verdict]
+  - id: warnings-pass-the-build
+    date: 2026-11-28
+    status: accepted
+    decision: Contract warnings print and let the build through; only the fail-on severity, error by default, stops it, and gofastr verify shows everything.
+    rejected:
+      - option: Fail the build on warnings by default.
+        why: A build that fails on "this route has no test" is one people learn to skip with --no-contracts, which turns every rule off.
+    upholds: [contracts-gate-verdict]
+  - id: build-honours-the-baseline
+    date: 2026-11-28
+    status: accepted
+    decision: The build gate reads the baseline gofastr verify --baseline-write records.
+    rejected:
+      - option: Run the contracts without the baseline at build time.
+        why: Recording a baseline would fix verify and leave build red, and the only way out a user would find is --no-contracts.
+    upholds: [contracts-gate-verdict]
+  - id: sandbox-is-a-correctness-floor
+    date: 2026-11-28
+    status: accepted
+    decision: The sandbox gate has no skip flag and is not bound to --no-a11y.
+    rejected:
+      - option: Skip it with --no-a11y, like the accessibility gate.
+        why: A goroutine, channel or forbidden import in a client-hydrated .ui.go file breaks hydration at runtime, and no valid .ui.go file violates the rule, so there is nothing to wait out.
+    upholds: [sandbox-gate-has-no-skip]
+  - id: build-does-not-generate-the-app
+    date: 2026-11-28
+    status: accepted
+    decision: build's codegen step runs the codegen extensions and rebuilds entities/client and the endpoints file when present, and never runs gofastr generate app.
+    rejected:
+      - option: Regenerate the app from a gofastr.yml it finds.
+        why: App generation rewrites source the developer may have edited, so it stays an explicit step instead of a guess the build makes.

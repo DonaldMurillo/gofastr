@@ -292,6 +292,9 @@ var ownedPackages = []string{
 	"cmd/primitives",
 	"cmd/repolint",
 	"cmd/vettool",
+	// cmd/gofastr: build and ship
+	"cmd/gofastr/internal/buildcmd",
+	"cmd/gofastr/internal/gates",
 }
 
 //gofastr:test-reads primitives/ *.go
