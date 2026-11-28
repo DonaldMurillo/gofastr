@@ -1,0 +1,75 @@
+primitive: cli.migrate
+summary: gofastr migrate up, down, status, force and repair - run the versioned SQL migrations in migrations/ against the app's SQLite or Postgres database; this entry also owns the dispatch and the flag checks every subcommand shares, and generate is its child.
+code:
+  - cmd/gofastr/internal/migratecmd/migrate_cmd.go
+  - cmd/gofastr/internal/migratecmd/subcommand_usage.go
+  - cmd/gofastr/internal/migratecmd/doc.go
+docs:
+  - framework/docs/content/migrations.md
+  - framework/docs/content/cli.md
+on_change:
+  - A flag or subcommand added here goes in migrateFlags and migratePositional, or the shared checks refuse it, and in printMigrateUsage.
+invariants:
+  - id: up-is-the-default
+    rule: migrate with no subcommand, or with a flag first, runs up with those flags.
+    enforced_by:
+      - test: cmd/gofastr/internal/migratecmd.TestBareMigrateDefaultsToUpNoPanic
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateFlagsWithoutSubcommandRunUp
+  - id: flags-checked-before-the-database
+    rule: Before anything opens the database, a subcommand refuses a flag it does not read, a valued flag without =<value>, a bare flag given one, and more positional arguments than it takes.
+    enforced_by:
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateRefusesUnknownFlag
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateRefusesExtraPositionalArgs
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateRefusesStrayArguments
+  - id: counts-parse-whole
+    rule: down takes at most one positive integer count and force exactly one unsigned version, each parsed whole, or the run exits 1 before opening the database.
+    enforced_by:
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateDownRefusesBadCount
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateForceRefusesBadVersion
+  - id: diff-is-removed
+    rule: migrate diff exits 1 and names migrate generate.
+    enforced_by:
+      - test: cmd/gofastr/internal/migratecmd.TestRemovedMigrateDiffExitsNonZero
+  - id: create-db-checks-first
+    rule: up --create-db refuses a missing migrations directory or database URL before it creates the database.
+    enforced_by:
+      - test: cmd/gofastr/internal/migratecmd.TestCreateDBChecksArgsFirst
+  - id: repair-gates-on-a-clean-rescan
+    rule: repair without --apply exits 1 when it finds a stale owner key, and with --apply names each table before rebuilding it and exits 1 unless a re-scan afterwards finds none.
+    enforced_by:
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateRepairReportsLegacyDB
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateRepairAppliesAndIsClean
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateRepairFailsWhenTheRescanStillFinds
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateRepairCleanDBExitsZero
+  - id: status-names-every-refusal
+    rule: status lists dirty, modified and unregistered migrations, the ones up and down refuse on, and a dirty one's force command names --group=default for the default group when groups show.
+    enforced_by:
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateStatusShowsDrift
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateStatusDirtyNamesARunnableGroup
+  - id: two-dialects-only
+    rule: The runner accepts only SQLite and Postgres drivers, treats both sqlite and sqlite3 as SQLite, and refuses any other driver before opening it.
+    enforced_by:
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateRefusesDriverWithoutDialect
+      - test: cmd/gofastr/internal/migratecmd.TestDialectForDriverPureGoSQLite
+      - test: cmd/gofastr/internal/migratecmd.TestEnsureDriverRegistered
+  - id: database-url-precedence
+    rule: The database URL is --db-url, then the process DATABASE_URL, then the dotenv files framework.DefaultDotEnvPaths names in NewApp's order, so migrate opens the database the app opens.
+    enforced_by:
+      - test: cmd/gofastr/internal/migratecmd.TestGetMigrateDBURLFromProcessEnv
+      - test: cmd/gofastr/internal/migratecmd.TestGetMigrateDBURLPrefersEnvLocal
+      - test: cmd/gofastr/internal/migratecmd.TestGetMigrateDBURLHonoursAppEnvFile
+      - test: cmd/gofastr/internal/migratecmd.TestGetMigrateDBURLFromEnvFile
+  - id: driver-follows-the-url
+    rule: --db and its alias --driver pick the driver, and without either a postgres:// or postgresql:// URL picks postgres.
+    enforced_by:
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateAcceptsDBFlag
+      - test: cmd/gofastr/internal/migratecmd.TestMigrateDriverFollowsPostgresURL
+decisions:
+  - id: no-apply-from-spec
+    date: 2026-11-28
+    status: accepted
+    decision: The CLI emits reviewable versioned migrations; migrate diff, which applied an app spec straight onto a live database, is gone.
+    rejected:
+      - option: Keep migrate diff.
+        why: It made the app spec authoritative over a running database, and schema change belongs in a migration a person reviews and can roll back.
+    upholds: [diff-is-removed]
