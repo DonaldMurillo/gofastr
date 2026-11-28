@@ -44,6 +44,7 @@ invariants:
       - test: cmd/gofastr/internal/appspec.TestStaticDirRefusesProjectFiles
       - test: cmd/gofastr/internal/appspec.TestStaticDirRefusesOutputDir
       - test: cmd/gofastr/internal/appspec.TestStaticDirReadsBackslashesAsSlashes
+      - test: cmd/gofastr/internal/appspec.TestStaticDirRefusesEveryCanonicalPackage
   - id: base-url-is-an-origin
     rule: app.base_url is a bare http or https origin with no path, query or fragment.
     enforced_by:
@@ -57,6 +58,7 @@ invariants:
     rule: A screen lists one entity at most once, at any depth; lists of different entities may share a screen.
     enforced_by:
       - test: cmd/gofastr/internal/appspec.TestAppSpecRejectsDuplicateListPerScreen
+      - test: cmd/gofastr/internal/appspec.TestValidateRefusals
   - id: create-routes-are-not-shared
     rule: Two entities whose create-flagged lists share a home list screen are refused, and an authored screen at a home list's /create route is refused.
     enforced_by:
@@ -71,11 +73,12 @@ invariants:
       - test: cmd/gofastr/internal/appspec.TestEntityFormEditRequiresIDInRoute
       - test: cmd/gofastr/internal/appspec.TestValidateRefusals
   - id: auth-form-posts-to-the-battery
-    rule: An explicit login_form or signup_form action is the auth battery's mounted login or register route under the app's (or a fragment's project's) base path, a query string allowed, and an absolute one must name app.base_url's scheme and host and is refused when base_url is unset.
+    rule: An explicit login_form or signup_form action is the auth battery's mounted login or register route under the app's (or a fragment's project's) base path, a query string allowed, and an absolute one must name app.base_url's scheme and host with no userinfo and is refused when base_url is unset.
     enforced_by:
       - test: cmd/gofastr/internal/appspec.TestAuthFormActionFollowsBasePath
       - test: cmd/gofastr/internal/appspec.TestAuthFormAbsoluteActionNeedsBaseURL
       - test: cmd/gofastr/internal/appspec.TestFragmentAuthFormUsesProjectBase
+      - test: cmd/gofastr/internal/appspec.TestAuthFormAbsoluteActionCarriesNoUserinfo
   - id: pwa-settings-are-valid
     rule: With app.pwa enabled, display is a web-app-manifest display mode and start_url and scope start with /.
     enforced_by:
@@ -144,9 +147,10 @@ invariants:
       - test: cmd/gofastr/internal/appspec.TestHookHandlerMustDeriveIdentifier
       - test: cmd/gofastr/internal/appspec.TestValidateRefusals
   - id: hook-points-match-kiln
-    rule: AppSpecHookTypes names exactly the hook events a kiln world admits.
+    rule: AppSpecHookTypes names exactly the hook events a kiln world admits, and maps each to the framework hook constant that fires on that event.
     enforced_by:
       - test: cmd/gofastr/internal/appspec.TestHookTypesMatchKiln
+      - test: cmd/gofastr/internal/appspec.TestHookTypesNameTheirConstant
   - id: nav-icons-carry-no-markup
     rule: A nav icon at any depth holds no markup or control character, since the sidebar renders it as raw HTML.
     enforced_by:
@@ -175,6 +179,22 @@ decisions:
       - option: A second color check in the app spec.
         why: The emitter assigns theme values directly to the stylesheet tokens, bypassing ApplyTokens, so the two grammars would have to agree by hand, and a ; or } in a value closes :root.
     upholds: [theme-values-pass-the-style-grammar]
+  - id: font-values-skip-the-color-grammar
+    date: 2026-11-28
+    status: accepted
+    decision: The font_body, font_heading and font_display theme values are not checked with the color grammar.
+    rejected:
+      - option: Run them through style.ValidateColorValue too.
+        why: A font stack is no color, and the emitter reduces each with appSpecFontFamilyName to the first family's letters, digits, spaces, - and _, so no character that could close a declaration reaches the stylesheet.
+    upholds: [theme-values-pass-the-style-grammar]
+  - id: identifiers-fit-postgres
+    date: 2026-11-28
+    status: accepted
+    decision: A table part, column or index name longer than query.MaxIdentBytes is refused at validate time.
+    rejected:
+      - option: Accept any length the SQL grammar allows.
+        why: Postgres silently cuts a name to its first 63 bytes, so two long names that share those bytes become one table or column with no error.
+    upholds: [sql-names-fit-every-engine]
   - id: fail-at-generate-not-boot
     date: 2026-11-28
     status: accepted

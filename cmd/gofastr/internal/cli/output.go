@@ -73,7 +73,8 @@ func Info(format string, args ...interface{}) {
 	fmt.Printf("  %s %s\n", Yellow("→"), scrubbedf(format, args...))
 }
 
-// InfoString returns Info's line without printing it.
+// InfoString returns Info's line without printing it, for a goroutine
+// that must not read the os.Stdout global (dev's crash watcher).
 func InfoString(format string, args ...interface{}) string {
 	return fmt.Sprintf("  %s %s", Yellow("→"), scrubbedf(format, args...))
 }

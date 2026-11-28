@@ -159,3 +159,18 @@ func TestPagerSpeaksTheLocale(t *testing.T) {
 		t.Errorf("a pager with no Ctx should read English:\n%s", en)
 	}
 }
+
+func TestPagerWithoutCtxUsesTheDefaultTranslator(t *testing.T) {
+	cat := i18n.NewMapCatalog()
+	cat.Set("es", "ui.pagination.previous", i18n.Message{Text: "Anterior"})
+	cat.Set("es", "ui.nav.moreArticles", i18n.Message{Text: "Más artículos"})
+	prev := i18n.Default()
+	i18n.SetDefault(i18n.NewTranslator(cat, "es"))
+	t.Cleanup(func() { i18n.SetDefault(prev) })
+	got := string(docpage.Pager(docpage.PagerConfig{PrevHref: "/a", PrevLabel: "A"}))
+	for _, want := range []string{"Anterior", `aria-label="Más artículos"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("a pager with no Ctx ignores the default translator, lacks %q:\n%s", want, got)
+		}
+	}
+}

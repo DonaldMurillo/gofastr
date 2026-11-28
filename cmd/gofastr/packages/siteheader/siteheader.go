@@ -1,5 +1,26 @@
-// Package siteheader is the app's top bar. This package is the app's own
-// code: edit it freely.
+// Package siteheader is the app's top bar, built the way an app
+// builds any piece of chrome the framework does not ship:
+//
+//   - the markup is plain html elements and framework parts composed
+//     here (html.Header, html.Nav, headless.Disclosure, ui.Icon,
+//     ui.LinkButton);
+//   - the look is siteheader.style.css, an owned style; Style.Scope
+//     stamps the owner on the root, and `gofastr gen styles` writes the
+//     class methods in siteheader_style.gen.go;
+//   - spacing and shared sizes use theme tokens, including the page
+//     measure and bar height. The glass blur and phone menu's motion
+//     offset are literal. The phone menu's stagger is declared in
+//     siteheader.tokens.css and generated as Tokens for the app to
+//     Extend its theme with;
+//   - the behaviour is the framework's: headless.Disclosure's module
+//     closes the phone menu on Escape, on a link tap and on navigation,
+//     and traps focus while it is open; the runtime's active-link pass
+//     sets aria-current on the nav links.
+//
+// The bar is the page's banner landmark and a direct child of the
+// page-tall ui.Stack, which pins it for the whole page when the layout
+// sets StickyHeader (the stack also tells sticky parts below where the
+// bar ends). This package is the app's own code: edit it freely.
 package siteheader
 
 import (
@@ -15,7 +36,9 @@ import (
 // Link is one destination.
 type Link struct {
 	Label, Href string
-	// Section keeps the link current on every page under Href.
+	// Section keeps the link current on every page under Href (Help
+	// stays lit on /help/billing), through the runtime's
+	// data-cui-match-prefix.
 	Section bool
 }
 
@@ -25,12 +48,17 @@ type Config struct {
 	Ctx context.Context
 	// Name is the wordmark; it links home.
 	Name string
-	// Mark is the logo before Name, in the theme's primary colour; zero draws none.
+	// Mark is the logo drawn before Name inside the brand link. It
+	// takes the theme's primary colour (.mark colours with
+	// --color-primary, so the mark inherits it); a monochrome currentColor
+	// SVG is the shape that needs nothing else. Zero draws none.
 	Mark  render.HTML
 	Links []Link
-	// CTA is the call to action, in the bar and in the phone menu; zero draws none.
+	// CTA is the call to action: a small button at the end of the bar
+	// on wide screens, a full-width one at the foot of the phone menu.
+	// A zero CTA draws none.
 	CTA Link
-	// Actions stay in the bar at every width.
+	// Actions stay in the bar at every width (the theme toggle).
 	Actions render.HTML
 }
 

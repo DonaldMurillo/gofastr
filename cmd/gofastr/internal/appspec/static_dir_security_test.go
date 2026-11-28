@@ -1,8 +1,11 @@
 package appspec
 
 import (
+	"io/fs"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/packages"
 )
 
 // The generated app serves app.static_dir to anyone who asks. A
@@ -24,6 +27,8 @@ func TestStaticDirRefusesProjectFiles(t *testing.T) {
 		{"gen/js", ""},
 		{"siteheader", ""},
 		{"docpage", ""},
+		{"sitefooter/css", ""},
+		{"helpdocs", ""},
 		{"data", "file:data/app.db"},
 		{"data", "data/app.db?_pragma=busy_timeout(5000)"},
 		{"./data/", "file:./data/app.db"},
@@ -85,6 +90,24 @@ func TestStaticDirRefusesOutputDir(t *testing.T) {
 		got := err != nil && strings.Contains(err.Error(), "static_dir")
 		if got != c.refused {
 			t.Errorf("static_dir %q with output_dir %q: refused=%v, want %v (%v)", c.dir, c.out, got, c.refused, err)
+		}
+	}
+}
+
+// Every canonical package generate copies into an app is Go the app would otherwise serve.
+func TestStaticDirRefusesEveryCanonicalPackage(t *testing.T) {
+	entries, err := fs.ReadDir(packages.FS, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		bp := AppSpec{}
+		bp.App.StaticDir = e.Name()
+		if err := ValidateAppSpec(bp); err == nil || !strings.Contains(err.Error(), "static_dir") {
+			t.Errorf("static_dir %q, a package generate copies into the app, accepted: %v", e.Name(), err)
 		}
 	}
 }
