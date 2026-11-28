@@ -1,7 +1,6 @@
 package clitest
 
-// OrderLinesYAML: lines belong to an order keyed on (store, no) through a
-// two-column foreign key.
+// OrderLinesYAML is two entities joined by a two-column foreign key.
 const OrderLinesYAML = `  - name: orders
     primary_key: [store, no]
     fields:

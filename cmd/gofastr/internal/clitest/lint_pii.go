@@ -1,7 +1,5 @@
 package clitest
 
-// --- gofastr validate: unscoped PII is an error (exit 1).
-
 const PiiTripYML = `
 app:
   name: Demo

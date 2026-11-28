@@ -1,0 +1,34 @@
+primitive: cli.clitest.repofiles
+summary: The helpers that read committed repo files a CLI test checks - the app spec tutorial's quickstart fences, every example and test app's gofastr.yml, the meridian example - and FirstAppSpecDiff, which names where two decoded specs differ.
+code:
+  - cmd/gofastr/internal/clitest/examples_appspec.go
+  - cmd/gofastr/internal/clitest/pack.go
+  - cmd/gofastr/internal/clitest/readme_quickstart.go
+docs:
+  - framework/docs/content/tutorial-app-spec.md
+on_change:
+  - A test that calls ExampleAppSpecs or ExampleAppSpecPaths declares //gofastr:test-reads examples/*/gofastr.yml internal/testapps/*/gofastr.yml.
+invariants:
+  - id: quickstart-anchors-are-required
+    rule: ReadmeSection errors when its heading is missing and FencedBlock when no fence of the language holds the marker, so a doc edit that drops the app spec quickstart fails the gate instead of skipping it.
+    enforced_by:
+      - test: cmd/gofastr.TestReadmeAnchorMissingFails
+  - id: diff-reads-unexported-fields
+    rule: FirstAppSpecDiff compares and names an unexported field such as AppSpec.appless through fmt instead of panicking on Interface, and returns "(values are deep-equal)" when nothing differs.
+    enforced_by:
+      - test: cmd/gofastr/internal/clitest.TestFirstAppSpecDiffReadsUnexportedFields
+decisions:
+  - id: example-specs-by-directory-walk
+    date: 2026-11-01
+    status: accepted
+    decision: ExampleAppSpecPaths reads the examples and internal/testapps directories and stats only <name>/gofastr.yml in each.
+    rejected:
+      - option: filepath.Glob over */gofastr.yml.
+        why: Glob stats every top-level file under examples/, and the test-reads audit counts each stat as a read the caller must declare.
+  - id: no-specs-is-a-failure-for-spec-tests
+    date: 2026-11-01
+    status: accepted
+    decision: ExampleAppSpecPaths returns an empty list and ExampleAppSpecs skips on it, so a test whose fixtures are the committed specs calls ExampleAppSpecPaths and fails on none.
+    rejected:
+      - option: Skip in both.
+        why: A skip reads as a pass when the committed specs are the thing under test.

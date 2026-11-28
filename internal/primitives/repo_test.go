@@ -295,6 +295,7 @@ var ownedPackages = []string{
 
 	"cmd/gofastr",
 	"cmd/gofastr/internal/cli",
+	"cmd/gofastr/internal/clitest",
 }
 
 //gofastr:test-reads primitives/ *.go

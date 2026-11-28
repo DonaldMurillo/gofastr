@@ -7,8 +7,7 @@ import (
 	"testing"
 )
 
-// AddSetup creates a temp dir with go.mod, chdirs into it, and writes a
-// app spec yml. Returns (dir, bpPath).
+// AddSetup chdirs into a new module holding yml as gofastr.yml.
 func AddSetup(t *testing.T, yml string) (dir, bpPath string) {
 	t.Helper()
 	dir = t.TempDir()
@@ -37,7 +36,7 @@ func WriteAddGoMod(t *testing.T, dir, module string) {
 	}
 }
 
-// ReadFile reads a file under dir, failing the test if it doesn't exist.
+// ReadFile returns dir/rel, failing the test when it cannot be read.
 func ReadFile(t *testing.T, dir, rel string) string {
 	t.Helper()
 	//gofastr:allow(rootread) test helper: dir is the calling test's own generated tree
@@ -55,10 +54,7 @@ func FileExists(dir, rel string) bool {
 	return err == nil
 }
 
-// ---- Test 10: --add a screen fragment into an existing project ----
-
-// AddScreenBaseAppSpec is a base project with an entity + a standalone
-// screen, so the per-screen layout (seam + screen_about.go) already exists.
+// AddScreenBaseAppSpec is an app spec with an entity and one standalone screen.
 func AddScreenBaseAppSpec(module string) string {
 	return fmt.Sprintf(`app:
   name: AddScreen
