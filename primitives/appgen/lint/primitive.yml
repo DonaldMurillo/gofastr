@@ -28,6 +28,10 @@ invariants:
       - test: cmd/gofastr/internal/appgen.TestAppSpecLintsNeverBlockGenerate
       - test: cmd/gofastr/internal/appgen.TestAppSpecLintsStayOffJSONOutput
       - test: cmd/gofastr/internal/appgen.TestGeneratePIIWarnsNotFatal
+  - id: unscoped-read-names-accepted-remedies
+    rule: The unscoped-read warning names owner_field and an access.read permission as remedies, and never multi_tenant, which cli.appspec.validate refuses for a generated app.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestLintUnscopedFlagsNonPIIEntities
   - id: post-form-ignores-other-hosts
     rule: A custom_form whose action names another host, or a scheme other than http or https, is not flagged as posting to a screen.
     enforced_by:

@@ -21,7 +21,7 @@ func (f unscopedFinding) Message() string {
 		readers = "anonymous callers"
 	}
 	return fmt.Sprintf(
-		"entity %q exposes unscoped reads via auto-CRUD/MCP. %s can read every row. Set owner_field: <column> for per-user rows, require a permission in access.read (RBAC), or set multi_tenant: true",
+		"entity %q exposes unscoped reads via auto-CRUD/MCP. %s can read every row. Set owner_field: <column> for per-user rows or require a permission in access.read (RBAC)",
 		f.Entity, readers)
 }
 
